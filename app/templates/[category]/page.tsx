@@ -1,0 +1,204 @@
+import type { Metadata } from "next"
+import Link from "next/link"
+import { notFound } from "next/navigation"
+import { ChevronRight, ArrowLeft } from "lucide-react"
+
+import { SiteHeader } from "@/components/site-header"
+import { SiteFooter } from "@/components/site-footer"
+import { Badge } from "@/components/ui/badge"
+import { buttonVariants } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { CategoryTemplatesClient } from "@/components/templates/category-templates-client"
+import { categories as fallbackCategories, getCategory as getFallbackCategory, getTemplatesByCategory as getFallbackTemplatesByCategory } from "@/lib/documents/catalog"
+import { cn } from "@/lib/utils"
+import { prisma } from "@/lib/db"
+import { DocumentsClient } from "@/components/templates/documents-client"
+
+type Params = { category: string }
+
+export const dynamic = "force-dynamic"
+
+export function generateStaticParams() {
+  return fallbackCategories.map((c) => ({ category: c.slug }))
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<Params>
+}): Promise<Metadata> {
+  const { category } = await params
+  try {
+    if (prisma && (prisma as unknown as { category: unknown }).category) {
+      const cat = await prisma.category.findUnique({ where: { slug: category } })
+      if (cat) return { title: `${cat.title} — шаблони`, description: cat.longDescription ?? cat.description }
+    }
+  } catch {}
+  const cat = getFallbackCategory(category)
+  if (!cat) return { title: "Категорію не знайдено" }
+  return { title: `${cat.title} — шаблони`, description: cat.longDescription }
+}
+
+export default async function CategoryPage({ params }: { params: Promise<Params> }) {
+  const { category } = await params
+
+  let cat: { slug: string; title: string; description: string; longDescription: string | null; countLabel: string } | null = null
+  let items: { id: string; title: string; categorySlug: string; fields: number; popular: boolean; description: string; tags: string[]; paper: "А4" | "А4 альбом"; updatedAt: string }[] = []
+  try {
+    if (prisma && (prisma as unknown as { category: unknown }).category) {
+      const dbCat = await prisma.category.findUnique({ where: { slug: category } })
+      if (dbCat) {
+        cat = { slug: dbCat.slug, title: dbCat.title, description: dbCat.description, longDescription: dbCat.longDescription, countLabel: dbCat.countLabel }
+        const dbTemplates = await prisma.template.findMany({ where: { categorySlug: category, isActive: true }, orderBy: [{ popular: "desc" }, { title: "asc" }] })
+        items = dbTemplates.map((t) => ({
+          id: t.id,
+          title: t.title,
+          categorySlug: t.categorySlug,
+          fields: t.fields,
+          popular: t.popular,
+          description: t.description,
+          tags: t.tags,
+          paper: t.paper as "А4" | "А4 альбом",
+          updatedAt: t.updatedAt.toISOString().slice(0, 10),
+        }))
+      }
+    }
+  } catch {}
+  if (!cat) {
+    const fallbackCat = getFallbackCategory(category)
+    if (!fallbackCat) notFound()
+    cat = { slug: fallbackCat.slug, title: fallbackCat.title, description: fallbackCat.description, longDescription: fallbackCat.longDescription, countLabel: fallbackCat.countLabel }
+    items = getFallbackTemplatesByCategory(category).map((t) => ({ ...t }))
+  }
+  if (!cat) notFound()
+
+  // Для рапортів — завантажуємо документи як картки в тому ж місці де шаблони
+  let docsForClient: { id: string; title: string; status: string; createdAt: string; updatedAt: string; author: string | null; templateTitle: string }[] = []
+  if (category === "raporty") {
+    try {
+      if (prisma && (prisma as unknown as { document: unknown }).document) {
+        const dbDocs = await prisma.document.findMany({
+          where: { categorySlug: category },
+          include: { author: { select: { username: true } }, template: { select: { title: true } } },
+          orderBy: { updatedAt: "desc" },
+          take: 50,
+        })
+        docsForClient = dbDocs.map((d) => ({
+          id: d.id,
+          title: d.title,
+          status: d.status,
+          createdAt: d.createdAt.toISOString(),
+          updatedAt: d.updatedAt.toISOString(),
+          author: d.author?.username ?? null,
+          templateTitle: d.template?.title ?? "Рапорт на відпустку",
+        }))
+      }
+    } catch {}
+  }
+
+  return (
+    <div className="flex min-h-svh flex-col bg-background">
+      <SiteHeader />
+
+      <main className="flex-1">
+        <div className="border-b bg-muted/30">
+          <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+            <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Link href="/" className="hover:text-foreground">
+                Головна
+              </Link>
+              <ChevronRight className="size-3.5" />
+              <Link href="/templates" className="hover:text-foreground">
+                Шаблони
+              </Link>
+              <ChevronRight className="size-3.5" />
+              <span className="font-medium text-foreground">{cat.title}</span>
+            </nav>
+
+            <div className="mt-4 flex flex-col gap-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="text-2xl font-semibold tracking-tight">{cat.title}</h1>
+                    <Badge variant="secondary" className="rounded-full">
+                      {category === "raporty" ? docsForClient.length : items.length} {cat.countLabel}
+                    </Badge>
+                    <Badge variant="outline" className="rounded-full">
+                      {cat.description}
+                    </Badge>
+                  </div>
+                  <p className="max-w-[70ch] text-sm leading-relaxed text-muted-foreground">
+                    {cat.longDescription} Оберіть потрібний документ — картки нижче підтримують пошук як і шаблони.
+                  </p>
+                </div>
+
+                <Link href="/templates" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                  <ArrowLeft className="size-4" />
+                  Усі категорії
+                </Link>
+              </div>
+
+              <Separator />
+
+              {/* швидкі чіпи — якірний пошук */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>Швидко знайти:</span>
+                {(category === "raporty" ? docsForClient.slice(0, 4).map((d) => ({ id: d.id, title: d.title })) : items.slice(0, 4).map((t) => ({ id: t.id, title: t.title }))).map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/templates/${cat.slug}/${t.id}`}
+                    className="rounded-full border bg-card px-2.5 py-1 hover:bg-muted"
+                  >
+                    {t.title}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+          {category === "raporty" ? (
+            <div className="space-y-6">
+              <Card className="border-dashed">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-sm">Приклад з Word — можна редагувати</CardTitle>
+                  <CardDescription>
+                    Оригінал <code className="rounded bg-muted px-1">Відпустка ВЛК Богатир 28.07.2026.docx</code> перенесено в <code className="rounded bg-muted px-1">/public/raporty</code>. На його основі створено документ — відкрийте картку нижче для редагування.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
+                  <Link href="/raporty/vidpustka-vlk-bogatyr-example.docx" download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                    Завантажити оригінал .docx
+                  </Link>
+                  <Link href="/examples/rapport-vidpustka-vlk-bogatyr-2026-07-28-example.docx" download className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+                    Копія в /examples
+                  </Link>
+                  <Link href={`/templates/${cat.slug}/raport-vidpustka`} className={cn(buttonVariants({ size: "sm" }))}>
+                    Створити новий рапорт
+                  </Link>
+                </CardContent>
+              </Card>
+
+              {/* Картки документів на місці колишніх карток шаблонів — той же стиль, пошук працює */}
+              <DocumentsClient documents={docsForClient} />
+            </div>
+          ) : (
+            <CategoryTemplatesClient templates={items} />
+          )}
+
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6 text-sm">
+            <p className="text-muted-foreground">Не знайшли потрібне? Створіть кастомний шаблон на базі існуючого.</p>
+            <Link href="/templates" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+              Переглянути інші категорії
+              <ChevronRight className="size-4" />
+            </Link>
+          </div>
+        </div>
+      </main>
+
+      <SiteFooter />
+    </div>
+  )
+}

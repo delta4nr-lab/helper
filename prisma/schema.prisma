@@ -1,0 +1,157 @@
+// Канцелярія — Prisma schema для Vercel Prisma Postgres (db.prisma.io)
+// Дотримуємось AGENTS.md: окремі поля ПІБ, структуровані дані, індекси для пошуку
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model User {
+  id        String    @id @default(cuid())
+  username  String    @unique
+  password  String // bcrypt hash
+  role      Role      @default(USER)
+  isActive  Boolean   @default(true)
+  profile   Profile?
+  documents Document[] @relation("AuthorDocs")
+  templates Template[] @relation("TemplateCreator")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([role])
+  @@index([username])
+}
+
+model Profile {
+  id         String  @id @default(cuid())
+  userId     String  @unique
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastName   String? // прізвище
+  firstName  String? // ім'я
+  middleName String? // по батькові
+  rank       String? // звання
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Personnel {
+  id         String   @id @default(cuid())
+  lastName   String   // прізвище
+  firstName  String   // ім'я
+  middleName String?  // по батькові
+  rank       String // звання
+  position   String   // посада
+  unit       String   // підрозділ (А1234, Штаб)
+  status     String   @default("в строю") // в строю | відрядження | відпустка
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  documents Document[]
+
+  @@index([lastName, firstName])
+  @@index([unit])
+  @@index([status])
+  @@index([rank])
+}
+
+model Category {
+  id              String     @id @default(cuid())
+  slug            String     @unique // raporty | nakazy | dovidky | zhurnaly | akty | lystuvannya
+  title           String
+  description     String
+  longDescription String?
+  icon            String? // raporty | nakazy ...
+  countLabel      String     @default("шаблонів")
+  sortOrder       Int        @default(0)
+  isActive        Boolean    @default(true)
+  templates       Template[]
+  documents       Document[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+model Template {
+  id             String   @id // наприклад raport-vidpustka
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categorySlug   String // денормалізація для швидких фільтрів, синхронізується з category.slug
+  title          String
+  fields         Int
+  popular        Boolean  @default(false)
+  description    String
+  headerTemplate String?
+  bodyTemplate   String?
+  footerTemplate String?
+  tags           String[]
+  paper        String   @default("А4") // А4 | А4 альбом
+  isActive     Boolean  @default(true)
+  fieldsConfig   TemplateField[]
+  createdById    String?
+  createdBy      User?    @relation("TemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  documents Document[]
+
+  @@index([categoryId, isActive])
+  @@index([categorySlug])
+  @@index([popular])
+  @@index([createdById])
+}
+
+model TemplateField {
+  id           String   @id @default(cuid())
+  templateId   String
+  template     Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  key          String // leaveStart, leaveDays, leavePlace
+  label        String // "Дата початку"
+  type         String // text | textarea | date | number | select | personnel
+  required     Boolean  @default(true)
+  placeholder  String?
+  options      Json? // ["Львів", "Київ"] для select
+  validation   Json? // { min, max, pattern }
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([templateId, key])
+  @@index([templateId, sortOrder])
+}
+
+model Document {
+  id           String    @id @default(cuid())
+  templateId   String
+  template     Template  @relation(fields: [templateId], references: [id])
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categorySlug String
+  title        String
+  data         Json // структуровані дані форми — валідуються Zod на сервері
+  status       String    @default("чернетка") // чернетка | підписано | в архіві
+  personnelId  String?
+  personnel    Personnel? @relation(fields: [personnelId], references: [id])
+  authorId     String?
+  author       User?      @relation("AuthorDocs", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([templateId])
+  @@index([categoryId])
+  @@index([categorySlug])
+  @@index([status])
+  @@index([personnelId])
+  @@index([authorId])
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+}
