@@ -8,13 +8,17 @@ import { CategoryCard } from "@/components/templates/category-card"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { getCategoryCounts, templates as fallbackTemplates } from "@/lib/documents/catalog"
+import {
+  getCategoryCounts,
+  templates as fallbackTemplates,
+} from "@/lib/documents/catalog"
 import { prisma } from "@/lib/db"
 import { auth } from "@/auth"
 
 export const metadata: Metadata = {
   title: "Шаблони документів",
-  description: "Каталог шаблонів для канцелярії: оберіть категорію рапортів та створіть документ. Адмін додасть інші категорії пізніше.",
+  description:
+    "Каталог шаблонів для канцелярії: оберіть категорію рапортів та створіть документ. Адмін додасть інші категорії пізніше.",
 }
 
 export const dynamic = "force-dynamic"
@@ -28,9 +32,13 @@ export default async function TemplatesPage() {
       const dbCategories = await prisma.category.findMany({
         where: { isActive: true },
         orderBy: { sortOrder: "asc" },
-        include: { _count: { select: { templates: { where: { isActive: true } } } } },
+        include: {
+          _count: { select: { templates: { where: { isActive: true } } } },
+        },
       })
-      const dbTemplatesCount = await prisma.template.count({ where: { isActive: true } })
+      const dbTemplatesCount = await prisma.template.count({
+        where: { isActive: true },
+      })
       if (dbCategories.length > 0) {
         categories = dbCategories.map((c) => ({
           slug: c.slug,
@@ -55,7 +63,9 @@ export default async function TemplatesPage() {
 
   let isAdmin = false
   try {
-    const session = await (auth as unknown as () => Promise<{ user?: { role?: string } } | null>)()
+    const session = await (
+      auth as unknown as () => Promise<{ user?: { role?: string } } | null>
+    )()
     isAdmin = (session?.user as unknown as { role?: string })?.role === "ADMIN"
   } catch {}
 
@@ -89,11 +99,20 @@ export default async function TemplatesPage() {
                   <Badge variant="secondary" className="rounded-full">
                     {total} шаблонів
                   </Badge>
-                  {isAdmin && <Link href="/admin/templates/new" className="text-sm font-medium text-primary hover:underline">+ Створити шаблон</Link>}
+                  {isAdmin && (
+                    <Link
+                      href="/admin/templates/new"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      + Створити шаблон
+                    </Link>
+                  )}
                 </div>
                 <p className="max-w-[65ch] text-sm leading-relaxed text-muted-foreground">
                   Оберіть категорію — всередині знайдете потрібний документ.
-                  {isAdmin ? " Як адмін ви можете створювати та редагувати шаблони." : " Кожен шаблон має валідацію, підказки та передперегляд."}
+                  {isAdmin
+                    ? " Як адмін ви можете створювати та редагувати шаблони."
+                    : " Кожен шаблон має валідацію, підказки та передперегляд."}
                 </p>
               </div>
 
@@ -104,10 +123,13 @@ export default async function TemplatesPage() {
                   </span>
                   <div className="flex-1">
                     <div className="text-sm leading-none font-medium">
-                      {categories.length} {categories.length === 1 ? "категорія" : "категорій"}
+                      {categories.length}{" "}
+                      {categories.length === 1 ? "категорія" : "категорій"}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {categories.length === 1 ? "Тільки рапорти" : "Від рапортів до листування"}
+                      {categories.length === 1
+                        ? "Тільки рапорти"
+                        : "Від рапортів до листування"}
                     </div>
                   </div>
                   <Separator orientation="vertical" className="h-8" />
@@ -145,10 +167,18 @@ export default async function TemplatesPage() {
           </div>
 
           <div className="mt-8 rounded-xl border border-dashed bg-muted/20 p-4 text-sm leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">Адмін додасть категорії</span> — хаб читає з БД (
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">prisma.category</code>), без хардкоду. Архітектура{" "}
-            <span className="font-mono text-xs">Дані → Схема → Шаблон → Рендер → Export</span> підхопить новий тип
-            автоматично.
+            <span className="font-medium text-foreground">
+              Адмін додасть категорії
+            </span>{" "}
+            — хаб читає з БД (
+            <code className="rounded bg-muted px-1 py-0.5 text-xs">
+              prisma.category
+            </code>
+            ), без хардкоду. Архітектура{" "}
+            <span className="font-mono text-xs">
+              Дані → Схема → Шаблон → Рендер → Export
+            </span>{" "}
+            підхопить новий тип автоматично.
           </div>
         </div>
       </main>

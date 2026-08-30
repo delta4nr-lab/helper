@@ -127,3 +127,52 @@
     @apply font-sans;
     }
 }
+
+/* Tables stay usable in the editor while borderless tables print cleanly. */
+.tiptap table,
+.document-preview-content table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+}
+
+.tiptap td,
+.tiptap th,
+.document-preview-content td,
+.document-preview-content th {
+    border: 1px solid #a1a1aa;
+    padding: 4px 8px;
+    vertical-align: top;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.tiptap th,
+.document-preview-content th {
+    font-weight: 700;
+}
+
+.tiptap table[data-borderless="true"] td,
+.tiptap table[data-borderless="true"] th {
+    border: 1px dashed rgb(156 163 175 / 50%) !important;
+    background: transparent !important;
+}
+
+.tiptap table[data-borderless="true"],
+.tiptap table.table-borderless {
+    background: transparent;
+}
+
+.document-preview-content table[data-borderless="true"] td,
+.document-preview-content table[data-borderless="true"] th {
+    border-color: transparent;
+}
+
+@media print {
+    .document-preview-content table[data-borderless="true"] td,
+    .document-preview-content table[data-borderless="true"] th {
+        border-color: transparent !important;
+        background: transparent !important;
+    }
+}

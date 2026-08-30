@@ -1,23 +1,36 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
-import { validateDocumentData } from "@/lib/documents/registry"
-import { raportVidpustkaTitle } from "@/lib/documents/schemas/raport-vidpustka"
-import { raportVidryadzhennyaTitle } from "@/lib/documents/schemas/raport-vidryadzhennya"
-
-type ActionResult = { ok: boolean; message: string; documentId?: string }
+import { slugify } from "@/lib/slugify"
 
 type TemplateActionResult = { ok: boolean; message: string; templateId?: string }
 
-async function getSessionUser() {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string } } | null>)()
-  return session?.user?.id ?? null
+type TemplateMutation = {
+  title: string
+  categorySlug: string
+  description: string
+  headerTemplate: string
+  bodyTemplate: string
+  footerTemplate: string
+}
+
+async function requireAdmin() {
+  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
+  return session?.user?.id && session.user.role === "ADMIN" ? session.user.id : null
+}
+
+function fieldKeys(data: TemplateMutation) {
+  const content = `${data.headerTemplate}\n${data.bodyTemplate}\n${data.footerTemplate}`
+  return [...new Set([
+    ...[...content.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]),
+    ...[...content.matchAll(/data-field-key=["'](\w+)["']/g)].map((match) => match[1]),
+  ])]
 }
 
 export async function createTemplateAction(data: {
-  id: string
   title: string
   categorySlug: string
   description: string
@@ -25,42 +38,45 @@ export async function createTemplateAction(data: {
   bodyTemplate: string
   footerTemplate: string
 }): Promise<TemplateActionResult> {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  if (!session?.user?.id || session.user.role !== "ADMIN") return { ok: false, message: "Недостатньо прав" }
+  const userId = await requireAdmin()
+  if (!userId) return { ok: false, message: "Недостатньо прав" }
 
-  const id = data.id.trim().toLowerCase()
-  if (!/^[a-z0-9-]+$/.test(id)) return { ok: false, message: "ID може містити лише латинські літери, цифри та дефіс" }
-  if (!data.title.trim()) return { ok: false, message: "Вкажіть назву шаблону" }
+  const title = data.title.trim()
+  if (!title) return { ok: false, message: "Вкажіть назву шаблону" }
+  const baseId = slugify(title)
+  if (!baseId) return { ok: false, message: "Не вдалося сформувати slug із назви шаблону" }
+
+  let id = baseId
+  let suffix = 2
+  while (await prisma.template.findUnique({ where: { id }, select: { id: true } })) {
+    id = `${baseId}-${suffix}`
+    suffix += 1
+  }
 
   const category = await prisma.category.findUnique({ where: { slug: data.categorySlug } })
   if (!category) return { ok: false, message: "Категорію не знайдено" }
 
-  const templateContent = `${data.headerTemplate}\n${data.bodyTemplate}\n${data.footerTemplate}`
-  const keys = [...new Set([
-    ...[...templateContent.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]),
-    ...[...templateContent.matchAll(/data-field-key=["'](\w+)["']/g)].map((match) => match[1]),
-  ])]
+  const keys = fieldKeys(data)
+
   try {
     await prisma.template.create({
       data: {
         id,
         categoryId: category.id,
         categorySlug: category.slug,
-        title: data.title.trim(),
+        title,
         fields: keys.length,
         description: data.description.trim(),
         tags: [],
         headerTemplate: data.headerTemplate,
         bodyTemplate: data.bodyTemplate,
         footerTemplate: data.footerTemplate,
-        createdById: session.user.id,
-        fieldsConfig: {
-          create: keys.map((key, sortOrder) => ({ key, label: key, type: "text", sortOrder })),
-        },
+        createdById: userId,
+        fieldsConfig: { create: keys.map((key, sortOrder) => ({ key, label: key, type: "text", sortOrder })) },
       },
     })
   } catch {
-    return { ok: false, message: "Не вдалося створити шаблон. Перевірте ID та спробуйте ще раз." }
+    return { ok: false, message: "Не вдалося створити шаблон. Спробуйте ще раз." }
   }
 
   revalidatePath(`/templates/${category.slug}`)
@@ -68,127 +84,55 @@ export async function createTemplateAction(data: {
   return { ok: true, message: "Шаблон створено", templateId: id }
 }
 
-export async function createDocumentAction(data: {
-  templateId: string
-  categorySlug: string
-  data: Record<string, unknown>
-  personnelId?: string
-}): Promise<ActionResult> {
-  const userId = await getSessionUser()
-  if (!userId) return { ok: false, message: "Не авторизовано. Увійдіть." }
+export async function updateTemplateAction(templateId: string, data: TemplateMutation): Promise<TemplateActionResult> {
+  const userId = await requireAdmin()
+  if (!userId) return { ok: false, message: "Недостатньо прав" }
+  const title = data.title.trim()
+  if (!title) return { ok: false, message: "Вкажіть назву шаблону" }
+  const category = await prisma.category.findUnique({ where: { slug: data.categorySlug } })
+  if (!category) return { ok: false, message: "Категорію не знайдено" }
+  const keys = fieldKeys(data)
 
-  const { templateId, categorySlug, data: rawData, personnelId } = data
-
-  if (!templateId || !categorySlug) return { ok: false, message: "Невірний шаблон" }
-
-  const template = await prisma.template.findUnique({ where: { id: templateId } })
-  if (!template || !template.isActive) return { ok: false, message: "Шаблон не знайдено або деактивовано" }
-
-  // Валідація через реєстр Zod
-  const validation = validateDocumentData(templateId, rawData)
-  if (!validation.success) {
-    const first = validation.error.issues[0]
-    return { ok: false, message: first?.message || "Помилка валідації" }
-  }
-  const validated = validation.data as Record<string, unknown>
-
-  // Персоналія: якщо personnelId вказано — перевірити існування
-  let personnelLabel: string | undefined
-  if (validated.personnelId && typeof validated.personnelId === "string" && validated.personnelId) {
-    const p = await prisma.personnel.findUnique({ where: { id: validated.personnelId as string } })
-    if (!p) return { ok: false, message: "Обраного військовослужбовця не знайдено" }
-    personnelLabel = [p.lastName, p.firstName, p.middleName].filter(Boolean).join(" ")
-    // денормалізуємо ПІБ для рендеру якщо потрібно
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.template.update({
+        where: { id: templateId },
+        data: { categoryId: category.id, categorySlug: category.slug, title, description: data.description.trim(), headerTemplate: data.headerTemplate, bodyTemplate: data.bodyTemplate, footerTemplate: data.footerTemplate, fields: keys.length },
+      })
+      await tx.templateField.deleteMany({ where: { templateId } })
+      if (keys.length) await tx.templateField.createMany({ data: keys.map((key, sortOrder) => ({ templateId, key, label: key, type: "text", sortOrder })) })
+    })
+  } catch {
+    return { ok: false, message: "Не вдалося оновити шаблон. Перевірте дані та спробуйте ще раз." }
   }
 
-  // Заголовок — для відрядження (єдиний рапорт) окреме форматування
-  let title = template.title
-  if (templateId === "raport-vidryadzhennya") {
-    title = raportVidryadzhennyaTitle(validated as never, personnelLabel)
-  } else if (templateId === "raport-vidpustka") {
-    title = raportVidpustkaTitle(validated as never, personnelLabel)
-  } else {
-    title = `${template.title} — ${new Date().toLocaleDateString("uk-UA")}`
-  }
-
-  // Категорія
-  const category = await prisma.category.findUnique({ where: { slug: categorySlug } })
-
-  const doc = await prisma.document.create({
-    data: {
-      templateId,
-      categoryId: category?.id ?? null,
-      categorySlug,
-      title,
-      data: validated as never,
-      personnelId: (validated.personnelId as string) || personnelId || null,
-      authorId: userId,
-      status: "чернетка",
-    },
-  })
-
-  revalidatePath(`/profile`)
-  revalidatePath(`/templates/${categorySlug}/${templateId}`)
-  revalidatePath(`/templates/${categorySlug}`)
-
-  return { ok: true, message: "Документ створено", documentId: doc.id }
+  revalidatePath("/templates")
+  revalidatePath(`/templates/${category.slug}`)
+  revalidatePath(`/templates/${category.slug}/${templateId}`)
+  revalidatePath("/admin/templates")
+  return { ok: true, message: "Шаблон оновлено", templateId }
 }
 
-export async function updateDocumentAction(data: {
-  documentId: string
-  data: Record<string, unknown>
-}): Promise<ActionResult> {
-  const userId = await getSessionUser()
-  if (!userId) return { ok: false, message: "Не авторизовано. Увійдіть." }
+export async function deleteTemplateAction(templateId: string): Promise<TemplateActionResult> {
+  const userId = await requireAdmin()
+  if (!userId) return { ok: false, message: "Недостатньо прав" }
+  const template = await prisma.template.findUnique({ where: { id: templateId }, include: { _count: { select: { exportedFiles: true } } } })
+  if (!template) return { ok: false, message: "Шаблон не знайдено" }
 
-  const { documentId, data: rawData } = data
-
-  const existing = await prisma.document.findUnique({ where: { id: documentId }, include: { template: true } })
-  if (!existing) return { ok: false, message: "Документ не знайдено" }
-
-  // Перевірка прав: автор або ADMIN
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  const role = (session?.user as unknown as { role?: string })?.role
-  if (existing.authorId !== userId && role !== "ADMIN") {
-    return { ok: false, message: "Недостатньо прав для редагування" }
+  try {
+    if (template._count.exportedFiles > 0) {
+      await prisma.template.update({ where: { id: templateId }, data: { isActive: false } })
+      revalidatePath("/templates")
+      revalidatePath(`/templates/${template.categorySlug}`)
+      revalidatePath("/admin/templates")
+      return { ok: true, message: "Шаблон деактивовано: він має збережені експорти." }
+    }
+    await prisma.template.delete({ where: { id: templateId } })
+  } catch {
+    return { ok: false, message: "Не вдалося видалити шаблон." }
   }
-
-  const validation = validateDocumentData(existing.templateId, rawData)
-  if (!validation.success) {
-    const first = validation.error.issues[0]
-    return { ok: false, message: first?.message || "Помилка валідації" }
-  }
-  const validated = validation.data as Record<string, unknown>
-
-  let personnelLabel: string | undefined
-  if (validated.personnelId && typeof validated.personnelId === "string" && validated.personnelId) {
-    const p = await prisma.personnel.findUnique({ where: { id: validated.personnelId as string } })
-    if (!p) return { ok: false, message: "Обраного військовослужбовця не знайдено" }
-    personnelLabel = [p.lastName, p.firstName, p.middleName].filter(Boolean).join(" ")
-  }
-
-  let title = existing.template.title
-  if (existing.templateId === "raport-vidpustka") {
-    title = raportVidpustkaTitle(validated as never, personnelLabel)
-  } else if (existing.templateId === "raport-vidryadzhennya") {
-    title = raportVidryadzhennyaTitle(validated as never, personnelLabel)
-  } else {
-    title = `${existing.template.title} — ${new Date().toLocaleDateString("uk-UA")}`
-  }
-
-  await prisma.document.update({
-    where: { id: documentId },
-    data: {
-      title,
-      data: validated as never,
-      personnelId: (validated.personnelId as string) || null,
-    },
-  })
-
-  revalidatePath(`/profile`)
-  revalidatePath(`/templates/${existing.categorySlug}/${existing.templateId}`)
-  revalidatePath(`/documents/${documentId}`)
-  revalidatePath(`/documents/${documentId}/edit`)
-
-  return { ok: true, message: "Документ оновлено", documentId }
+  revalidatePath("/templates")
+  revalidatePath(`/templates/${template.categorySlug}`)
+  revalidatePath("/admin/templates")
+  return { ok: true, message: "Шаблон видалено" }
 }

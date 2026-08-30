@@ -3,13 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
-import {
-  FileText,
-  LogIn,
-  Menu,
-  X,
-  Shield,
-} from "lucide-react"
+import { FileText, LogIn, Menu, X, Shield } from "lucide-react"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -21,7 +15,6 @@ const nav = [
   { label: "Шаблони", href: "/templates" },
   { label: "Особовий склад", href: "/#personnel" },
   { label: "Як це працює", href: "/#how" },
-  { label: "Експорт", href: "/#export" },
 ]
 
 export function SiteHeader() {
@@ -39,7 +32,9 @@ export function SiteHeader() {
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Shield className="size-4" />
               </span>
-              <span className="text-[15px] font-semibold tracking-tight">КАНЦЕЛЯРІЯ</span>
+              <span className="text-[15px] font-semibold tracking-tight">
+                КАНЦЕЛЯРІЯ
+              </span>
               <span className="hidden rounded-full border bg-muted px-2 py-0.5 text-[10px] font-medium tracking-widest text-muted-foreground sm:inline-flex">
                 BETA
               </span>
@@ -59,13 +54,6 @@ export function SiteHeader() {
           </div>
 
           <div className="hidden items-center gap-2 lg:flex">
-            <Link href="/templates" className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
-              Переглянути шаблони
-            </Link>
-            <Link href="/templates" className={cn(buttonVariants({ size: "sm" }))}>
-              <FileText className="size-4" />
-              Створити документ
-            </Link>
             <Separator orientation="vertical" className="mx-1 h-6" />
             {status === "loading" ? (
               <div className="h-8 w-20 animate-pulse rounded-full bg-muted" />
@@ -123,7 +111,13 @@ export function SiteHeader() {
                 Створити документ
               </Link>
               {!isAuthed && status !== "loading" && (
-                <Button onClick={() => { setOpen(false); setAuthOpen(true) }} className="w-full">
+                <Button
+                  onClick={() => {
+                    setOpen(false)
+                    setAuthOpen(true)
+                  }}
+                  className="w-full"
+                >
                   <LogIn className="size-4" />
                   Увійти
                 </Button>

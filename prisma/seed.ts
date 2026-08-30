@@ -89,15 +89,14 @@ async function main() {
   if (staleCategories.length > 0) {
     console.log(`Cleaning stale categories: ${staleCategories.map((c) => c.slug).join(", ")}`)
     const staleCatIds = staleCategories.map((c) => c.id)
-    // видалити пов'язані шаблони/поля/документи
+    // видалити пов'язані шаблони/поля/експорти
     const staleTpls = await prisma.template.findMany({ where: { categoryId: { in: staleCatIds } }, select: { id: true } })
     const staleTplIds = staleTpls.map((t) => t.id)
     if (staleTplIds.length > 0) {
       await prisma.templateField.deleteMany({ where: { templateId: { in: staleTplIds } } })
-      await prisma.document.deleteMany({ where: { templateId: { in: staleTplIds } } })
+      await prisma.exportedFile.deleteMany({ where: { templateId: { in: staleTplIds } } })
       await prisma.template.deleteMany({ where: { id: { in: staleTplIds } } })
     }
-    await prisma.document.deleteMany({ where: { categoryId: { in: staleCatIds } } })
     await prisma.category.deleteMany({ where: { id: { in: staleCatIds } } })
   }
 
@@ -108,7 +107,7 @@ async function main() {
   if (staleTemplates.length > 0) {
     console.log(`Cleaning stale templates: ${staleTemplates.map((t) => t.id).join(", ")}`)
     await prisma.templateField.deleteMany({ where: { templateId: { in: staleTemplates.map((t) => t.id) } } })
-    await prisma.document.deleteMany({ where: { templateId: { in: staleTemplates.map((t) => t.id) } } })
+    await prisma.exportedFile.deleteMany({ where: { templateId: { in: staleTemplates.map((t) => t.id) } } })
     await prisma.template.deleteMany({ where: { id: { in: staleTemplates.map((t) => t.id) } } })
   }
   // Почистити поля для vidryadzhennya якщо лишаємо vidpustka
@@ -229,68 +228,6 @@ async function main() {
     console.log(` - ${u.username} (${u.role}) -> profile: ${u.profile.lastName} ${u.profile.firstName}, rank: ${u.profile.rank}`)
   }
 
-  // Демо документ для профілю — відпустка з нейтральними полями
-  const admin = await prisma.user.findUnique({ where: { username: "admin" } })
-  const user = await prisma.user.findUnique({ where: { username: "user" } })
-  if (admin && user) {
-    const cat = await prisma.category.findUnique({ where: { slug: "raporty" } })
-    // Знайти Богатиря для прив'язки
-    const bogatyr = await prisma.personnel.findFirst({ where: { lastName: "Богатир", firstName: "Руслан" } })
-    // Приклад з docx — Богатир ВЛК (якщо ще немає, створити)
-    const existingBogatyrDoc = await prisma.document.findFirst({
-      where: { title: { contains: "Богатир" } },
-    })
-    if (!existingBogatyrDoc && bogatyr) {
-      await prisma.document.create({
-        data: {
-          templateId: "raport-vidpustka",
-          categoryId: cat?.id ?? null,
-          categorySlug: "raporty",
-          title: "Рапорт на відпустку ВЛК — Богатир Р.О. (приклад з docx)",
-          data: {
-            personnelId: bogatyr.id,
-            documentType: "для лікування після поранення",
-            startDate: "2026-07-28",
-            durationDays: 45,
-            location: "Одеська обл., м. Одеса, вул. Академіка Гамале, 60",
-            documentNumber: "2026-0724-1157-2892-7",
-            documentDate: "2026-07-24",
-            contactPhone: "(050) 2289154",
-            basis: "Рішення ВЛК від 24.07.2026 №2026-0724-1157-2892-7. До рапорту додаю: копію довідки ВЛК від 24.07.2026 №2026-0724-1157-2892-7 та копію виписки із медичної карти стаціонарного хворого від 27.07.2026 №5263. Із забороною вживання алкогольних та наркотичних речовин ознайомлений.",
-          },
-          status: "чернетка",
-          authorId: user.id,
-          personnelId: bogatyr.id,
-        },
-      })
-      console.log("Seeded example document: Богатир ВЛК (з docx)")
-    }
-    const existingVidpustka = await prisma.document.count({ where: { templateId: "raport-vidpustka" } })
-    if (existingVidpustka === 0) {
-      await prisma.document.create({
-        data: {
-          templateId: "raport-vidpustka",
-          categoryId: cat?.id ?? null,
-          categorySlug: "raporty",
-          title: "Рапорт на відпустку — Петренко І.В. з 2026-06-01",
-          data: {
-            personnelId: "",
-            documentType: "щорічна",
-            startDate: "2026-06-01",
-            durationDays: 15,
-            location: "м. Львів",
-            documentNumber: "2026-0724-1157-2892-7",
-            documentDate: "2026-07-24",
-            contactPhone: "(050) 1234567",
-            basis: "Рішення ВЛК — може перевикористовуватись в nakaz/dopovid",
-          },
-          status: "чернетка",
-          authorId: user.id,
-        },
-      })
-      console.log("Seeded 1 demo document: raport-vidpustka (нейтральні поля)")
-    }
-  }
 }
 
 main()

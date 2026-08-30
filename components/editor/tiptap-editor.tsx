@@ -4,14 +4,15 @@ import * as React from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
-import Underline from "@tiptap/extension-underline"
+import { Table, TableKit, TableView } from "@tiptap/extension-table"
 import { FontFamily, FontSize, TextStyle } from "@tiptap/extension-text-style"
 import TextAlign from "@tiptap/extension-text-align"
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Italic, Plus, Underline as UnderlineIcon } from "lucide-react"
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Columns3, Eye, EyeOff, Italic, Plus, Rows3, Table2, Trash2, Underline as UnderlineIcon } from "lucide-react"
 
 import { FieldExtension } from "@/lib/documents/editor/field-extension"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 type Props = {
   content: string // HTML або JSON string з {{field_1}} — конвертується в field nodes
@@ -20,6 +21,42 @@ type Props = {
   className?: string
   onFocus?: () => void
 }
+
+class StyledTableView extends TableView {
+  constructor(...args: ConstructorParameters<typeof TableView>) {
+    super(...args)
+    this.syncBorderlessState(this.node)
+  }
+
+  update(node: Parameters<TableView["update"]>[0]) {
+    const updated = super.update(node)
+    if (updated) this.syncBorderlessState(node)
+    return updated
+  }
+
+  private syncBorderlessState(node: Parameters<TableView["update"]>[0]) {
+    const borderless = node.attrs.borderless === true
+    this.table.classList.toggle("table-borderless", borderless)
+    if (borderless) this.table.setAttribute("data-borderless", "true")
+    else this.table.removeAttribute("data-borderless")
+  }
+}
+
+const StyledTable = Table.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      borderless: {
+        default: false,
+        parseHTML: (element) => element.getAttribute("data-borderless") === "true",
+        renderHTML: (attributes) => attributes.borderless ? { "data-borderless": "true", class: "table-borderless" } : {},
+      },
+    }
+  },
+  addNodeView() {
+    return ({ node, view, HTMLAttributes }) => new StyledTableView(node, this.options.cellMinWidth, view, HTMLAttributes)
+  },
+})
 
 export type TiptapEditorHandle = {
   insertField: (fieldKey: string, label: string) => void
@@ -39,11 +76,16 @@ function htmlWithFields(html: string): string {
 }
 
 export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function TiptapEditor({ content, onChange, placeholder, className, onFocus }, ref) {
+  const [tableActive, setTableActive] = React.useState(false)
+  const [borderlessTable, setBorderlessTable] = React.useState(false)
+  const [tablePickerOpen, setTablePickerOpen] = React.useState(false)
+  const [tableHover, setTableHover] = React.useState({ rows: 2, cols: 2 })
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({ horizontalRule: false }),
-      Underline,
+      TableKit.configure({ table: false }),
+      StyledTable,
       TextStyle,
       FontFamily,
       FontSize,
@@ -57,6 +99,12 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
       const html = editor.getHTML()
       // Конвертуємо field nodes назад в {{field_1}} (вже в HTML, але нормалізуємо)
       onChange(html)
+      setTableActive(editor.isActive("table"))
+      setBorderlessTable(editor.getAttributes("table").borderless === true)
+    },
+    onSelectionUpdate: ({ editor }) => {
+      setTableActive(editor.isActive("table"))
+      setBorderlessTable(editor.getAttributes("table").borderless === true)
     },
     editorProps: {
       attributes: {
@@ -93,6 +141,24 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
     return <div className="min-h-[180px] rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">Завантаження редактора...</div>
   }
 
+  const toggleTableBorderless = () => {
+    const borderless = !editor.getAttributes("table").borderless
+    editor.commands.command(({ state, dispatch }) => {
+      const { $from } = state.selection
+      let depth = $from.depth
+      while (depth > 0 && $from.node(depth).type.name !== "table") depth -= 1
+      if (depth === 0) return false
+      const table = $from.node(depth)
+      if (dispatch) dispatch(state.tr.setNodeMarkup($from.before(depth), undefined, { ...table.attrs, borderless }))
+      return true
+    })
+  }
+
+  const insertTable = (rows: number, cols: number) => {
+    editor.chain().focus().insertTable({ rows, cols, withHeaderRow: false }).run()
+    setTablePickerOpen(false)
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border bg-background" onFocus={onFocus}>
       {/* Простий тулбар — лише підказка, основна кнопка +Поле зовні */}
@@ -123,6 +189,39 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
         <Button type="button" size="icon-sm" variant="ghost" aria-label="По центру" onClick={() => editor.chain().focus().setTextAlign("center").run()}><AlignCenter className="size-3.5" /></Button>
         <Button type="button" size="icon-sm" variant="ghost" aria-label="Праворуч" onClick={() => editor.chain().focus().setTextAlign("right").run()}><AlignRight className="size-3.5" /></Button>
         <Button type="button" size="icon-sm" variant="ghost" aria-label="По ширині" onClick={() => editor.chain().focus().setTextAlign("justify").run()}><AlignJustify className="size-3.5" /></Button>
+        <div className="mx-1 h-5 w-px bg-border" />
+        <DropdownMenu open={tablePickerOpen} onOpenChange={setTablePickerOpen}>
+          <DropdownMenuTrigger
+            render={<Button type="button" size="icon-sm" variant="ghost" aria-label="Вставити таблицю" title="Вставити таблицю" />}
+          >
+            <Table2 className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-auto p-3">
+            <div className="mb-2 text-xs font-medium text-foreground">Вставити таблицю</div>
+            <div
+              className="grid gap-1"
+              style={{ gridTemplateColumns: "repeat(8, 18px)" }}
+              onMouseLeave={() => setTableHover({ rows: 2, cols: 2 })}
+            >
+              {Array.from({ length: 48 }, (_, index) => {
+                const row = Math.floor(index / 8) + 1
+                const col = (index % 8) + 1
+                const active = row <= tableHover.rows && col <= tableHover.cols
+                return (
+                  <button
+                    key={`${row}-${col}`}
+                    type="button"
+                    className={cn("size-[18px] rounded-sm border transition-colors", active ? "border-primary bg-primary/20" : "border-border bg-muted/30 hover:border-primary/60")}
+                    aria-label={`${row} рядків, ${col} стовпців`}
+                    onMouseEnter={() => setTableHover({ rows: row, cols: col })}
+                    onClick={() => insertTable(row, col)}
+                  />
+                )
+              })}
+            </div>
+            <div className="mt-2 text-center text-xs text-muted-foreground">{tableHover.rows} × {tableHover.cols}</div>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <div className="ml-auto flex items-center gap-1">
           <select
             defaultValue="paragraph"
@@ -168,10 +267,53 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
             }}
           >
             <Plus className="size-3" /> Поле
-          </Button>
-        </div>
-      </div>
-      <EditorContent editor={editor} />
+           </Button>
+         </div>
+       </div>
+       {tableActive && (
+         <div className="flex flex-wrap items-center gap-1 border-b bg-sky-50/70 px-2 py-1.5 text-xs text-muted-foreground dark:bg-sky-950/20">
+           <span className="mr-1 font-medium text-foreground">Таблиця</span>
+           <DropdownMenu>
+             <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>Рядок</DropdownMenuTrigger>
+             <DropdownMenuContent align="start" className="min-w-44">
+               <DropdownMenuGroup>
+                 <DropdownMenuLabel>Керування рядками</DropdownMenuLabel>
+                 <DropdownMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}><Rows3 className="size-4" />Додати перед поточним</DropdownMenuItem>
+                 <DropdownMenuItem onClick={() => editor.chain().focus().addRowAfter().run()}><Rows3 className="size-4" />Додати після поточного</DropdownMenuItem>
+                 <DropdownMenuSeparator />
+                 <DropdownMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteRow().run()}><Trash2 className="size-4" />Видалити поточний</DropdownMenuItem>
+               </DropdownMenuGroup>
+             </DropdownMenuContent>
+           </DropdownMenu>
+           <DropdownMenu>
+             <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>Стовпець</DropdownMenuTrigger>
+             <DropdownMenuContent align="start" className="min-w-48">
+               <DropdownMenuGroup>
+                 <DropdownMenuLabel>Керування стовпцями</DropdownMenuLabel>
+                 <DropdownMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}><Columns3 className="size-4" />Додати перед поточним</DropdownMenuItem>
+                 <DropdownMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}><Columns3 className="size-4" />Додати після поточного</DropdownMenuItem>
+                 <DropdownMenuSeparator />
+                 <DropdownMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteColumn().run()}><Trash2 className="size-4" />Видалити поточний</DropdownMenuItem>
+               </DropdownMenuGroup>
+             </DropdownMenuContent>
+           </DropdownMenu>
+           <div className="mx-1 h-5 w-px bg-border" />
+           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" disabled={!editor.can().mergeCells()} onClick={() => editor.chain().focus().mergeCells().run()}>
+             Об’єднати
+           </Button>
+           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" disabled={!editor.can().splitCell()} onClick={() => editor.chain().focus().splitCell().run()}>
+             Розділити
+           </Button>
+           <Button type="button" size="sm" variant="outline" aria-pressed={borderlessTable} className={cn("h-7 gap-1 px-2 text-xs", borderlessTable && "border-dashed bg-sky-100/80 dark:bg-sky-900/40")} onClick={toggleTableBorderless}>
+             {borderlessTable ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+             {borderlessTable ? "Межі: приховані" : "Межі: видимі"}
+           </Button>
+           <Button type="button" size="sm" variant="ghost" className="ml-auto h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive" onClick={() => editor.chain().focus().deleteTable().run()}>
+             <Trash2 className="size-3.5" /> Видалити таблицю
+           </Button>
+         </div>
+       )}
+       <EditorContent editor={editor} />
     </div>
   )
 })
@@ -191,7 +333,7 @@ export function TiptapPreview({ html, data }: { html: string; data: Record<strin
   return (
     <div className="mx-auto max-w-[720px] bg-white p-8 text-[13px] leading-relaxed text-zinc-900 shadow-sm ring-1 ring-black/5" style={{ fontFamily: "Times New Roman, serif" }}>
       {/* eslint-disable-next-line react/no-danger */}
-      <div dangerouslySetInnerHTML={{ __html: rendered }} className="prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed" />
+       <div dangerouslySetInnerHTML={{ __html: rendered }} className="document-preview-content prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed" />
     </div>
   )
 }

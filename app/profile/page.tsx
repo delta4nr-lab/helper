@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils"
 import { AccountForm } from "@/components/profile/account-form"
 import { ProfileDetailsForm } from "@/components/profile/profile-details-form"
-import { DocumentsLog } from "@/components/profile/documents-log"
+import { ExportsLog } from "@/components/profile/exports-log"
 
 export const dynamic = "force-dynamic"
 
@@ -37,8 +37,8 @@ export default async function ProfilePage() {
 
   if (!user) redirect("/")
 
-  const documents = await prisma.document.findMany({
-    where: { authorId: userId },
+  const exports = await prisma.exportedFile.findMany({
+    where: { userId },
     include: { template: true },
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -106,17 +106,7 @@ export default async function ProfilePage() {
 
           {/* Права колонка: лог документів */}
           <div className="flex flex-col gap-6">
-            <DocumentsLog
-              documents={documents.map((d) => ({
-                id: d.id,
-                title: d.title,
-                status: d.status,
-                categorySlug: d.categorySlug,
-                createdAt: d.createdAt,
-                updatedAt: d.updatedAt,
-                template: d.template ? { title: d.template.title } : null,
-              }))}
-            />
+            <ExportsLog files={exports} />
 
             <Card>
               <CardHeader>
@@ -124,16 +114,16 @@ export default async function ProfilePage() {
               </CardHeader>
               <CardContent className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded-xl border bg-muted/30 p-3">
-                  <div className="text-lg font-semibold leading-none">{documents.length}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">всього</div>
+                  <div className="text-lg font-semibold leading-none">{exports.length}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">експортів</div>
                 </div>
                 <div className="rounded-xl border bg-muted/30 p-3">
-                  <div className="text-lg font-semibold leading-none">{documents.filter((d) => d.status === "чернетка").length}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">чернеток</div>
+                  <div className="text-lg font-semibold leading-none">{new Set(exports.map((file) => file.templateId)).size}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">шаблонів</div>
                 </div>
                 <div className="rounded-xl border bg-muted/30 p-3">
-                  <div className="text-lg font-semibold leading-none">{documents.filter((d) => d.status === "підписано").length}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">підписано</div>
+                  <div className="text-lg font-semibold leading-none">{exports.reduce((sum, file) => sum + file.size, 0) > 1024 * 1024 ? `${(exports.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(0, Math.round(exports.reduce((sum, file) => sum + file.size, 0) / 1024))} КБ`}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">сховище</div>
                 </div>
               </CardContent>
             </Card>

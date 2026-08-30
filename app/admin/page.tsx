@@ -27,10 +27,10 @@ export default async function AdminPage() {
   )()
   if (!session?.user?.id || session.user.role !== "ADMIN") redirect("/")
 
-  const [usersTotal, documentsTotal, categoriesTotal, templatesTotal] =
+  const [usersTotal, exportsTotal, categoriesTotal, templatesTotal] =
     await Promise.all([
       prisma.user.count(),
-      prisma.document.count(),
+      prisma.exportedFile.count(),
       prisma.category.count(),
       prisma.template.count({ where: { isActive: true } }),
     ])
@@ -73,13 +73,13 @@ export default async function AdminPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Документи</CardDescription>
+                  <CardDescription>Експорти</CardDescription>
                 <CardTitle className="text-2xl tabular-nums">
-                  {documentsTotal}
+                  {exportsTotal}
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-muted-foreground">
-                Створені користувачами
+                Збережені файли користувачів
               </CardContent>
             </Card>
             <Card>
@@ -139,10 +139,10 @@ export default async function AdminPage() {
               <Button
                 variant="outline"
                 nativeButton={false}
-                render={<Link href="/admin/templates/new" />}
+                render={<Link href="/admin/templates" />}
               >
                 <FileText className="size-4" />
-                Створити шаблон
+                Керувати шаблонами
               </Button>
             </CardContent>
           </Card>

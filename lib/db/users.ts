@@ -25,7 +25,7 @@ export async function listUsers(params: {
   const [items, total] = await Promise.all([
     prisma.user.findMany({
       where: where as never,
-      include: { profile: true, _count: { select: { documents: true } } },
+      include: { profile: true, _count: { select: { exports: true } } },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -35,7 +35,7 @@ export async function listUsers(params: {
   return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
 }
 
-export async function getUserWithDocuments(username: string, session: SessionUser | null) {
+export async function getUserWithExports(username: string, session: SessionUser | null) {
   // USER бачить тільки свої, ADMIN — будь-кого
   if (!session) throw new Error("Не авторизовано")
   const target = await prisma.user.findUnique({
@@ -46,13 +46,13 @@ export async function getUserWithDocuments(username: string, session: SessionUse
   if (session.role === "USER" && session.username !== username) {
     throw new Error("Недостатньо прав")
   }
-  const documents = await prisma.document.findMany({
-    where: { authorId: target.id },
+  const exports = await prisma.exportedFile.findMany({
+    where: { userId: target.id },
     include: { template: true },
     orderBy: { createdAt: "desc" },
     take: 50,
   })
-  return { user: target, documents }
+  return { user: target, exports }
 }
 
 export async function createUser(

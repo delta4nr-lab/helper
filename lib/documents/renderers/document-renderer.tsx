@@ -33,7 +33,7 @@ export function DocumentRenderer({ templateId, data, personnelLabel, authorLabel
         {headerHtml && <div className="mb-4 text-right text-[11px] leading-tight text-zinc-600" dangerouslySetInnerHTML={{ __html: headerHtml }} />}
         <div className="my-4 text-center text-[12px] font-semibold tracking-widest">РАПОРТ</div>
         {bodyHtml ? (
-          <div className="prose prose-sm max-w-none text-justify" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+          <div className="document-preview-content prose prose-sm max-w-none text-justify" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
         ) : (
           <p className="text-justify">Прошу розглянути рапорт...</p>
         )}

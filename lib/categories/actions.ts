@@ -65,9 +65,9 @@ export async function toggleCategoryAction(id: string, isActive: boolean): Promi
 export async function deleteCategoryAction(id: string): Promise<CategoryResult> {
   try {
     await requireAdmin()
-    const category = await prisma.category.findUnique({ where: { id }, include: { _count: { select: { templates: true, documents: true } } } })
+    const category = await prisma.category.findUnique({ where: { id }, include: { _count: { select: { templates: true } } } })
     if (!category) return { ok: false, message: "Категорію не знайдено" }
-    if (category._count.templates || category._count.documents) return { ok: false, message: "Категорію з шаблонами або документами не можна видалити. Деактивуйте її." }
+    if (category._count.templates) return { ok: false, message: "Категорію з шаблонами не можна видалити. Деактивуйте її." }
     await prisma.category.delete({ where: { id } })
     revalidatePath("/admin")
     revalidatePath("/templates")
