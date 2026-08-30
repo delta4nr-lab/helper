@@ -23,21 +23,22 @@ async function requireAdmin() {
   return session?.user?.id && session.user.role === "ADMIN" ? session.user.id : null
 }
 
-// Видобуває поля (key + label) з вмісту шаблону. Label береться з data-label
-// (як автор задав у редакторі), інакше fallback на key.
-function fieldEntries(data: TemplateMutation): { key: string; label: string }[] {
+// Видобуває поля (key + label + type) з вмісту шаблону. Label береться з data-label,
+// type — з data-field-type (text | signature | person | position), інакше fallback на key/"text".
+function fieldEntries(data: TemplateMutation): { key: string; label: string; type: string }[] {
   const content = `${data.headerTemplate}\n${data.bodyTemplate}\n${data.footerTemplate}`
-  const entries: { key: string; label: string }[] = []
+  const entries: { key: string; label: string; type: string }[] = []
   const seen = new Set<string>()
 
-  // Поля, вставлені через редактор: <span data-field-key="..." data-label="...">
+  // Поля, вставлені через редактор: <span data-field-key="..." data-label="..." data-field-type="...">
   const spanRe = /<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>[\s\S]*?<\/span>/gi
   for (const match of content.matchAll(spanRe)) {
     const key = match[1]
     if (seen.has(key)) continue
     seen.add(key)
     const labelMatch = match[0].match(/data-label=["']([^"']*)["']/)
-    entries.push({ key, label: labelMatch ? labelMatch[1] : key })
+    const typeMatch = match[0].match(/data-field-type=["'](\w+)["']/)
+    entries.push({ key, label: labelMatch ? labelMatch[1] : key, type: typeMatch ? typeMatch[1] : "text" })
   }
 
   // Інші посилання на ключі: {{key}} або data-field-key без span
@@ -45,13 +46,13 @@ function fieldEntries(data: TemplateMutation): { key: string; label: string }[] 
     const key = match[1]
     if (seen.has(key)) continue
     seen.add(key)
-    entries.push({ key, label: key })
+    entries.push({ key, label: key, type: "text" })
   }
   for (const match of content.matchAll(/data-field-key=["'](\w+)["']/g)) {
     const key = match[1]
     if (seen.has(key)) continue
     seen.add(key)
-    entries.push({ key, label: key })
+    entries.push({ key, label: key, type: "text" })
   }
 
   return entries
@@ -102,7 +103,7 @@ export async function createTemplateAction(data: {
         bodyTemplate: data.bodyTemplate,
         footerTemplate: data.footerTemplate,
         createdById: userId,
-        fieldsConfig: { create: keys.map((field, sortOrder) => ({ key: field.key, label: field.label, type: "text", sortOrder })) },
+        fieldsConfig: { create: keys.map((field, sortOrder) => ({ key: field.key, label: field.label, type: field.type, sortOrder })) },
       },
     })
   } catch {
@@ -131,7 +132,7 @@ export async function updateTemplateAction(templateId: string, data: TemplateMut
         data: { categoryId: category.id, categorySlug: category.slug, title, description: data.description.trim(), headerTemplate: data.headerTemplate, bodyTemplate: data.bodyTemplate, footerTemplate: data.footerTemplate, paper, fields: keys.length },
       })
       await tx.templateField.deleteMany({ where: { templateId } })
-      if (keys.length) await tx.templateField.createMany({ data: keys.map((field, sortOrder) => ({ templateId, key: field.key, label: field.label, type: "text", sortOrder })) })
+      if (keys.length) await tx.templateField.createMany({ data: keys.map((field, sortOrder) => ({ templateId, key: field.key, label: field.label, type: field.type, sortOrder })) })
     })
   } catch {
     return { ok: false, message: "Не вдалося оновити шаблон. Перевірте дані та спробуйте ще раз." }

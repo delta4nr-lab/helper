@@ -23,6 +23,11 @@ export const FieldExtension = Node.create({
         parseHTML: (el) => el.getAttribute("data-label"),
         renderHTML: (attrs) => ({ "data-label": attrs.label }),
       },
+      type: {
+        default: "text",
+        parseHTML: (el) => el.getAttribute("data-field-type") || "text",
+        renderHTML: (attrs) => (attrs.type && attrs.type !== "text" ? { "data-field-type": attrs.type } : {}),
+      },
     }
   },
 
@@ -33,12 +38,25 @@ export const FieldExtension = Node.create({
   renderHTML({ node, HTMLAttributes }) {
     const key = node.attrs.fieldKey as string
     const label = (node.attrs.label as string) || key
+    const type = (node.attrs.type as string) || "text"
+    // Різний колір чіпа залежно від типу поля (підпис / звання / ПІБ / посада)
+    const typeClass =
+      type === "signature"
+        ? " field-chip--signature"
+        : type === "rank"
+          ? " field-chip--rank"
+          : type === "person"
+            ? " field-chip--person"
+            : type === "position"
+              ? " field-chip--position"
+              : ""
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-field-key": key,
         "data-label": label,
-        class: "field-chip",
+        "data-field-type": type,
+        class: `field-chip${typeClass}`,
         title: `${label} — {{${key}}}`,
         contenteditable: "false",
       }),

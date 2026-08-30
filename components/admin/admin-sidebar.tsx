@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Folder, LayoutDashboard, Settings, Shield, Users } from "lucide-react"
+import { Folder, LayoutDashboard, Settings, Shield, Users, UsersRound } from "lucide-react"
 
 export function AdminSidebar() {
   return (
@@ -27,6 +27,13 @@ export function AdminSidebar() {
         >
           <Users className="size-4" />
           Користувачі
+        </Link>
+        <Link
+          href="/admin/personnel"
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <UsersRound className="size-4" />
+          Штат
         </Link>
         <Link
           href="/admin/categories"

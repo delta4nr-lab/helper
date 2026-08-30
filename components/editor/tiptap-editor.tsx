@@ -27,6 +27,10 @@ import {
   Ruler,
   Equal,
   Maximize2,
+  Signature,
+  BriefcaseBusiness,
+  BadgeCheck,
+  Contact,
 } from "lucide-react"
 
 import { FieldExtension } from "@/lib/documents/editor/field-extension"
@@ -243,6 +247,25 @@ function setTableWidthPercent(editor: NonNullable<ReturnType<typeof useEditor>>,
 // ── Styled Table ─────────────────────────────────────────────────────────────
 // Стандартний "червоний рядок" 1.25см ≈ 47px
 const PARAGRAPH_INDENT_PX = 47
+
+type FieldType = "text" | "signature" | "rank" | "person" | "position"
+
+// Вставляє спеціальне поле (підпис / звання+прізвище / посада) з унікальним ключем:
+// signature_1, signature_2, person_1, position_1 …
+function insertTypedField(editor: NonNullable<ReturnType<typeof useEditor>>, type: Exclude<FieldType, "text">, label: string) {
+  const html = editor.getHTML()
+  let max = 0
+  for (const match of html.matchAll(/<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>/gi)) {
+    const typeMatch = match[0].match(/data-field-type=["'](\w+)["']/)
+    if (typeMatch && typeMatch[1] === type) {
+      const num = parseInt((match[1].match(/(\d+)$/) || [])[1] || "0", 10)
+      if (Number.isFinite(num)) max = Math.max(max, num)
+    }
+  }
+  const key = `${type}_${max + 1}`
+  const nextLabel = max === 0 ? label : `${label} ${max + 1}`
+  editor.chain().focus().insertContent({ type: "field", attrs: { fieldKey: key, label: nextLabel, type } }).run()
+}
 
 function hasParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>): boolean {
   try {
@@ -620,6 +643,46 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
             }}
           >
             <Plus className="size-3" /> Поле
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            title="Місце для підпису (пізніше обирається людина)"
+            onClick={() => insertTypedField(editor, "signature", "Підпис")}
+          >
+            <Signature className="size-3" /> Підпис
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            title="Звання людини"
+            onClick={() => insertTypedField(editor, "rank", "Звання")}
+          >
+            <BadgeCheck className="size-3" /> Звання
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            title="Прізвище, імʼя, по батькові"
+            onClick={() => insertTypedField(editor, "person", "ПІБ")}
+          >
+            <Contact className="size-3" /> ПІБ
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            title="Посада людини"
+            onClick={() => insertTypedField(editor, "position", "Посада")}
+          >
+            <BriefcaseBusiness className="size-3" /> Посада
           </Button>
         </div>
       </div>

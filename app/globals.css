@@ -155,6 +155,27 @@
     box-shadow: 0 0 0 1px #fde68a; /* ring-amber-200 */
     vertical-align: middle;
 }
+/* Типові варіанти чіпів: підпис (sky), звання (orange), ПІБ (green), посада (purple) */
+.field-chip--signature {
+    background: #e0f2fe;
+    color: #0c4a6e;
+    box-shadow: 0 0 0 1px #bae6fd;
+}
+.field-chip--rank {
+    background: #ffedd5;
+    color: #7c2d12;
+    box-shadow: 0 0 0 1px #fed7aa;
+}
+.field-chip--person {
+    background: #dcfce7;
+    color: #14532d;
+    box-shadow: 0 0 0 1px #bbf7d0;
+}
+.field-chip--position {
+    background: #f3e8ff;
+    color: #581c87;
+    box-shadow: 0 0 0 1px #e9d5ff;
+}
 
 .tiptap .tableWrapper {
     overflow-x: auto;

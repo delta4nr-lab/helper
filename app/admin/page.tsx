@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { FileText, Folder, Users } from "lucide-react"
+import { FileText, Folder, Users, UsersRound } from "lucide-react"
 
 import { auth } from "@/auth"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
@@ -134,6 +134,15 @@ export default async function AdminPage() {
               >
                 <Folder className="size-4" />
                 Категорії
+              </Button>
+
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link href="/admin/personnel" />}
+              >
+                <UsersRound className="size-4" />
+                Штат
               </Button>
 
               <Button

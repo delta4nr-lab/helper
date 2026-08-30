@@ -44,16 +44,17 @@ model Profile {
 }
 
 model Personnel {
-  id         String   @id @default(cuid())
-  lastName   String   // прізвище
-  firstName  String   // ім'я
-  middleName String?  // по батькові
-  rank       String // звання
-  position   String   // посада
-  unit       String   // підрозділ (А1234, Штаб)
-  status     String   @default("в строю") // в строю | відрядження | відпустка
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id @default(cuid())
+  lastName      String   // прізвище
+  firstName     String   // ім'я
+  middleName    String?  // по батькові
+  rank          String // звання
+  position      String   // посада
+  unit          String?  // підрозділ (необов'язково)
+  status        String   @default("в строю") // в строю | відрядження | відпустка
+  signaturePath String?  // шлях до фото підпису (public/signature/...)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
 
   @@index([lastName, firstName])
