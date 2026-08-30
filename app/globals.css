@@ -134,6 +134,127 @@
     border-collapse: collapse;
     table-layout: fixed;
     width: 100%;
+    max-width: 100%;
+}
+/* Таблиці з фіксованою шириною показуємо так, як вони будуть експортовані (1:1), а не розтягуємо на 100% */
+.tiptap table[data-table-width="fixed"],
+.document-preview-content table[data-table-width="fixed"] {
+    width: auto;
+}
+
+/* Чіп поля (місце для вводу даних) — ізольований стиль, не залежить від глобальних утиліт (напр. .inline-flex) */
+.field-chip {
+    white-space: nowrap;
+    border-radius: 0.25rem;
+    background: #fef3c7; /* amber-100 */
+    padding: 0.125rem 0.375rem; /* py-0.5 px-1.5 */
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1;
+    color: #78350f; /* amber-900 */
+    box-shadow: 0 0 0 1px #fde68a; /* ring-amber-200 */
+    vertical-align: middle;
+}
+
+.tiptap .tableWrapper {
+    overflow-x: auto;
+    margin: 0.75rem 0;
+}
+
+.tiptap .column-resize-handle {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: hsl(var(--primary) / 0.35);
+    pointer-events: none;
+    z-index: 10;
+}
+
+.tiptap table .selectedCell {
+    background: hsl(var(--primary) / 0.08);
+}
+
+/* A4 page — завжди світлий аркуш, незалежно від теми додатка */
+.a4-page-outer {
+    scrollbar-width: thin;
+}
+
+.a4-paper {
+    box-sizing: border-box;
+    color-scheme: light;
+    background: white;
+    color: #18181b; /* zinc-900 */
+}
+
+/* Форсуємо світлу палітру всередині білого аркуша — щоб не було білий-на-білому в темній темі */
+.a4-paper .tiptap,
+.a4-paper .ProseMirror,
+.a4-paper .document-preview-content,
+.a4-paper .prose {
+    color: #18181b !important;
+    --tw-prose-body: #18181b !important;
+    --tw-prose-headings: #18181b !important;
+    --tw-prose-lead: #27272a !important;
+    --tw-prose-links: #2563eb !important;
+    --tw-prose-bold: #18181b !important;
+    --tw-prose-counters: #71717a !important;
+    --tw-prose-bullets: #a1a1aa !important;
+    --tw-prose-hr: #e4e4e7 !important;
+    --tw-prose-quotes: #18181b !important;
+    --tw-prose-quote-borders: #e4e4e7 !important;
+    --tw-prose-captions: #71717a !important;
+    --tw-prose-code: #18181b !important;
+    --tw-prose-pre-code: #18181b !important;
+    --tw-prose-pre-bg: #f4f4f5 !important;
+    --tw-prose-th-borders: #a1a1aa !important;
+    --tw-prose-td-borders: #a1a1aa !important;
+    --tw-prose-invert-body: #18181b !important;
+    --tw-prose-invert-headings: #18181b !important;
+}
+
+.a4-paper p,
+.a4-paper li,
+.a4-paper td,
+.a4-paper th,
+.a4-paper h1,
+.a4-paper h2,
+.a4-paper h3 {
+    color: #18181b !important;
+}
+
+.a4-paper .tiptap table,
+.a4-paper .document-preview-content table {
+    color: #18181b;
+}
+
+.a4-paper table {
+    table-layout: fixed;
+}
+
+@media (max-width: 860px) {
+    .a4-page-outer {
+        padding: 8px;
+        justify-content: flex-start;
+    }
+    .a4-paper {
+        transform-origin: top left;
+    }
+}
+
+@media print {
+    .a4-page-outer {
+        background: white !important;
+        padding: 0 !important;
+    }
+    .a4-paper {
+        box-shadow: none !important;
+        ring: 0 !important;
+        width: 100% !important;
+        min-height: auto !important;
+        padding: 20mm 10mm 20mm 20mm !important;
+    }
 }
 
 .tiptap td,

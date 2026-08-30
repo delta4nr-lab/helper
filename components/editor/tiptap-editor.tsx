@@ -4,23 +4,293 @@ import * as React from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
+import Paragraph from "@tiptap/extension-paragraph"
 import { Table, TableKit, TableView } from "@tiptap/extension-table"
 import { FontFamily, FontSize, TextStyle } from "@tiptap/extension-text-style"
 import TextAlign from "@tiptap/extension-text-align"
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Columns3, Eye, EyeOff, Italic, Plus, Rows3, Table2, Trash2, Underline as UnderlineIcon } from "lucide-react"
+import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  Columns3,
+  Eye,
+  EyeOff,
+  IndentIncrease,
+  Italic,
+  Plus,
+  Rows3,
+  Table2,
+  Trash2,
+  Underline as UnderlineIcon,
+  Ruler,
+  Equal,
+  Maximize2,
+} from "lucide-react"
 
 import { FieldExtension } from "@/lib/documents/editor/field-extension"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { A4_PX, A4_PADDING, type PaperKind } from "@/components/editor/a4-page"
 
 type Props = {
-  content: string // HTML або JSON string з {{field_1}} — конвертується в field nodes
+  content: string
   onChange: (html: string) => void
   placeholder?: string
   className?: string
   onFocus?: () => void
+  paper?: PaperKind | string | null
+  // Висота аркуша A4 в редакторі (px). За замовчуванням — повна сторінка.
+  // Менше значення зручно для коротких секцій (напр. «шапка»), щоб не гортати пусте місце.
+  pageHeight?: number
 }
+
+// ── column helpers (prosemirror-tables) ────────────────────────────────────
+function getTableContext(editor: NonNullable<ReturnType<typeof useEditor>>) {
+  const { state } = editor
+  const $from = state.selection.$from
+  let depth = $from.depth
+  while (depth > 0 && $from.node(depth).type.name !== "table") depth -= 1
+  if (depth === 0) return null
+  const tablePos = $from.before(depth)
+  const tableNode = $from.node(depth)
+  return { tablePos, tableNode, $from, depth }
+}
+
+function getSelectedColumnIndex(editor: NonNullable<ReturnType<typeof useEditor>>): number | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { TableMap } = require("@tiptap/pm/tables") as typeof import("@tiptap/pm/tables")
+    const ctx = getTableContext(editor)
+    if (!ctx) return null
+    const map = TableMap.get(ctx.tableNode)
+    // find cell at selection
+    const $anchor = editor.state.selection.$anchor as unknown as { pos: number; start: (d: number) => number; node: (d: number) => { type: { name: string } } }
+    // fallback: use $from depth-1 cell
+    const $from = ctx.$from
+    // find cell depth
+    let cellDepth = $from.depth
+    while (cellDepth > 0 && !["tableCell", "tableHeader", "table_cell", "table_header"].includes($from.node(cellDepth).type.name)) cellDepth -= 1
+    if (cellDepth === 0) {
+      // selection might be CellSelection — try to get first selected cell
+      const sel = editor.state.selection as unknown as { $anchorCell?: { pos: number } }
+      if (sel.$anchorCell) {
+        const tableStart = ctx.tablePos + 1
+        const rel = sel.$anchorCell.pos - tableStart
+        const col = map.colCount(rel)
+        return col
+      }
+      return 0
+    }
+    const cellPos = $from.before(cellDepth)
+    const tableStart = ctx.tablePos + 1
+    const rel = cellPos - tableStart
+    // TableMap has colCount(pos)
+    const col = map.colCount(rel)
+    void $anchor
+    return col
+  } catch {
+    return null
+  }
+}
+
+function readColumnWidthsPx(editor: NonNullable<ReturnType<typeof useEditor>>): number[] {
+  try {
+    const el = editor.view.dom as HTMLElement
+    const table = el.querySelector("table") as HTMLTableElement | null
+    if (!table) return []
+    const cols = table.querySelectorAll("col")
+    if (cols.length > 0) {
+      return Array.from(cols).map((c) => {
+        const w = (c as HTMLElement).style.width
+        if (w.endsWith("px")) return Math.round(parseFloat(w))
+        if (w.endsWith("pt")) return Math.round(parseFloat(w) * 1.333)
+        return 0
+      })
+    }
+    // fallback: measure cells first row
+    const firstRow = table.querySelector("tr")
+    if (firstRow) {
+      const cells = firstRow.querySelectorAll("td, th")
+      return Array.from(cells).map((cell) => Math.round((cell as HTMLElement).getBoundingClientRect().width))
+    }
+    return []
+  } catch {
+    return []
+  }
+}
+
+function setColumnWidth(editor: NonNullable<ReturnType<typeof useEditor>>, colIndex: number, widthPx: number): boolean {
+  const clamped = Math.max(24, Math.min(600, Math.round(widthPx)))
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { TableMap } = require("@tiptap/pm/tables") as typeof import("@tiptap/pm/tables")
+    const ctx = getTableContext(editor)
+    if (!ctx) return false
+    const { tableNode, tablePos } = ctx
+    const map = TableMap.get(tableNode)
+    if (colIndex < 0 || colIndex >= map.width) return false
+    const cells = map.cellsInRect({ left: colIndex, right: colIndex + 1, top: 0, bottom: map.height })
+    const tr = editor.state.tr
+    const tableStart = tablePos + 1
+    let changed = false
+    for (const rel of cells) {
+      const pos = tableStart + rel
+      const cell = tr.doc.nodeAt(pos)
+      if (!cell) continue
+      // colwidth is array of numbers per colspan
+      const colspan = cell.attrs.colspan as number | undefined
+      const span = colspan ?? 1
+      if (span !== 1) {
+        // merged cell spanning multiple cols — skip or distribute
+        if (span > 1) {
+          // if this cell spans our target col, its colwidth should have entry for that sub-column
+          // prosemirror stores colwidth as array length == colspan, e.g. [100,100] for 2 cols
+          const existing = (cell.attrs.colwidth as number[] | null) ?? null
+          if (existing && existing.length === span) {
+            // which sub-index is our col?
+            // find col of this cell
+            const colOfCell = map.colCount(rel)
+            const sub = colIndex - colOfCell
+            if (sub >= 0 && sub < span) {
+              const next = [...existing]
+              next[sub] = clamped
+              tr.setNodeMarkup(pos, undefined, { ...cell.attrs, colwidth: next })
+              changed = true
+            }
+          } else {
+            // create equal distribution then set
+            const per = Math.round(clamped)
+            const arr = Array.from({ length: span }, () => per)
+            tr.setNodeMarkup(pos, undefined, { ...cell.attrs, colwidth: arr })
+            changed = true
+          }
+        }
+        continue
+      }
+      tr.setNodeMarkup(pos, undefined, { ...cell.attrs, colwidth: [clamped] })
+      changed = true
+    }
+    if (changed) {
+      editor.view.dispatch(tr)
+      return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+function distributeColumnsEqually(editor: NonNullable<ReturnType<typeof useEditor>>, paper?: PaperKind | string | null): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { TableMap } = require("@tiptap/pm/tables") as typeof import("@tiptap/pm/tables")
+    const ctx = getTableContext(editor)
+    if (!ctx) return false
+    const { tableNode, tablePos } = ctx
+    const map = TableMap.get(tableNode)
+    const colCount = map.width
+    if (colCount <= 0) return false
+    const usable = paper === "А4 альбом" ? A4_PX.landscapeUsable : A4_PX.usable
+    const per = Math.floor(usable / colCount)
+    const widths = Array.from({ length: colCount }, (_, i) => (i === colCount - 1 ? usable - per * (colCount - 1) : per))
+    const tr = editor.state.tr
+    const tableStart = tablePos + 1
+    for (let col = 0; col < colCount; col++) {
+      const w = widths[col]!
+      const cells = map.cellsInRect({ left: col, right: col + 1, top: 0, bottom: map.height })
+      for (const rel of cells) {
+        const pos = tableStart + rel
+        const cell = tr.doc.nodeAt(pos)
+        if (!cell) continue
+        const span = (cell.attrs.colspan as number) ?? 1
+        if (span !== 1) continue // merged cells skip for equal distribution — they will be fixed via TableView
+        tr.setNodeMarkup(pos, undefined, { ...cell.attrs, colwidth: [w] })
+      }
+    }
+    editor.view.dispatch(tr)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function setTableWidthPercent(editor: NonNullable<ReturnType<typeof useEditor>>, pct: number | null) {
+  try {
+    const ctx = getTableContext(editor)
+    if (!ctx) return
+    const { tablePos, tableNode } = ctx
+    const nextStyle = pct === null ? null : `width: ${pct}%`
+    const tr = editor.state.tr
+    const newAttrs = { ...tableNode.attrs, style: nextStyle }
+    tr.setNodeMarkup(tablePos, undefined, newAttrs)
+    editor.view.dispatch(tr)
+  } catch {
+    /* noop */
+  }
+}
+
+// ── Styled Table ─────────────────────────────────────────────────────────────
+// Стандартний "червоний рядок" 1.25см ≈ 47px
+const PARAGRAPH_INDENT_PX = 47
+
+function hasParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>): boolean {
+  try {
+    return Boolean(editor.getAttributes("paragraph").textIndent)
+  } catch {
+    return false
+  }
+}
+
+// Вмикає/вимикає абзацний відступ (text-indent → "червоний рядок") на поточному абзаці
+function setParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>, enabled: boolean) {
+  editor.chain().focus().updateAttributes("paragraph", { textIndent: enabled ? `${PARAGRAPH_INDENT_PX}px` : null }).run()
+}
+
+function toggleParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>) {
+  setParagraphIndent(editor, !hasParagraphIndent(editor))
+}
+
+// Розширення Paragraph: зберігає text-indent окремим атрибутом (як TextAlign зберігає text-align),
+// щоб не конфліктувати з вирівнюванням і не перезаписувати style абзацу.
+const ParagraphWithIndent = Paragraph.extend({
+  addAttributes() {
+    return {
+      textIndent: {
+        default: null,
+        parseHTML: (element) => (element as HTMLElement).style.textIndent || null,
+        renderHTML: (attributes) => (attributes.textIndent ? { style: `text-indent: ${attributes.textIndent}` } : {}),
+      },
+    }
+  },
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => {
+        // У таблицях/списках Tab керується іншими розширеннями (перехід по комірках, рівні списку)
+        if (this.editor.isActive("table")) return false
+        if (this.editor.isActive("bulletList") || this.editor.isActive("orderedList")) return false
+        setParagraphIndent(this.editor, true)
+        return true
+      },
+      "Shift-Tab": () => {
+        if (this.editor.isActive("table")) return false
+        if (this.editor.isActive("bulletList") || this.editor.isActive("orderedList")) return false
+        setParagraphIndent(this.editor, false)
+        return true
+      },
+    }
+  },
+})
 
 class StyledTableView extends TableView {
   constructor(...args: ConstructorParameters<typeof TableView>) {
@@ -49,9 +319,33 @@ const StyledTable = Table.extend({
       borderless: {
         default: false,
         parseHTML: (element) => element.getAttribute("data-borderless") === "true",
-        renderHTML: (attributes) => attributes.borderless ? { "data-borderless": "true", class: "table-borderless" } : {},
+        renderHTML: (attributes) => (attributes.borderless ? { "data-borderless": "true", class: "table-borderless" } : {}),
+      },
+      style: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("style"),
+        renderHTML: (attributes) => {
+          const style = attributes.style as string | null | undefined
+          let dataWidth = "auto"
+          if (typeof style === "string") {
+            const match = style.match(/width:\s*([\d.]+)(px|pt|%)/i)
+            if (match) dataWidth = match[2] === "%" ? "percent" : "fixed"
+          }
+          return { ...(style ? { style } : {}), "data-table-width": dataWidth }
+        },
       },
     }
+  },
+  addOptions() {
+    const parent = (this.parent?.() ?? {}) as Record<string, unknown>
+    return {
+      ...parent,
+      resizable: true,
+      handleWidth: 5,
+      cellMinWidth: 40,
+      lastColumnResizable: true,
+      allowTableNodeSelection: false,
+    } as never
   },
   addNodeView() {
     return ({ node, view, HTMLAttributes }) => new StyledTableView(node, this.options.cellMinWidth, view, HTMLAttributes)
@@ -62,9 +356,7 @@ export type TiptapEditorHandle = {
   insertField: (fieldKey: string, label: string) => void
 }
 
-// Конвертує {{field_1}} в <span data-field-key="field_1"> для Tiptap
 function htmlWithFields(html: string): string {
-  // Очищаємо markup, який міг зберегтися зі старої версії редактора.
   const cleaned = html.replace(/\{\{(\w+)\}\}"\s+contenteditable="false">([^<]*?),\s*\{\{\1\}\}/g, '<span data-field-key="$1" data-label="$2">$2</span>')
   const fields: string[] = []
   const protectedHtml = cleaned.replace(/<span\b[^>]*data-field-key=["']\w+["'][^>]*>[\s\S]*?<\/span>/gi, (field) => {
@@ -75,15 +367,24 @@ function htmlWithFields(html: string): string {
   return withNewFields.replace(/__FIELD_NODE_(\d+)__/g, (_, index: string) => fields[Number(index)] ?? "")
 }
 
-export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function TiptapEditor({ content, onChange, placeholder, className, onFocus }, ref) {
+export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function TiptapEditor(
+  { content, onChange, placeholder, className, onFocus, paper, pageHeight },
+  ref
+) {
   const [tableActive, setTableActive] = React.useState(false)
   const [borderlessTable, setBorderlessTable] = React.useState(false)
   const [tablePickerOpen, setTablePickerOpen] = React.useState(false)
   const [tableHover, setTableHover] = React.useState({ rows: 2, cols: 2 })
+  const [selectedCol, setSelectedCol] = React.useState<number | null>(null)
+  const [colWidthInput, setColWidthInput] = React.useState("")
+  const [colCount, setColCount] = React.useState(0)
+  const [paragraphIndent, setParagraphIndent] = React.useState(false)
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ horizontalRule: false }),
+      StarterKit.configure({ horizontalRule: false, paragraph: false }),
+      ParagraphWithIndent,
       TableKit.configure({ table: false }),
       StyledTable,
       TextStyle,
@@ -95,24 +396,42 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
     ],
     content: htmlWithFields(content || "<p></p>"),
     onUpdate: ({ editor }) => {
-      // Зберігаємо як HTML з {{field_1}} — для bodyTemplate/headerTemplate
       const html = editor.getHTML()
-      // Конвертуємо field nodes назад в {{field_1}} (вже в HTML, але нормалізуємо)
       onChange(html)
-      setTableActive(editor.isActive("table"))
+      const active = editor.isActive("table")
+      setTableActive(active)
       setBorderlessTable(editor.getAttributes("table").borderless === true)
+      setParagraphIndent(hasParagraphIndent(editor))
+      if (active) {
+        const idx = getSelectedColumnIndex(editor)
+        setSelectedCol(idx)
+        const widths = readColumnWidthsPx(editor)
+        setColCount(widths.length)
+        if (idx !== null && widths[idx] !== undefined) setColWidthInput(String(widths[idx]))
+        else if (widths.length > 0) setColWidthInput(String(widths[0]))
+      }
     },
     onSelectionUpdate: ({ editor }) => {
-      setTableActive(editor.isActive("table"))
+      const active = editor.isActive("table")
+      setTableActive(active)
       setBorderlessTable(editor.getAttributes("table").borderless === true)
+      setParagraphIndent(hasParagraphIndent(editor))
+      if (active) {
+        const idx = getSelectedColumnIndex(editor)
+        setSelectedCol(idx)
+        const widths = readColumnWidthsPx(editor)
+        setColCount(widths.length)
+        if (idx !== null && widths[idx] !== undefined) setColWidthInput(String(widths[idx] ?? ""))
+      } else {
+        setSelectedCol(null)
+      }
     },
     editorProps: {
       attributes: {
-        style: "font-family: 'Times New Roman', serif; font-size: 14px;",
+        style: "font-family: 'Times New Roman', serif; font-size: 18px;",
         class: cn(
           "min-h-[180px] w-full p-3 text-sm leading-relaxed focus:outline-none",
           "prose prose-sm max-w-none dark:prose-invert",
-          "[&_span[data-field-key]]:inline-flex [&_span[data-field-key]]:items-center [&_span[data-field-key]]:rounded [&_span[data-field-key]]:bg-amber-100 [&_span[data-field-key]]:px-1 [&_span[data-field-key]]:py-0.5 [&_span[data-field-key]]:text-xs [&_span[data-field-key]]:font-medium [&_span[data-field-key]]:text-amber-900 [&_span[data-field-key]]:ring-1 [&_span[data-field-key]]:ring-amber-200",
           className
         ),
       },
@@ -121,17 +440,19 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
   const [fieldKey, setFieldKey] = React.useState("")
   const [fieldLabel, setFieldLabel] = React.useState("")
 
-  React.useImperativeHandle(ref, () => ({
-    insertField: (fieldKey, label) => editor?.chain().focus().insertContent({ type: "field", attrs: { fieldKey, label } }).run(),
-  }), [editor])
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      insertField: (fieldKey, label) => editor?.chain().focus().insertContent({ type: "field", attrs: { fieldKey, label } }).run(),
+    }),
+    [editor]
+  )
 
-  // Синхронізація коли content змінюється ззовні (наприклад переключення Tabs)
   React.useEffect(() => {
     if (!editor) return
     const current = editor.getHTML()
     const next = htmlWithFields(content || "<p></p>")
     if (current !== next) {
-      // Не ліземо якщо користувач редагує — тільки якщо зовнішня зміна
       const isFocused = editor.isFocused
       if (!isFocused) editor.commands.setContent(next, { emitUpdate: false } as never)
     }
@@ -159,9 +480,17 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
     setTablePickerOpen(false)
   }
 
+  const applyColWidth = () => {
+    if (selectedCol === null) return
+    const v = Math.round(Number(colWidthInput))
+    if (!Number.isFinite(v) || v < 24 || v > 800) return
+    setColumnWidth(editor, selectedCol, v)
+  }
+
+  const isLandscape = paper === "А4 альбом"
+
   return (
     <div className="overflow-hidden rounded-lg border bg-background" onFocus={onFocus}>
-      {/* Простий тулбар — лише підказка, основна кнопка +Поле зовні */}
       <div className="flex flex-wrap items-center gap-1 border-b bg-muted/30 px-2 py-1 text-xs text-muted-foreground">
         <select
           defaultValue="Times New Roman"
@@ -174,35 +503,57 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
           <option>Calibri</option>
         </select>
         <select
-          defaultValue="14px"
+          defaultValue="18px"
           onChange={(event) => editor.chain().focus().setFontSize(event.target.value).run()}
           className="h-7 rounded border bg-background px-1.5 text-xs text-foreground"
           aria-label="Розмір шрифту"
         >
-          {["10px", "11px", "12px", "14px", "16px", "18px", "20px", "24px"].map((size) => <option key={size}>{size}</option>)}
+          {["10px", "11px", "12px", "14px", "16px", "18px", "20px", "24px"].map((size) => (
+            <option key={size}>{size}</option>
+          ))}
         </select>
         <div className="mx-1 h-5 w-px bg-border" />
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Жирний" onClick={() => editor.chain().focus().toggleBold().run()}><Bold className="size-3.5" /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Курсив" onClick={() => editor.chain().focus().toggleItalic().run()}><Italic className="size-3.5" /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Підкреслений" onClick={() => editor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="size-3.5" /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Ліворуч" onClick={() => editor.chain().focus().setTextAlign("left").run()}><AlignLeft className="size-3.5" /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="По центру" onClick={() => editor.chain().focus().setTextAlign("center").run()}><AlignCenter className="size-3.5" /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Праворуч" onClick={() => editor.chain().focus().setTextAlign("right").run()}><AlignRight className="size-3.5" /></Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="По ширині" onClick={() => editor.chain().focus().setTextAlign("justify").run()}><AlignJustify className="size-3.5" /></Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Жирний" onClick={() => editor.chain().focus().toggleBold().run()}>
+          <Bold className="size-3.5" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Курсив" onClick={() => editor.chain().focus().toggleItalic().run()}>
+          <Italic className="size-3.5" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Підкреслений" onClick={() => editor.chain().focus().toggleUnderline().run()}>
+          <UnderlineIcon className="size-3.5" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Ліворуч" onClick={() => editor.chain().focus().setTextAlign("left").run()}>
+          <AlignLeft className="size-3.5" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="По центру" onClick={() => editor.chain().focus().setTextAlign("center").run()}>
+          <AlignCenter className="size-3.5" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Праворуч" onClick={() => editor.chain().focus().setTextAlign("right").run()}>
+          <AlignRight className="size-3.5" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="По ширині" onClick={() => editor.chain().focus().setTextAlign("justify").run()}>
+          <AlignJustify className="size-3.5" />
+        </Button>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-pressed={paragraphIndent}
+          className={cn(paragraphIndent && "bg-primary/10 text-primary")}
+          aria-label="Абзацний відступ"
+          title="Абзацний відступ (червоний рядок)"
+          onClick={() => toggleParagraphIndent(editor)}
+        >
+          <IndentIncrease className="size-3.5" />
+        </Button>
         <div className="mx-1 h-5 w-px bg-border" />
         <DropdownMenu open={tablePickerOpen} onOpenChange={setTablePickerOpen}>
-          <DropdownMenuTrigger
-            render={<Button type="button" size="icon-sm" variant="ghost" aria-label="Вставити таблицю" title="Вставити таблицю" />}
-          >
+          <DropdownMenuTrigger render={<Button type="button" size="icon-sm" variant="ghost" aria-label="Вставити таблицю" title="Вставити таблицю" />}>
             <Table2 className="size-3.5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-auto p-3">
             <div className="mb-2 text-xs font-medium text-foreground">Вставити таблицю</div>
-            <div
-              className="grid gap-1"
-              style={{ gridTemplateColumns: "repeat(8, 18px)" }}
-              onMouseLeave={() => setTableHover({ rows: 2, cols: 2 })}
-            >
+            <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(8, 18px)" }} onMouseLeave={() => setTableHover({ rows: 2, cols: 2 })}>
               {Array.from({ length: 48 }, (_, index) => {
                 const row = Math.floor(index / 8) + 1
                 const col = (index % 8) + 1
@@ -219,7 +570,9 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
                 )
               })}
             </div>
-            <div className="mt-2 text-center text-xs text-muted-foreground">{tableHover.rows} × {tableHover.cols}</div>
+            <div className="mt-2 text-center text-xs text-muted-foreground">
+              {tableHover.rows} × {tableHover.cols}
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="ml-auto flex items-center gap-1">
@@ -267,73 +620,209 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, Props>(function
             }}
           >
             <Plus className="size-3" /> Поле
-           </Button>
-         </div>
-       </div>
-       {tableActive && (
-         <div className="flex flex-wrap items-center gap-1 border-b bg-sky-50/70 px-2 py-1.5 text-xs text-muted-foreground dark:bg-sky-950/20">
-           <span className="mr-1 font-medium text-foreground">Таблиця</span>
-           <DropdownMenu>
-             <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>Рядок</DropdownMenuTrigger>
-             <DropdownMenuContent align="start" className="min-w-44">
-               <DropdownMenuGroup>
-                 <DropdownMenuLabel>Керування рядками</DropdownMenuLabel>
-                 <DropdownMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}><Rows3 className="size-4" />Додати перед поточним</DropdownMenuItem>
-                 <DropdownMenuItem onClick={() => editor.chain().focus().addRowAfter().run()}><Rows3 className="size-4" />Додати після поточного</DropdownMenuItem>
-                 <DropdownMenuSeparator />
-                 <DropdownMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteRow().run()}><Trash2 className="size-4" />Видалити поточний</DropdownMenuItem>
-               </DropdownMenuGroup>
-             </DropdownMenuContent>
-           </DropdownMenu>
-           <DropdownMenu>
-             <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>Стовпець</DropdownMenuTrigger>
-             <DropdownMenuContent align="start" className="min-w-48">
-               <DropdownMenuGroup>
-                 <DropdownMenuLabel>Керування стовпцями</DropdownMenuLabel>
-                 <DropdownMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}><Columns3 className="size-4" />Додати перед поточним</DropdownMenuItem>
-                 <DropdownMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}><Columns3 className="size-4" />Додати після поточного</DropdownMenuItem>
-                 <DropdownMenuSeparator />
-                 <DropdownMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteColumn().run()}><Trash2 className="size-4" />Видалити поточний</DropdownMenuItem>
-               </DropdownMenuGroup>
-             </DropdownMenuContent>
-           </DropdownMenu>
-           <div className="mx-1 h-5 w-px bg-border" />
-           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" disabled={!editor.can().mergeCells()} onClick={() => editor.chain().focus().mergeCells().run()}>
-             Об’єднати
-           </Button>
-           <Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" disabled={!editor.can().splitCell()} onClick={() => editor.chain().focus().splitCell().run()}>
-             Розділити
-           </Button>
-           <Button type="button" size="sm" variant="outline" aria-pressed={borderlessTable} className={cn("h-7 gap-1 px-2 text-xs", borderlessTable && "border-dashed bg-sky-100/80 dark:bg-sky-900/40")} onClick={toggleTableBorderless}>
-             {borderlessTable ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-             {borderlessTable ? "Межі: приховані" : "Межі: видимі"}
-           </Button>
-           <Button type="button" size="sm" variant="ghost" className="ml-auto h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive" onClick={() => editor.chain().focus().deleteTable().run()}>
-             <Trash2 className="size-3.5" /> Видалити таблицю
-           </Button>
-         </div>
-       )}
-       <EditorContent editor={editor} />
+          </Button>
+        </div>
+      </div>
+      {tableActive && (
+        <div className="flex flex-wrap items-center gap-1 border-b bg-sky-50/70 px-2 py-1.5 text-xs dark:bg-sky-950/20">
+          <span className="mr-1 font-medium text-foreground">Таблиця</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>Рядок</DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-44">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Керування рядками</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}>
+                  <Rows3 className="size-4" />
+                  Додати перед поточним
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().addRowAfter().run()}>
+                  <Rows3 className="size-4" />
+                  Додати після поточного
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteRow().run()}>
+                  <Trash2 className="size-4" />
+                  Видалити поточний
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>Стовпець</DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-48">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Керування стовпцями</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}>
+                  <Columns3 className="size-4" />
+                  Додати перед поточним
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}>
+                  <Columns3 className="size-4" />
+                  Додати після поточного
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => editor.chain().focus().deleteColumn().run()}>
+                  <Trash2 className="size-4" />
+                  Видалити поточний
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="mx-1 h-5 w-px bg-border" />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            disabled={!editor.can().mergeCells()}
+            onClick={() => editor.chain().focus().mergeCells().run()}
+          >
+            Об’єднати
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            disabled={!editor.can().splitCell()}
+            onClick={() => editor.chain().focus().splitCell().run()}
+          >
+            Розділити
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-pressed={borderlessTable}
+            className={cn("h-7 gap-1 px-2 text-xs", borderlessTable && "border-dashed bg-sky-100/80 dark:bg-sky-900/40")}
+            onClick={toggleTableBorderless}
+          >
+            {borderlessTable ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            {borderlessTable ? "Межі: приховані" : "Межі: видимі"}
+          </Button>
+          <div className="mx-1 hidden h-5 w-px bg-border sm:block" />
+          <div className="flex items-center gap-1 rounded-md border bg-white px-1.5 py-1 dark:bg-zinc-900">
+            <Ruler className="size-3.5 text-muted-foreground" />
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              {colCount > 0 ? `Стовпець ${selectedCol !== null ? selectedCol + 1 : 1}/${colCount}` : "Стовпець"}
+            </span>
+            <input
+              value={colWidthInput}
+              onChange={(e) => setColWidthInput(e.target.value.replace(/[^0-9.]/g, ""))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applyColWidth()
+              }}
+              placeholder="px"
+              className="h-6 w-16 rounded border bg-background px-1.5 text-xs text-foreground outline-none focus:border-primary"
+              aria-label="Ширина стовпця в пікселях"
+              title="Ширина стовпця (px) — натисніть Enter"
+            />
+            <span className="text-xs text-muted-foreground">px</span>
+            <Button type="button" size="icon-sm" variant="ghost" className="size-6" onClick={applyColWidth} title="Застосувати ширину">
+              <Plus className="size-3" />
+            </Button>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => distributeColumnsEqually(editor, paper)}
+            title={`Розподілити рівномірно по ${A4_PX.usable}px (ширина друку A4)`}
+          >
+            <Equal className="size-3.5" /> Рівномірно
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs" />}>
+              <Maximize2 className="size-3.5" /> Ширина
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-40">
+              <DropdownMenuLabel>Ширина таблиці</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setTableWidthPercent(editor, 100)}>100% (на всю сторінку)</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTableWidthPercent(editor, null)}>Авто (за вмістом)</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive"
+            onClick={() => editor.chain().focus().deleteTable().run()}
+          >
+            <Trash2 className="size-3.5" /> Видалити таблицю
+          </Button>
+        </div>
+      )}
+      {tableActive && (
+        <div className="flex items-center gap-1.5 border-b bg-amber-50 px-2 py-1 text-[11px] text-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+          <Ruler className="size-3" /> Потягніть межу між комірками щоб змінити ширину, або введіть px вище. Ширина друку {paper === "А4 альбом" ? "А4 альбом" : "А4"}:{" "}
+          {paper === "А4 альбом" ? A4_PX.landscapeUsable : A4_PX.usable}px ({Math.round((paper === "А4 альбом" ? A4_PX.landscapeUsable : A4_PX.usable) / 3.78)}мм).
+        </div>
+      )}
+      <div
+        className={cn(paper ? "a4-page-outer bg-zinc-100 dark:bg-zinc-900 p-2 sm:p-4" : "")}
+        style={paper ? { overflow: "auto" } : undefined}
+      >
+        <div
+          className={cn(paper ? "a4-paper bg-white shadow-sm ring-1 ring-black/5" : "")}
+          style={
+            paper
+              ? {
+                  width: isLandscape ? A4_PX.landscapeWidth : A4_PX.width,
+                  minHeight: pageHeight ?? (isLandscape ? A4_PX.landscapeHeight : A4_PX.height),
+                  padding: A4_PADDING,
+                  boxSizing: "border-box",
+                  maxWidth: "100%",
+                  margin: "0 auto",
+                }
+              : undefined
+          }
+        >
+          <EditorContent editor={editor} />
+        </div>
+      </div>
     </div>
   )
 })
 
 // A4 превʼю — як у Word, Times New Roman, з заміною {{field_1}}
-export function TiptapPreview({ html, data }: { html: string; data: Record<string, unknown> }) {
+export function TiptapPreview({ html, data, paper }: { html: string; data: Record<string, unknown>; paper?: PaperKind | string | null }) {
   const rendered = React.useMemo(() => {
     let out = html || ""
+    // Збираємо назви полів (label), щоб у порожніх місцях показувати назву замість ключа
+    const labels: Record<string, string> = {}
+    out = out.replace(/<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>[\s\S]*?<\/span>/gi, (match, key: string) => {
+      const labelMatch = match.match(/data-label=["']([^"']*)["']/)
+      labels[key] = labelMatch ? labelMatch[1] : key
+      return `{{${key}}}`
+    })
     out = out.replace(/\{\{(\w+)\}\}/g, (_, key) => {
       const v = data[key]
-      if (v === undefined || v === null || v === "") return `<span class="rounded bg-amber-100 px-1 py-0.5 text-amber-900 ring-1 ring-amber-200">{{${key}}}</span>`
-      return `<span class="rounded bg-amber-100 px-1 font-medium text-amber-900">${String(v)}</span>`
+      if (v === undefined || v === null || v === "") return `<span class="field-chip">${labels[key] ?? key}</span>`
+      return `<span class="field-chip">${String(v)}</span>`
     })
+    // Пробіли навколо чіпа → нерозривні, щоб justify не розтягував їх (не було великого відступу зліва)
+    out = out
+      .replace(/\s+(?=<span[^>]*class="[^"]*field-chip)/gi, "&nbsp;")
+      .replace(/(<span[^>]*class="[^"]*field-chip[^"]*">[\s\S]*?<\/span>)\s+/gi, "$1&nbsp;")
     return out
   }, [html, data])
 
+  const isLandscape = paper === "А4 альбом"
   return (
-    <div className="mx-auto max-w-[720px] bg-white p-8 text-[13px] leading-relaxed text-zinc-900 shadow-sm ring-1 ring-black/5" style={{ fontFamily: "Times New Roman, serif" }}>
+    <div
+      className="a4-paper mx-auto bg-white text-[13px] leading-relaxed text-zinc-900 shadow-sm ring-1 ring-black/5"
+      style={{
+        fontFamily: "Times New Roman, serif",
+        width: isLandscape ? A4_PX.landscapeWidth : A4_PX.width,
+        minHeight: isLandscape ? A4_PX.landscapeHeight : A4_PX.height,
+        padding: A4_PADDING,
+        boxSizing: "border-box",
+        maxWidth: "100%",
+      }}
+    >
       {/* eslint-disable-next-line react/no-danger */}
-       <div dangerouslySetInnerHTML={{ __html: rendered }} className="document-preview-content prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed" />
+      <div dangerouslySetInnerHTML={{ __html: rendered }} className="document-preview-content prose prose-sm max-w-none prose-p:my-2 prose-p:leading-relaxed" style={{ fontSize: "18px" }} />
     </div>
   )
 }

@@ -257,6 +257,7 @@ export default async function TemplateDetailPage({
               id: tpl.id,
               title: tpl.title,
               categorySlug: tpl.categorySlug,
+              paper: (tpl as { paper?: string | null }).paper ?? "А4",
               headerTemplate:
                 (tpl as { headerTemplate?: string | null }).headerTemplate ??
                 null,

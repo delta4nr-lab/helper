@@ -38,7 +38,7 @@ export const FieldExtension = Node.create({
       mergeAttributes(HTMLAttributes, {
         "data-field-key": key,
         "data-label": label,
-        class: "inline-flex items-center rounded bg-amber-100 px-1 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-amber-200",
+        class: "field-chip",
         title: `${label} — {{${key}}}`,
         contenteditable: "false",
       }),

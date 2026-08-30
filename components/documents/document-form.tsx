@@ -54,6 +54,7 @@ type Props = {
     headerTemplate?: string | null
     bodyTemplate?: string | null
     footerTemplate?: string | null
+    paper?: string | null
   }
   fields: FieldConfig[]
   personnel: Personnel[]
@@ -64,7 +65,7 @@ export function DocumentForm({ template, fields, personnel }: Props) {
   const schema = getDocumentSchema(template.id)?.schema
 
   const form = useForm<Record<string, unknown>>({
-    resolver: schema ? (zodResolver(schema) as never) : undefined,
+    resolver: schema ? (zodResolver(schema as unknown as never) as never) : undefined,
     defaultValues: {
       personnelId: "",
       documentType: "щорічна",
@@ -143,8 +144,9 @@ export function DocumentForm({ template, fields, personnel }: Props) {
     }
   }
 
-  function onInvalid(errors: Record<string, { message?: unknown }>) {
-    const invalidFields = Object.keys(errors)
+  function onInvalid(errors: unknown) {
+    const e = errors as Record<string, { message?: unknown }>
+    const invalidFields = Object.keys(e as object)
       .map((key) => fields.find((field) => field.key === key)?.label ?? key)
       .join(", ")
     setServerMessage({
@@ -387,10 +389,11 @@ export function DocumentForm({ template, fields, personnel }: Props) {
               {template.headerTemplate || template.bodyTemplate ? "· Word" : ""}
             </span>
           </CardHeader>
-          <CardContent className="bg-white p-0 dark:bg-zinc-900">
+          <CardContent className="overflow-auto bg-zinc-100 p-2 dark:bg-zinc-900 sm:p-3">
             <DocumentRenderer
               templateId={template.id}
               data={previewData}
+              paper={template.paper}
               personnelLabel={
                 selectedPersonnel
                   ? `${selectedPersonnel.lastName} ${selectedPersonnel.firstName} ${selectedPersonnel.middleName ?? ""}`.trim()

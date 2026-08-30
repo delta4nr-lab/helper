@@ -2,9 +2,10 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, ChevronDown, ChevronUp, FileCog, FileText, PanelBottom, PanelTop, Plus } from "lucide-react"
+import { ArrowLeft, ChevronDown, ChevronUp, FileCog, FileText, PanelBottom, PanelTop, Plus, Scissors } from "lucide-react"
 
 import { TiptapEditor } from "@/components/editor/tiptap-editor"
+import { A4_PX } from "@/components/editor/a4-page"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -14,7 +15,21 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { createTemplateAction, updateTemplateAction } from "@/lib/documents/actions"
 
 type Category = { slug: string; title: string }
-type TemplateInitial = { title: string; categorySlug: string; description: string; header: string; body: string; footer: string }
+type TemplateInitial = { title: string; categorySlug: string; description: string; header: string; body: string; footer: string; paper?: string }
+
+// Візуальний «розрив сторінки» — показує, що секція є частиною однієї сторінки A4
+function PageBreak({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+      <div className="h-px flex-1 border-t-2 border-dashed border-border" />
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Scissors className="size-3.5" />
+        {label}
+      </span>
+      <div className="h-px flex-1 border-t-2 border-dashed border-border" />
+    </div>
+  )
+}
 
 export function TemplateForm({ categories, mode = "create", templateId, initial }: { categories: Category[]; mode?: "create" | "edit"; templateId?: string; initial?: TemplateInitial }) {
   const router = useRouter()
@@ -24,7 +39,11 @@ export function TemplateForm({ categories, mode = "create", templateId, initial 
   const [parametersOpen, setParametersOpen] = React.useState(true)
   const [pending, startTransition] = React.useTransition()
   const [message, setMessage] = React.useState<string | null>(null)
-  const [form, setForm] = React.useState(initial ? { title: initial.title, categorySlug: initial.categorySlug, description: initial.description } : { title: "", categorySlug: categories[0]?.slug ?? "", description: "" })
+  const [form, setForm] = React.useState(
+    initial
+      ? { title: initial.title, categorySlug: initial.categorySlug, description: initial.description, paper: (initial.paper as string) ?? "А4" }
+      : { title: "", categorySlug: categories[0]?.slug ?? "", description: "", paper: "А4" }
+  )
 
   function update(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -38,10 +57,10 @@ export function TemplateForm({ categories, mode = "create", templateId, initial 
     event.preventDefault()
     setMessage(null)
     startTransition(async () => {
-       const payload = { ...form, headerTemplate: content.header, bodyTemplate: content.body, footerTemplate: content.footer }
-       const result = mode === "edit" && templateId ? await updateTemplateAction(templateId, payload) : await createTemplateAction(payload)
-       setMessage(result.message)
-       if (result.ok) router.push(mode === "edit" ? "/admin/templates" : `/templates/${form.categorySlug}/${result.templateId}`)
+      const payload = { ...form, headerTemplate: content.header, bodyTemplate: content.body, footerTemplate: content.footer, paper: form.paper }
+      const result = mode === "edit" && templateId ? await updateTemplateAction(templateId, payload as never) : await createTemplateAction(payload as never)
+      setMessage(result.message)
+      if (result.ok) router.push(mode === "edit" ? "/admin/templates" : `/templates/${form.categorySlug}/${result.templateId}`)
     })
   }
 
@@ -61,7 +80,8 @@ export function TemplateForm({ categories, mode = "create", templateId, initial 
         </CardHeader>
         {parametersOpen && <CardContent className="grid gap-x-8 gap-y-7 border-t bg-muted/10 px-6 py-7 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2 lg:col-span-2"><Label htmlFor="title">Назва шаблону <span className="text-destructive">*</span></Label><Input id="title" required value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="Наприклад, рапорт на відпустку" className="h-10 bg-background" /><p className="text-xs leading-relaxed text-muted-foreground">За цією назвою система автоматично створить адресу шаблону.</p></div>
-          <div className="grid gap-2 lg:col-span-2"><Label htmlFor="category">Категорія <span className="text-destructive">*</span></Label><Select items={categories.map((category) => ({ value: category.slug, label: category.title }))} value={form.categorySlug} onValueChange={(value) => update("categorySlug", value ?? "")}><SelectTrigger id="category" className="h-10 w-full bg-background"><SelectValue placeholder="Оберіть категорію" /></SelectTrigger><SelectContent>{categories.map((category) => <SelectItem key={category.slug} value={category.slug} label={category.title}>{category.title}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-relaxed text-muted-foreground">Допомагає користувачам знайти шаблон у каталозі.</p></div>
+          <div className="grid gap-2"><Label htmlFor="category">Категорія <span className="text-destructive">*</span></Label><Select items={categories.map((category) => ({ value: category.slug, label: category.title }))} value={form.categorySlug} onValueChange={(value) => update("categorySlug", value ?? "")}><SelectTrigger id="category" className="h-10 w-full bg-background"><SelectValue placeholder="Оберіть категорію" /></SelectTrigger><SelectContent>{categories.map((category) => <SelectItem key={category.slug} value={category.slug} label={category.title}>{category.title}</SelectItem>)}</SelectContent></Select><p className="text-xs leading-relaxed text-muted-foreground">Допомагає користувачам знайти шаблон.</p></div>
+          <div className="grid gap-2"><Label htmlFor="paper">Формат аркуша</Label><Select items={[{ value: "А4", label: "А4 — портрет (210×297)" }, { value: "А4 альбом", label: "А4 альбом — ландшафт" }]} value={form.paper} onValueChange={(value) => update("paper", value ?? "А4")}><SelectTrigger id="paper" className="h-10 w-full bg-background"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="А4" label="А4 — портрет">А4 — портрет</SelectItem><SelectItem value="А4 альбом" label="А4 альбом — ландшафт">А4 альбом — ландшафт</SelectItem></SelectContent></Select><p className="text-xs leading-relaxed text-muted-foreground">Впливає на ширину сторінки в редакторі та в Word.</p></div>
           <div className="grid gap-2 lg:col-span-4"><Label htmlFor="description">Короткий опис <span className="font-normal text-muted-foreground">(необовʼязково)</span></Label><Input id="description" value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Для чого використовується цей шаблон" className="h-10 bg-background" /></div>
           {message && <p className="text-sm text-muted-foreground sm:hidden">{message}</p>}
         </CardContent>}
@@ -85,8 +105,13 @@ export function TemplateForm({ categories, mode = "create", templateId, initial 
         </CardHeader>
         <CardContent className="space-y-6 px-6 pb-7">
           {sections.length === 0 ? <div className="flex min-h-[420px] items-center justify-center rounded-xl border border-dashed bg-muted/10 px-6 text-center text-sm text-muted-foreground">Сторінка порожня. Натисніть «Додати», щоб створити перший блок.</div> : sections.map((value) => <section key={value} className="space-y-3 rounded-xl border bg-background p-5 shadow-sm">
-            <h2 className="text-sm font-semibold">{value === "header" ? "Шапка" : value === "body" ? "Тіло документа" : "Підвал"}</h2>
-            <TiptapEditor content={content[value]} onChange={(next) => setContent((current) => ({ ...current, [value]: next }))} placeholder={`Введіть ${value === "header" ? "шапку" : value === "body" ? "тіло документа" : "підвал"}...`} />
+            {value === "footer" && <PageBreak label="Кінець сторінки · разом — одна сторінка A4" />}
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">{value === "header" ? "Шапка" : value === "body" ? "Тіло документа" : "Підвал"}</h2>
+              <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{form.paper === "А4 альбом" ? "А4 альбом · 297×210" : "А4 · 210×297"} · поля 25.4мм</span>
+            </div>
+            <TiptapEditor paper={form.paper as never} content={content[value]} onChange={(next) => setContent((current) => ({ ...current, [value]: next }))} placeholder={`Введіть ${value === "header" ? "шапку" : value === "body" ? "тіло документа" : "підвал"}...`} pageHeight={value === "body" ? undefined : (form.paper === "А4 альбом" ? Math.round(A4_PX.landscapeHeight / 4) : Math.round(A4_PX.height / 4))} />
+            {value === "header" && <PageBreak label="Межа сторінки · далі — тіло документа" />}
           </section>)}
         </CardContent>
        </Card>

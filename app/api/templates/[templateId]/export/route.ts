@@ -56,7 +56,7 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   let buffer: Buffer
   let exportedFile: { id: string }
   try {
-    buffer = await createDocxBuffer({ title, header: template.headerTemplate, body: template.bodyTemplate, footer: template.footerTemplate, data })
+    buffer = await createDocxBuffer({ title, header: template.headerTemplate, body: template.bodyTemplate, footer: template.footerTemplate, data, paper: (template as unknown as { paper?: string | null }).paper ?? "А4" })
     exportedFile = await prisma.exportedFile.create({
       data: { userId, templateId, title, fileName, mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: buffer.length, data: new Uint8Array(buffer) },
       select: { id: true },

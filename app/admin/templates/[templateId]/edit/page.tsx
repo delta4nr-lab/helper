@@ -57,6 +57,7 @@ export default async function EditTemplatePage({
               header: template.headerTemplate ?? "",
               body: template.bodyTemplate ?? "",
               footer: template.footerTemplate ?? "",
+              paper: (template as unknown as { paper?: string }).paper ?? "А4",
             }}
             categories={categories}
           />

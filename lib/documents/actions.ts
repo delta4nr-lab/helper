@@ -15,6 +15,7 @@ type TemplateMutation = {
   headerTemplate: string
   bodyTemplate: string
   footerTemplate: string
+  paper?: string
 }
 
 async function requireAdmin() {
@@ -22,12 +23,38 @@ async function requireAdmin() {
   return session?.user?.id && session.user.role === "ADMIN" ? session.user.id : null
 }
 
-function fieldKeys(data: TemplateMutation) {
+// Видобуває поля (key + label) з вмісту шаблону. Label береться з data-label
+// (як автор задав у редакторі), інакше fallback на key.
+function fieldEntries(data: TemplateMutation): { key: string; label: string }[] {
   const content = `${data.headerTemplate}\n${data.bodyTemplate}\n${data.footerTemplate}`
-  return [...new Set([
-    ...[...content.matchAll(/\{\{(\w+)\}\}/g)].map((match) => match[1]),
-    ...[...content.matchAll(/data-field-key=["'](\w+)["']/g)].map((match) => match[1]),
-  ])]
+  const entries: { key: string; label: string }[] = []
+  const seen = new Set<string>()
+
+  // Поля, вставлені через редактор: <span data-field-key="..." data-label="...">
+  const spanRe = /<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>[\s\S]*?<\/span>/gi
+  for (const match of content.matchAll(spanRe)) {
+    const key = match[1]
+    if (seen.has(key)) continue
+    seen.add(key)
+    const labelMatch = match[0].match(/data-label=["']([^"']*)["']/)
+    entries.push({ key, label: labelMatch ? labelMatch[1] : key })
+  }
+
+  // Інші посилання на ключі: {{key}} або data-field-key без span
+  for (const match of content.matchAll(/\{\{(\w+)\}\}/g)) {
+    const key = match[1]
+    if (seen.has(key)) continue
+    seen.add(key)
+    entries.push({ key, label: key })
+  }
+  for (const match of content.matchAll(/data-field-key=["'](\w+)["']/g)) {
+    const key = match[1]
+    if (seen.has(key)) continue
+    seen.add(key)
+    entries.push({ key, label: key })
+  }
+
+  return entries
 }
 
 export async function createTemplateAction(data: {
@@ -37,6 +64,7 @@ export async function createTemplateAction(data: {
   headerTemplate: string
   bodyTemplate: string
   footerTemplate: string
+  paper?: string
 }): Promise<TemplateActionResult> {
   const userId = await requireAdmin()
   if (!userId) return { ok: false, message: "Недостатньо прав" }
@@ -56,8 +84,9 @@ export async function createTemplateAction(data: {
   const category = await prisma.category.findUnique({ where: { slug: data.categorySlug } })
   if (!category) return { ok: false, message: "Категорію не знайдено" }
 
-  const keys = fieldKeys(data)
+  const keys = fieldEntries(data)
 
+  const paper = data.paper === "А4 альбом" ? "А4 альбом" : "А4"
   try {
     await prisma.template.create({
       data: {
@@ -68,11 +97,12 @@ export async function createTemplateAction(data: {
         fields: keys.length,
         description: data.description.trim(),
         tags: [],
+        paper,
         headerTemplate: data.headerTemplate,
         bodyTemplate: data.bodyTemplate,
         footerTemplate: data.footerTemplate,
         createdById: userId,
-        fieldsConfig: { create: keys.map((key, sortOrder) => ({ key, label: key, type: "text", sortOrder })) },
+        fieldsConfig: { create: keys.map((field, sortOrder) => ({ key: field.key, label: field.label, type: "text", sortOrder })) },
       },
     })
   } catch {
@@ -91,16 +121,17 @@ export async function updateTemplateAction(templateId: string, data: TemplateMut
   if (!title) return { ok: false, message: "Вкажіть назву шаблону" }
   const category = await prisma.category.findUnique({ where: { slug: data.categorySlug } })
   if (!category) return { ok: false, message: "Категорію не знайдено" }
-  const keys = fieldKeys(data)
+  const keys = fieldEntries(data)
 
+  const paper = data.paper === "А4 альбом" ? "А4 альбом" : "А4"
   try {
     await prisma.$transaction(async (tx) => {
       await tx.template.update({
         where: { id: templateId },
-        data: { categoryId: category.id, categorySlug: category.slug, title, description: data.description.trim(), headerTemplate: data.headerTemplate, bodyTemplate: data.bodyTemplate, footerTemplate: data.footerTemplate, fields: keys.length },
+        data: { categoryId: category.id, categorySlug: category.slug, title, description: data.description.trim(), headerTemplate: data.headerTemplate, bodyTemplate: data.bodyTemplate, footerTemplate: data.footerTemplate, paper, fields: keys.length },
       })
       await tx.templateField.deleteMany({ where: { templateId } })
-      if (keys.length) await tx.templateField.createMany({ data: keys.map((key, sortOrder) => ({ templateId, key, label: key, type: "text", sortOrder })) })
+      if (keys.length) await tx.templateField.createMany({ data: keys.map((field, sortOrder) => ({ templateId, key: field.key, label: field.label, type: "text", sortOrder })) })
     })
   } catch {
     return { ok: false, message: "Не вдалося оновити шаблон. Перевірте дані та спробуйте ще раз." }
