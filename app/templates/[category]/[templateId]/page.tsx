@@ -43,6 +43,7 @@ type Personnel = {
   middleName: string | null
   rank: string
   position: string
+  signaturePath: string | null
 }
 
 export const dynamic = "force-dynamic"
@@ -119,7 +120,7 @@ export default async function TemplateDetailPage({
     if (dbTpl) tpl = dbTpl as unknown as TemplateData
     personnel = await prisma.personnel.findMany({
       orderBy: { lastName: "asc" },
-      take: 50,
+      take: 500,
     })
   } catch (e) {
     const msg = (e as Error).message

@@ -23,8 +23,6 @@ export type SessionUser = {
   isActive: boolean
 }
 
-// Заглушка — наступний крок: отримати сесію з cookies (iron-session / jose)
-// Поки передаємо user явно в Server Actions
 export function requireAdmin(session: SessionUser | null) {
   if (!session) throw new Error("Не авторизовано")
   if (!session.isActive) throw new Error("Акаунт деактивовано")
@@ -34,6 +32,36 @@ export function requireAdmin(session: SessionUser | null) {
 export function requireAuth(session: SessionUser | null) {
   if (!session) throw new Error("Не авторизовано")
   if (!session.isActive) throw new Error("Акаунт деактивовано")
+}
+
+// --- Server helpers для App Router (auth() з @/auth) ---
+
+import { auth } from "@/auth"
+
+/** Отримати типізовану сесію або null, без кастів у сторінках */
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const session = await auth()
+  const u = session?.user as unknown as SessionUser | undefined
+  if (!u?.id) return null
+  return {
+    id: u.id,
+    username: u.username,
+    role: u.role,
+    isActive: u.isActive,
+  }
+}
+
+/** Викидає redirect/forbidden на рівні Server Component, якщо не ADMIN */
+export async function requireAdminSession(): Promise<SessionUser> {
+  const user = await getSessionUser()
+  requireAdmin(user)
+  return user!
+}
+
+export async function requireAuthSession(): Promise<SessionUser> {
+  const user = await getSessionUser()
+  requireAuth(user)
+  return user!
 }
 
 // Хелпер для аватара — перша літера логіну (вимога: без файлу)

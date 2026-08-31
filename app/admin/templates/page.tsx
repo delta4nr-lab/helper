@@ -1,6 +1,3 @@
-import { redirect } from "next/navigation"
-
-import { auth } from "@/auth"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
@@ -10,12 +7,6 @@ import { prisma } from "@/lib/db"
 export const dynamic = "force-dynamic"
 
 export default async function AdminTemplatesPage() {
-  const session = await (
-    auth as unknown as () => Promise<{
-      user?: { id?: string; role?: string }
-    } | null>
-  )()
-  if (!session?.user?.id || session.user.role !== "ADMIN") redirect("/")
   const templates = await prisma.template.findMany({
     include: { category: { select: { title: true } } },
     orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],

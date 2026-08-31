@@ -1,6 +1,3 @@
-import { redirect } from "next/navigation"
-
-import { auth } from "@/auth"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { PersonnelManager } from "@/components/admin/personnel-manager"
 import { SiteFooter } from "@/components/site-footer"
@@ -10,8 +7,6 @@ import { prisma } from "@/lib/db"
 export const dynamic = "force-dynamic"
 
 export default async function AdminPersonnelPage() {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  if (!session?.user?.id || session.user.role !== "ADMIN") redirect("/")
   const people = await prisma.personnel.findMany({ orderBy: [{ status: "asc" }, { lastName: "asc" }], take: 500 })
   return (
     <div className="min-h-svh bg-muted/20">

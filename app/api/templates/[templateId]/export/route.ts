@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises"
+import path from "node:path"
 import { NextResponse } from "next/server"
 
 import { auth } from "@/auth"
@@ -12,6 +14,18 @@ type Params = { templateId: string }
 function safeFileName(value: string): string {
   return `${value.replace(/[^\p{L}\p{N}\s-]/gu, "").trim() || "document"}.docx`
 }
+
+function fullName(person: { lastName: string; firstName: string; middleName: string | null }): string {
+  return [person.firstName, person.middleName, person.lastName].filter(Boolean).join(" ")
+}
+
+function mimeFromPath(filePath: string): string {
+  if (filePath.endsWith(".png")) return "image/png"
+  if (filePath.endsWith(".webp")) return "image/webp"
+  return "image/jpeg"
+}
+
+const PERSON_FIELD_TYPES = new Set(["signature", "rank", "person", "position"])
 
 export async function POST(request: Request, { params }: { params: Promise<Params> }) {
   const session = await (auth as unknown as () => Promise<{ user?: { id?: string } } | null>)()
@@ -43,8 +57,38 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   if (typeof data.personnelId === "string" && data.personnelId) {
     const personnel = await prisma.personnel.findUnique({ where: { id: data.personnelId } })
     if (!personnel) return NextResponse.json({ message: "Обраного військовослужбовця не знайдено." }, { status: 400 })
-    personnelLabel = [personnel.lastName, personnel.firstName, personnel.middleName].filter(Boolean).join(" ")
+    personnelLabel = fullName(personnel)
     data.personnelName = personnelLabel
+  }
+
+  // Розв'язуємо спеціальні слоти (підпис/звання/ПІБ/посада): data[key] = id людини зі штату → текст.
+  // Для підпису додатково збираємо файл зображення для вбудовування в DOCX.
+  const signatureImages: Record<string, { name: string; buffer: Buffer; mime: string }> = {}
+  const personCache = new Map<string, Awaited<ReturnType<typeof prisma.personnel.findUnique>>>()
+  for (const field of template.fieldsConfig) {
+    if (!PERSON_FIELD_TYPES.has(field.type)) continue
+    const rawId = data[field.key]
+    if (typeof rawId !== "string" || !rawId) continue
+    let person = personCache.get(rawId)
+    if (!person) {
+      person = await prisma.personnel.findUnique({ where: { id: rawId } })
+      personCache.set(rawId, person)
+    }
+    if (!person) continue
+    if (field.type === "signature") {
+      data[field.key] = fullName(person)
+      if (person.signaturePath && !person.signaturePath.endsWith(".webp")) {
+        try {
+          const filePath = person.signaturePath.replace(/^\//, "")
+          const buffer = await readFile(path.join(process.cwd(), "public", filePath))
+          signatureImages[field.key] = { name: fullName(person), buffer, mime: mimeFromPath(person.signaturePath) }
+        } catch {
+          // файл відсутній — лишаємо лише ім'я
+        }
+      }
+    } else if (field.type === "rank") data[field.key] = person.rank
+    else if (field.type === "person") data[field.key] = fullName(person)
+    else if (field.type === "position") data[field.key] = person.position
   }
 
   const title = templateId === "raport-vidpustka"
@@ -56,7 +100,7 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   let buffer: Buffer
   let exportedFile: { id: string }
   try {
-    buffer = await createDocxBuffer({ title, header: template.headerTemplate, body: template.bodyTemplate, footer: template.footerTemplate, data, paper: (template as unknown as { paper?: string | null }).paper ?? "А4" })
+    buffer = await createDocxBuffer({ title, header: template.headerTemplate, body: template.bodyTemplate, footer: template.footerTemplate, data, paper: (template as unknown as { paper?: string | null }).paper ?? "А4", signatureImages })
     exportedFile = await prisma.exportedFile.create({
       data: { userId, templateId, title, fileName, mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: buffer.length, data: new Uint8Array(buffer) },
       select: { id: true },

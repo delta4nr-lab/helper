@@ -4,13 +4,14 @@ import { PrismaClient } from "@/lib/generated/prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { normalizeDatabaseUrl } from "@/lib/db/connection-string"
 
-// Best practice 2026 (Prisma docs: @prisma/adapter-pg + custom output)
-// Для Prisma Postgres (db.prisma.io) та Next.js App Router — driver adapter
+// Prisma 7 + @prisma/adapter-pg — рекоментований best practice для Next.js App Router та Prisma Postgres
+// Singleton через globalThis щоб уникнути вичерпання з'єднань у dev (HMR)
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) {
+    // Кидаємо зрозумілу помилку — вона має з'явитись у серверних логах, а не як HTML 500 для /api/auth/*
     throw new Error("DATABASE_URL is not set — перевірте .env / .env.local")
   }
   const adapter = new PrismaPg({
@@ -19,17 +20,10 @@ function createPrismaClient() {
   return new PrismaClient({ adapter })
 }
 
-let prismaInstance: PrismaClient | undefined = globalForPrisma.prisma
-if (!prismaInstance) {
-  try {
-    prismaInstance = createPrismaClient()
-  } catch (e) {
-    // Не кидати під час збірки статичних сторінок без БД — даємо змогу fallback на catalog
-    console.warn("[prisma] failed to create client:", (e as Error).message)
-  }
-  if (prismaInstance && process.env.NODE_ENV !== "production") globalForPrisma.prisma = prismaInstance
-}
+export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient()
 
-export const prisma = prismaInstance as PrismaClient
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma
+}
 
 export default prisma

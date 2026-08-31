@@ -24,7 +24,7 @@ function avatarFallback(username: string): string {
 export default async function ProfilePage() {
   const session = await (auth as unknown as () => Promise<{ user?: { id?: string; username?: string; role?: string; name?: string | null } } | null>)()
   if (!session?.user?.id) {
-    redirect("/")
+    redirect("/unauthorized")
   }
 
   const userId = (session.user as unknown as { id: string }).id
@@ -35,7 +35,7 @@ export default async function ProfilePage() {
     include: { profile: true },
   })
 
-  if (!user) redirect("/")
+  if (!user) redirect("/unauthorized")
 
   const exports = await prisma.exportedFile.findMany({
     where: { userId },

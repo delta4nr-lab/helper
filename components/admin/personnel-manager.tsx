@@ -240,7 +240,7 @@ export function PersonnelManager({ initialPeople }: { initialPeople: Person[] })
                     <input
                       id="person-signature"
                       type="file"
-                      accept="image/png,image/jpeg,image/webp"
+                      accept="image/png,image/jpeg"
                       className="hidden"
                       onChange={(e) => {
                         void handleSignatureFile(e.target.files?.[0] ?? null)

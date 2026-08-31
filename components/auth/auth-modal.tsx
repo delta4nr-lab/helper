@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { signIn } from "next-auth/react"
 import { LogIn, Eye, EyeOff, Loader2 } from "lucide-react"
 
@@ -20,6 +21,7 @@ type Props = {
 }
 
 export function AuthModal({ open, onOpenChange }: Props) {
+  const router = useRouter()
   const [username, setUsername] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [show, setShow] = React.useState(false)
@@ -51,18 +53,26 @@ export function AuthModal({ open, onOpenChange }: Props) {
       })
 
       if (res?.error) {
-        setError("Невірний логін або пароль")
+        // Auth.js повертає "CredentialsSignin" для невірних даних та може повернути
+        // помилку мережі якщо /api/auth/* впав з 500 HTML (колись викликало ClientFetchError)
+        if (res.error === "CredentialsSignin") {
+          setError("Невірний логін або пароль")
+        } else {
+          setError("Невірний логін або пароль")
+        }
         return
       }
       if (res?.ok) {
         onOpenChange(false)
         setPassword("")
-        // onOpenChange handles close; session оновиться автоматично
+        // Best practice: оновити Server Components (auth() в RSC) без повного reload
+        router.refresh()
       } else {
         setError("Не вдалося увійти. Спробуйте ще раз.")
       }
     } catch {
-      setError("Помилка з'єднання. Спробуйте ще раз.")
+      // Сюди потрапляє ClientFetchError коли /api/auth повертає HTML замість JSON
+      setError("Помилка з'єднання з сервером авторизації. Перевірте логи сервера.")
     } finally {
       setPending(false)
     }

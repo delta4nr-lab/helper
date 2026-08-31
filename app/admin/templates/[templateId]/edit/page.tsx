@@ -1,6 +1,5 @@
-import { notFound, redirect } from "next/navigation"
+import { notFound } from "next/navigation"
 
-import { auth } from "@/auth"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
@@ -16,12 +15,6 @@ export default async function EditTemplatePage({
 }: {
   params: Promise<Params>
 }) {
-  const session = await (
-    auth as unknown as () => Promise<{
-      user?: { id?: string; role?: string }
-    } | null>
-  )()
-  if (!session?.user?.id || session.user.role !== "ADMIN") redirect("/")
   const { templateId } = await params
   const [template, categories] = await Promise.all([
     prisma.template.findUnique({

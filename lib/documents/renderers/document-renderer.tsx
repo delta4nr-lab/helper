@@ -11,6 +11,24 @@ type Props = {
   bodyTemplate?: string | null
   footerTemplate?: string | null
   paper?: string | null
+  // Для розв'язки спеціальних слотів (підпис / звання / ПІБ / посада) зі штату
+  personnel?: Array<{
+    id: string
+    lastName: string
+    firstName: string
+    middleName: string | null
+    rank: string
+    position: string
+    signaturePath: string | null
+  }>
+  fields?: Array<{ key: string; type: string }>
+}
+
+type PreviewPerson = {
+  name: string
+  rank: string
+  position: string
+  signaturePath: string | null
 }
 
 function escapeHtml(value: string): string {
@@ -25,8 +43,16 @@ function protectFieldSpacing(html: string): string {
     .replace(/(<span[^>]*class="[^"]*field-chip[^"]*">[\s\S]*?<\/span>)\s+/gi, "$1&nbsp;")
 }
 
-function renderWithFields(html: string | null | undefined, data: Record<string, unknown>): string {
+// Порожнє поле → чіп із назвою; заповнене → звичайний текст (як у фінальному документі).
+// Спеціальні слоти (signature/rank/person/position) розв'язуються через штат (personnelMap).
+function renderWithFields(
+  html: string | null | undefined,
+  data: Record<string, unknown>,
+  ctx?: { fieldTypes?: Record<string, string>; personnelMap?: Record<string, PreviewPerson> }
+): string {
   if (!html) return ""
+  const fieldTypes = ctx?.fieldTypes ?? {}
+  const personnelMap = ctx?.personnelMap ?? {}
   // Збираємо назви полів (label), щоб у порожніх місцях показувати назву замість ключа
   const labels: Record<string, string> = {}
   const normalized = html.replace(/<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>[\s\S]*?<\/span>/gi, (match, key: string) => {
@@ -39,26 +65,51 @@ function renderWithFields(html: string | null | undefined, data: Record<string, 
     if (v === undefined || v === null || v === "") {
       return `<span class="field-chip">${escapeHtml(labels[key] ?? key)}</span>`
     }
-    return `<span class="field-chip">${escapeHtml(String(v))}</span>`
+    const type = fieldTypes[key]
+    const person = personnelMap[String(v)]
+    if (type === "signature") {
+      // Лише зображення підпису; без фото — ім'я як заглушка
+      if (person?.signaturePath) {
+        return `<span class="signature-slot"><img class="signature-img" src="${escapeHtml(person.signaturePath)}" alt="підпис" /></span>`
+      }
+      return escapeHtml(person?.name ?? String(v))
+    }
+    if (type === "rank") return escapeHtml(person?.rank ?? String(v))
+    if (type === "person") return escapeHtml(person?.name ?? String(v))
+    if (type === "position") return escapeHtml(person?.position ?? String(v))
+    return escapeHtml(String(v))
   })
 }
 
-export function DocumentRenderer({ templateId, data, personnelLabel, authorLabel, headerTemplate, bodyTemplate, footerTemplate, paper }: Props) {
+export function DocumentRenderer({ templateId, data, personnelLabel, authorLabel, headerTemplate, bodyTemplate, footerTemplate, paper, personnel, fields }: Props) {
   const isLandscape = paper === "А4 альбом"
   const w = isLandscape ? A4_PX.landscapeWidth : A4_PX.width
   const h = isLandscape ? A4_PX.landscapeHeight : A4_PX.height
   // Якщо шаблон має кастомні header/body/footer (створені через Tiptap) — рендеримо їх
   if (headerTemplate || bodyTemplate || footerTemplate) {
     const d = (data as Record<string, unknown>) ?? {}
-    const headerHtml = protectFieldSpacing(renderWithFields(headerTemplate ?? "", d))
-    const bodyHtml = protectFieldSpacing(renderWithFields(bodyTemplate ?? "", d))
-    const footerHtml = protectFieldSpacing(renderWithFields(footerTemplate ?? "", d))
+    const fieldTypes = Object.fromEntries((fields ?? []).map((field) => [field.key, field.type]))
+    const personnelMap: Record<string, PreviewPerson> = Object.fromEntries(
+      (personnel ?? []).map((person) => [
+        person.id,
+        {
+          name: [person.firstName, person.middleName, person.lastName].filter(Boolean).join(" "),
+          rank: person.rank,
+          position: person.position,
+          signaturePath: person.signaturePath ?? null,
+        },
+      ])
+    )
+    const ctx = { fieldTypes, personnelMap }
+    const headerHtml = protectFieldSpacing(renderWithFields(headerTemplate ?? "", d, ctx))
+    const bodyHtml = protectFieldSpacing(renderWithFields(bodyTemplate ?? "", d, ctx))
+    const footerHtml = protectFieldSpacing(renderWithFields(footerTemplate ?? "", d, ctx))
     return (
       <div
         className="a4-paper mx-auto bg-white text-[13px] leading-relaxed text-zinc-900 shadow-sm ring-1 ring-black/5"
         style={{ fontFamily: "Times New Roman, serif", width: w, minHeight: h, padding: A4_PADDING, boxSizing: "border-box", maxWidth: "100%" }}
       >
-        {headerHtml && <div className="mb-4 text-right text-[11px] leading-tight text-zinc-600" dangerouslySetInnerHTML={{ __html: headerHtml }} />}
+        {headerHtml && <div className="mb-4 text-right text-[18px] leading-tight" dangerouslySetInnerHTML={{ __html: headerHtml }} />}
         {bodyHtml ? (
           <div
             className="document-preview-content prose prose-sm max-w-none"
@@ -68,7 +119,7 @@ export function DocumentRenderer({ templateId, data, personnelLabel, authorLabel
         ) : (
           <p className="text-justify">Прошу розглянути рапорт...</p>
         )}
-        {footerHtml && <div className="mt-6 border-t pt-3 text-[11px]" dangerouslySetInnerHTML={{ __html: footerHtml }} />}
+        {footerHtml && <div className="mt-6 border-t pt-3 text-[18px]" dangerouslySetInnerHTML={{ __html: footerHtml }} />}
         {personnelLabel && <div className="mt-4 text-xs text-muted-foreground">Особовий склад: {personnelLabel}</div>}
         {authorLabel && <div className="text-xs text-muted-foreground">Автор: {authorLabel}</div>}
       </div>

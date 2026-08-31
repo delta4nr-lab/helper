@@ -1,8 +1,6 @@
 import Link from "next/link"
-import { redirect } from "next/navigation"
 import { FileText, Folder, Users, UsersRound } from "lucide-react"
 
-import { auth } from "@/auth"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
@@ -20,13 +18,7 @@ import { prisma } from "@/lib/db"
 export const dynamic = "force-dynamic"
 
 export default async function AdminPage() {
-  const session = await (
-    auth as unknown as () => Promise<{
-      user?: { id?: string; role?: string }
-    } | null>
-  )()
-  if (!session?.user?.id || session.user.role !== "ADMIN") redirect("/")
-
+  // Auth перевіряється в app/admin/layout.tsx (middleware + server layout)
   const [usersTotal, exportsTotal, categoriesTotal, templatesTotal] =
     await Promise.all([
       prisma.user.count(),

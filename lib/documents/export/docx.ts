@@ -5,6 +5,7 @@ import {
   BorderStyle,
   Document,
   HeadingLevel,
+  ImageRun,
   Packer,
   Paragraph,
   Table,
@@ -23,7 +24,34 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character)
 }
 
-function replaceFields(html: string, data: Record<string, unknown>): string {
+export type SignatureImage = { name: string; buffer: Buffer; mime: string }
+
+// Визначає розміри зображення (PNG/JPEG) — для підпису під шрифт документа
+function imageSize(buffer: Buffer): { width: number; height: number } {
+  // PNG: після сигнатури (8) + length (4) + "IHDR" (4) йдуть width/height (big-endian)
+  if (buffer.length > 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
+  }
+  // JPEG: шукаємо SOF-маркер
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let i = 2
+    while (i < buffer.length - 8) {
+      if (buffer[i] !== 0xff) {
+        i += 1
+        continue
+      }
+      const marker = buffer[i + 1]
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { width: buffer.readUInt16BE(i + 7), height: buffer.readUInt16BE(i + 5) }
+      }
+      const length = buffer.readUInt16BE(i + 2)
+      i += 2 + length
+    }
+  }
+  return { width: 100, height: 30 }
+}
+
+function replaceFields(html: string, data: Record<string, unknown>, signatureImages?: Record<string, SignatureImage>): string {
   // Збираємо назви полів (label), щоб у порожніх місцях показувати назву замість ключа
   const labels: Record<string, string> = {}
   const normalized = html.replace(/<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>[\s\S]*?<\/span>/gi, (match, key: string) => {
@@ -31,9 +59,12 @@ function replaceFields(html: string, data: Record<string, unknown>): string {
     labels[key] = labelMatch ? labelMatch[1] : key
     return `{{${key}}}`
   })
+  const sigKeys = new Set(Object.keys(signatureImages ?? {}))
   return normalized.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
     const value = data[key]
     if (value === undefined || value === null || value === "") return escapeHtml(labels[key] ?? key)
+    // Підпис: лише зображення (без імені над ним); без зображення — ім'я
+    if (sigKeys.has(key)) return `<img data-sig="${key}" />`
     return escapeHtml(String(value))
   })
 }
@@ -212,7 +243,49 @@ function textIndentFromStyle(style?: string | null): number | undefined {
   return Math.round(dxa)
 }
 
-function cellParagraphsFromHtml(html: string): Paragraph[] {
+// Розбиває абзац навколо <img data-sig> → текст + вбудований зображений підпис
+function signatureParagraphsFromHtml(
+  htmlStr: string,
+  signatureImages: Record<string, SignatureImage> | undefined,
+  fs: number | undefined,
+  ff: string | undefined,
+  alignment?: (typeof AlignmentType)[keyof typeof AlignmentType]
+): Paragraph[] {
+  const parts = htmlStr.split(/<img[^>]*data-sig="([^"]+)"[^>]*\/?>/i)
+  const children: Array<TextRun | ImageRun> = []
+  // Текст (до/після підпису) об'єднуємо в один абзац
+  const textHtml = parts.filter((_, i) => i % 2 === 0).join(" ").trim()
+  if (textHtml) {
+    const $tmp = load(`<div>${textHtml}</div>`, null, false)
+    children.push(...collectTextRuns($tmp("div").first(), $tmp, false, false, false, fs, ff))
+  }
+  // Підпис — плаваюче зображення «перед текстом», справа, не змінює розмір рядка/таблиці
+  for (let i = 1; i < parts.length; i += 2) {
+    const sig = signatureImages?.[parts[i] ?? ""]
+    if (!sig) continue
+    const type = sig.mime === "image/png" ? "png" : "jpg"
+    const size = imageSize(sig.buffer)
+    const targetHeight = 72 // 4em ≈ висота підпису в прев'ю
+    const targetWidth = Math.max(60, Math.round((size.width / (size.height || 1)) * targetHeight))
+    children.push(
+      new ImageRun({
+        data: sig.buffer,
+        transformation: { width: targetWidth, height: targetHeight },
+        type,
+        floating: {
+          horizontalPosition: { relative: "margin", align: "right" },
+          verticalPosition: { relative: "line", align: "center" },
+          allowOverlap: true,
+          behindDocument: false, // «перед текстом»
+          zIndex: 1,
+        },
+      })
+    )
+  }
+  return [new Paragraph({ alignment, children })]
+}
+
+function cellParagraphsFromHtml(html: string, signatureImages?: Record<string, SignatureImage>): Paragraph[] {
   if (!html.trim()) return [new Paragraph({ children: [] })]
   // Обгортаємо щоб cheerio не додав html/body
   const $ = load(`<div>${html}</div>`, null, false)
@@ -233,6 +306,11 @@ function cellParagraphsFromHtml(html: string): Paragraph[] {
       const fs = fontSizeToHalfPoints(style)
       const ff = fontFamilyFromStyle(style)
       const runs = collectTextRuns($el, $, false, false, false, fs, ff)
+      // Підпис у комірці — текст + зображення
+      if ($el.find("img[data-sig]").length > 0) {
+        out.push(...signatureParagraphsFromHtml($el.html() ?? "", signatureImages, fs, ff, alignment))
+        return
+      }
       // Порожній <p> — пропущений рядок ентером: зберігаємо відступ як порожній параграф
       if (runs.length === 0 && !$el.text().trim()) {
         out.push(new Paragraph({ children: [] }))
@@ -251,11 +329,20 @@ function cellParagraphsFromHtml(html: string): Paragraph[] {
     return out
   }
   // Немає блочних — один параграф з інлайнами
+  if ($wrap.find("img[data-sig]").length > 0) {
+    return signatureParagraphsFromHtml(
+      $wrap.html() ?? "",
+      signatureImages,
+      fontSizeToHalfPoints($wrap.attr("style") ?? ""),
+      fontFamilyFromStyle($wrap.attr("style") ?? ""),
+      alignmentFromStyle($wrap.attr("style"))
+    )
+  }
   const runs = collectTextRuns($wrap, $, false, false, false, fontSizeToHalfPoints($wrap.attr("style") ?? ""), fontFamilyFromStyle($wrap.attr("style") ?? ""))
   return [new Paragraph({ alignment: alignmentFromStyle($wrap.attr("style")), children: runs.length ? runs : [new TextRun({ text: $wrap.text() || "" })] })]
 }
 
-function htmlToDocxBlocks(html: string, paper?: string | null): (Paragraph | Table)[] {
+function htmlToDocxBlocks(html: string, paper?: string | null, signatureImages?: Record<string, SignatureImage>): (Paragraph | Table)[] {
   const $ = load(`<div id="root">${html}</div>`, null, false)
   const $root = $("#root")
   const blocks: (Paragraph | Table)[] = []
@@ -273,7 +360,7 @@ function htmlToDocxBlocks(html: string, paper?: string | null): (Paragraph | Tab
     if (tag === "table") {
       const $table = $(node as unknown as Parameters<CheerioAPI>[0])
       const model = extractTableModel($table, $, paper)
-      const table = buildDocxTable(model, paper)
+      const table = buildDocxTable(model, paper, signatureImages)
       blocks.push(table)
       return
     }
@@ -287,8 +374,8 @@ function htmlToDocxBlocks(html: string, paper?: string | null): (Paragraph | Tab
       const fs = fontSizeToHalfPoints(style)
       const ff = fontFamilyFromStyle(style)
       const runs = collectTextRuns($el, $, false, false, false, fs, ff)
-      // Порожній <p> — пропущений рядок ентером: зберігаємо відступ як порожній параграф (якщо всередині немає таблиць)
-      if (runs.length === 0 && !$el.text().trim() && $el.find("table").length === 0) {
+      // Порожній <p> — пропущений рядок ентером: зберігаємо відступ як порожній параграф (якщо всередині немає таблиць/підпису)
+      if (runs.length === 0 && !$el.text().trim() && $el.find("table").length === 0 && $el.find("img[data-sig]").length === 0) {
         blocks.push(new Paragraph({ children: [] }))
         return
       }
@@ -302,8 +389,13 @@ function htmlToDocxBlocks(html: string, paper?: string | null): (Paragraph | Tab
         $el.find("table").each((_, tEl) => {
           const $t = $(tEl)
           const m = extractTableModel($t, $, paper)
-          blocks.push(buildDocxTable(m, paper))
+          blocks.push(buildDocxTable(m, paper, signatureImages))
         })
+        return
+      }
+      // Підпис (зображення): текст + вбудований підпис
+      if ($el.find("img[data-sig]").length > 0) {
+        blocks.push(...signatureParagraphsFromHtml($el.html() ?? "", signatureImages, fs, ff, alignment))
         return
       }
       const paraProps: Record<string, unknown> = { heading, alignment, children: runs.length ? runs : [new TextRun({ text: $el.text() || "" })] }
@@ -345,7 +437,7 @@ function htmlToDocxBlocks(html: string, paper?: string | null): (Paragraph | Tab
   return blocks
 }
 
-function buildDocxTable(model: ReturnType<typeof extractTableModel>, paper?: string | null): Table {
+function buildDocxTable(model: ReturnType<typeof extractTableModel>, paper?: string | null, signatureImages?: Record<string, SignatureImage>): Table {
   const { isBorderless, width, rows } = model
   let { colWidthsDxa } = model
 
@@ -408,7 +500,7 @@ function buildDocxTable(model: ReturnType<typeof extractTableModel>, paper?: str
       if (w === 0) w = Math.floor(tableWidthDxa / row.length)
       colIndex += span
 
-      const paragraphs = cellParagraphsFromHtml(cell.html)
+      const paragraphs = cellParagraphsFromHtml(cell.html, signatureImages)
       return new TableCell({
         columnSpan: span,
         rowSpan: cell.rowspan > 1 ? cell.rowspan : undefined,
@@ -438,12 +530,13 @@ export async function createDocxBuffer(input: {
   footer?: string | null
   data: Record<string, unknown>
   paper?: string | null
+  signatureImages?: Record<string, SignatureImage>
 }): Promise<Buffer> {
   const parts = [input.header, input.body, input.footer].filter(Boolean) as string[]
-  const html = parts.map((part) => replaceFields(part, input.data)).join('<p></p>')
+  const html = parts.map((part) => replaceFields(part, input.data, input.signatureImages)).join('<p></p>')
 
   // Якщо шаблон порожній — один параграф заголовка
-  const blocks = html.trim() ? htmlToDocxBlocks(html, input.paper) : []
+  const blocks = html.trim() ? htmlToDocxBlocks(html, input.paper, input.signatureImages) : []
 
   // Якщо жодного блоку — додамо заголовок
   const children: (Paragraph | Table)[] =
