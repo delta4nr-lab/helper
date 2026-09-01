@@ -6,6 +6,7 @@ import { load } from "cheerio"
 import { auth } from "@/auth"
 import { orm } from "@/lib/db"
 import { createDocxBuffer, type SignatureImage } from "@/lib/documents/export/docx"
+import { pageSettingsFromPaper, type PageSettings } from "@/lib/documents/page"
 
 type Params = { templateId: string }
 
@@ -19,6 +20,24 @@ function mimeFromPath(filePath: string): string {
   return "image/jpeg"
 }
 
+// Валідація налаштувань сторінки від клієнта: розумні межі полів (мм)
+function sanitizePageSettings(value: PageSettings): PageSettings | null {
+  if (value?.size !== "A4") return null
+  const clamp = (n: number, min: number, max: number) => (Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : NaN)
+  const margins = {
+    top: clamp(Number(value.margins?.top), 0, 50),
+    right: clamp(Number(value.margins?.right), 0, 50),
+    bottom: clamp(Number(value.margins?.bottom), 0, 50),
+    left: clamp(Number(value.margins?.left), 0, 50),
+  }
+  if (![margins.top, margins.right, margins.bottom, margins.left].every((n) => Number.isFinite(n))) return null
+  return {
+    size: "A4",
+    orientation: value.orientation === "landscape" ? "landscape" : "portrait",
+    margins,
+  }
+}
+
 // Редагування відбувається прямо в документі (tip-tap), тому експорт отримує готовий HTML.
 // Підписи: signature-поля з обраною особою (data-person-id) → вбудовуємо зображення підпису зі штату.
 export async function POST(request: Request, { params }: { params: Promise<Params> }) {
@@ -30,14 +49,18 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   const template = await orm.Template.first({ id: templateId })
   if (!template) return NextResponse.json({ message: "Шаблон не знайдено." }, { status: 404 })
 
-  let body: { html?: string }
+  let body: { html?: string; page?: PageSettings }
   try {
-    body = (await request.json()) as { html?: string }
+    body = (await request.json()) as { html?: string; page?: PageSettings }
   } catch {
     return NextResponse.json({ message: "Невірні дані." }, { status: 400 })
   }
   const html = typeof body?.html === "string" ? body.html : ""
   if (!html.trim()) return NextResponse.json({ message: "Документ порожній." }, { status: 400 })
+
+  // Налаштування сторінки передаються з редактора (для цього документа).
+  // Якщо не передано або некоректні — беремо значення шаблону.
+  const page: PageSettings = body?.page ? (sanitizePageSettings(body.page) ?? pageSettingsFromPaper(template.paper)) : pageSettingsFromPaper(template.paper)
 
   const $ = load(html, null, false)
   const sigSpans = $('span[data-fill-type="signature"]').toArray()
@@ -105,7 +128,7 @@ export async function POST(request: Request, { params }: { params: Promise<Param
       body: processedHtml,
       footer: "",
       data: {},
-      paper: template.paper,
+      page,
       signatureImages,
     })
   } catch {

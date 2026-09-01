@@ -18,7 +18,8 @@ import {
 } from "docx"
 import { load } from "cheerio"
 
-import { A4_HEIGHT_DXA, A4_WIDTH_DXA, extractTableModel, getUsableWidthDxa, isLandscapePaper, MARGIN_TOP_DXA, MARGIN_BOTTOM_DXA, MARGIN_LEFT_DXA, MARGIN_RIGHT_DXA } from "./parse-tables"
+import { extractTableModel, getUsableWidthDxa } from "./parse-tables"
+import { marginsDxa, pageSizeDxa, type PageSettings } from "../page"
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character)
@@ -342,7 +343,7 @@ function cellParagraphsFromHtml(html: string, signatureImages?: Record<string, S
   return [new Paragraph({ alignment: alignmentFromStyle($wrap.attr("style")), children: runs.length ? runs : [new TextRun({ text: $wrap.text() || "" })] })]
 }
 
-function htmlToDocxBlocks(html: string, paper?: string | null, signatureImages?: Record<string, SignatureImage>): (Paragraph | Table)[] {
+function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureImages?: Record<string, SignatureImage>): (Paragraph | Table)[] {
   const $ = load(`<div id="root">${html}</div>`, null, false)
   const $root = $("#root")
   const blocks: (Paragraph | Table)[] = []
@@ -359,8 +360,8 @@ function htmlToDocxBlocks(html: string, paper?: string | null, signatureImages?:
     const tag = (n.name ?? "").toLowerCase()
     if (tag === "table") {
       const $table = $(node as unknown as Parameters<CheerioAPI>[0])
-      const model = extractTableModel($table, $, paper)
-      const table = buildDocxTable(model, paper, signatureImages)
+      const model = extractTableModel($table, $, page)
+      const table = buildDocxTable(model, page, signatureImages)
       blocks.push(table)
       return
     }
@@ -388,8 +389,8 @@ function htmlToDocxBlocks(html: string, paper?: string | null, signatureImages?:
         if (beforeText) blocks.push(new Paragraph({ heading, alignment, children: collectTextRuns(before, $, false, false, false, fs, ff) }))
         $el.find("table").each((_, tEl) => {
           const $t = $(tEl)
-          const m = extractTableModel($t, $, paper)
-          blocks.push(buildDocxTable(m, paper, signatureImages))
+          const m = extractTableModel($t, $, page)
+          blocks.push(buildDocxTable(m, page, signatureImages))
         })
         return
       }
@@ -437,13 +438,13 @@ function htmlToDocxBlocks(html: string, paper?: string | null, signatureImages?:
   return blocks
 }
 
-function buildDocxTable(model: ReturnType<typeof extractTableModel>, paper?: string | null, signatureImages?: Record<string, SignatureImage>): Table {
+function buildDocxTable(model: ReturnType<typeof extractTableModel>, page?: PageSettings | null, signatureImages?: Record<string, SignatureImage>): Table {
   const { isBorderless, width, rows } = model
   let { colWidthsDxa } = model
 
   // Ширина таблиці — завжди DXA для консистентності з columnWidths.
   // percent — відсоток від usable, fixed — точна ширина автора, auto — вся ширина аркуша
-  const usable = getUsableWidthDxa(paper)
+  const usable = getUsableWidthDxa(page)
   const tableWidthDxa = width.mode === "percent" ? Math.round((usable * width.size) / 100) : width.size
   const tableWidth = { size: tableWidthDxa, type: WidthType.DXA }
 
@@ -529,20 +530,21 @@ export async function createDocxBuffer(input: {
   body?: string | null
   footer?: string | null
   data: Record<string, unknown>
-  paper?: string | null
+  page: PageSettings
   signatureImages?: Record<string, SignatureImage>
 }): Promise<Buffer> {
   const parts = [input.header, input.body, input.footer].filter(Boolean) as string[]
   const html = parts.map((part) => replaceFields(part, input.data, input.signatureImages)).join('<p></p>')
 
   // Якщо шаблон порожній — один параграф заголовка
-  const blocks = html.trim() ? htmlToDocxBlocks(html, input.paper, input.signatureImages) : []
+  const blocks = html.trim() ? htmlToDocxBlocks(html, input.page, input.signatureImages) : []
 
   // Якщо жодного блоку — додамо заголовок
   const children: (Paragraph | Table)[] =
     blocks.length > 0 ? blocks : [new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: input.title, bold: true })] })]
 
-  const landscape = isLandscapePaper(input.paper)
+  const pageSize = pageSizeDxa(input.page)
+  const margin = marginsDxa(input.page)
   const doc = new Document({
     styles: {
       default: {
@@ -562,11 +564,11 @@ export async function createDocxBuffer(input: {
         properties: {
           page: {
             size: {
-              width: landscape ? A4_HEIGHT_DXA : A4_WIDTH_DXA,
-              height: landscape ? A4_WIDTH_DXA : A4_HEIGHT_DXA,
-              orientation: landscape ? ("landscape" as const) : ("portrait" as const),
+              width: pageSize.width,
+              height: pageSize.height,
+              orientation: input.page.orientation === "landscape" ? ("landscape" as const) : ("portrait" as const),
             },
-            margin: { top: MARGIN_TOP_DXA, right: MARGIN_RIGHT_DXA, bottom: MARGIN_BOTTOM_DXA, left: MARGIN_LEFT_DXA },
+            margin: { top: margin.top, right: margin.right, bottom: margin.bottom, left: margin.left },
           },
         },
         children,

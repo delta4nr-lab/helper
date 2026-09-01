@@ -1,26 +1,15 @@
 import "server-only"
 
+import { DEFAULT_PAGE_SETTINGS, usableDxa, type PageSettings } from "../page"
+
 // Модель таблиці для docx / exceljs / pdfmake.
 // Джерело — Tiptap HTML (StyledTable) з data-borderless та colgroup/col стилями.
 // Конвертація px → DXA: 1in = 1440 DXA, 96dpi → 15 DXA на px.
 
 export const DXA_PER_PX = 15
-export const A4_WIDTH_DXA = 11906 // 210mm
-export const A4_HEIGHT_DXA = 16838 // 297mm
-// Поля за замовчуванням: верх 2см, низ 2см, ліве 2см, праве 1см (1см = 567 twips)
-export const MARGIN_TOP_DXA = 1134
-export const MARGIN_BOTTOM_DXA = 1134
-export const MARGIN_LEFT_DXA = 1134
-export const MARGIN_RIGHT_DXA = 567
-export const USABLE_WIDTH_DXA = A4_WIDTH_DXA - MARGIN_LEFT_DXA - MARGIN_RIGHT_DXA // 10205
-export const USABLE_WIDTH_LANDSCAPE_DXA = A4_HEIGHT_DXA - MARGIN_LEFT_DXA - MARGIN_RIGHT_DXA // 15137
-export const USABLE_HEIGHT_DXA = A4_HEIGHT_DXA - MARGIN_TOP_DXA - MARGIN_BOTTOM_DXA // 14570
 
-export function getUsableWidthDxa(paper?: string | null): number {
-  return paper === "А4 альбом" ? USABLE_WIDTH_LANDSCAPE_DXA : USABLE_WIDTH_DXA
-}
-export function isLandscapePaper(paper?: string | null): boolean {
-  return paper === "А4 альбом"
+export function getUsableWidthDxa(page?: PageSettings | null): number {
+  return usableDxa(page ?? DEFAULT_PAGE_SETTINGS).width
 }
 
 export type TableCellModel = {
@@ -160,14 +149,14 @@ function distributeColumnWidths(
  * Витягує модель таблиці з cheerio-елемента <table>.
  * Використовується в docx / excel / pdf експортерах.
  */
-export function extractTableModel($table: unknown, $: unknown, paper?: string | null): TableModel {
+export function extractTableModel($table: unknown, $: unknown, page?: PageSettings | null): TableModel {
   // $table — cheerio Cheerio, $ — cheerio root (для пошуку всередині)
   const $t = $table as ReturnType<import("cheerio").CheerioAPI>
   const cheerioRoot = $ as import("cheerio").CheerioAPI
 
   const isBorderless = $t.attr("data-borderless") === "true"
 
-  const usableForPaper = getUsableWidthDxa(paper)
+  const usableForPaper = getUsableWidthDxa(page)
   // Ширина таблиці
   const fromStyle = extractTableWidth($t)
   // Без явної ширини — auto: займає всю ширину аркуша (як у preview width:100%)

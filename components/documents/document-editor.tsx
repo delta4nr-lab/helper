@@ -11,8 +11,12 @@ import TextAlign from "@tiptap/extension-text-align"
 import { BadgeCheck, BriefcaseBusiness, Contact, Loader2, Save, Signature } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { A4_PX, A4_PADDING } from "@/components/editor/a4-page"
+import { pageCss } from "@/components/editor/a4-page"
+import { pageSettingsFromPaper, parsePageSettings, usablePx, type PageSettings } from "@/lib/documents/page"
+import { readStoredPageSettings, clearStoredPageSettings, subscribePageSettings, writeStoredPageSettings } from "@/lib/documents/page-store"
+import { PageSettingsDialog } from "@/components/documents/page-settings-dialog"
 import { PersonPicker } from "@/components/documents/person-picker"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FillMark } from "@/lib/documents/editor/fill-mark"
 import { composeDocumentHtml } from "@/lib/documents/editor/fill-html"
 import { ParagraphWithIndent, StyledTable } from "@/lib/documents/editor/extensions"
@@ -80,6 +84,16 @@ function fullName(p: Personnel): string {
   return [p.firstName, p.middleName, p.lastName].filter(Boolean).join(" ")
 }
 
+// Налаштування сторінки для конкретного документа (localStorage за templateId).
+function usePageSettings(templateId: string, fallback: PageSettings): PageSettings {
+  const raw = React.useSyncExternalStore(
+    subscribePageSettings,
+    () => readStoredPageSettings(templateId),
+    () => null
+  )
+  return React.useMemo(() => parsePageSettings(raw) ?? fallback, [raw, fallback])
+}
+
 export function DocumentEditor({ template, fields, personnel }: Props) {
   const wrapperRef = React.useRef<HTMLDivElement>(null)
   const triggerWrapRef = React.useRef<HTMLDivElement>(null)
@@ -89,6 +103,58 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
   const [pickerTarget, setPickerTarget] = React.useState<PickerTarget | null>(null)
   const [pending, setPending] = React.useState(false)
   const [message, setMessage] = React.useState<{ ok: boolean; message: string } | null>(null)
+  const [pageDialogOpen, setPageDialogOpen] = React.useState(false)
+  const [contentHeight, setContentHeight] = React.useState(0)
+  const [zoomMode, setZoomMode] = React.useState<"fit" | "manual">("fit")
+  const [zoom, setZoom] = React.useState(100)
+  const contentWrapRef = React.useRef<HTMLDivElement>(null)
+  const workspaceRef = React.useRef<HTMLDivElement>(null)
+  const pageSheetRef = React.useRef<HTMLDivElement>(null)
+
+  // Налаштування сторінки: збережені для цього документа (localStorage) або з шаблону
+  const fallbackPage = React.useMemo(() => pageSettingsFromPaper(template.paper), [template.paper])
+  const page = usePageSettings(template.id, fallbackPage)
+  const pageStyle = React.useMemo(() => pageCss(page), [page])
+  const usableHeightPx = React.useMemo(() => usablePx(page).height, [page])
+
+  // Вимірюємо висоту контенту — для розбиття на сторінки (аркуші)
+  React.useEffect(() => {
+    const el = contentWrapRef.current
+    if (!el) return
+    const update = () => setContentHeight(el.scrollHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [pageStyle.width])
+
+  // Режим «за шириною»: 100%, якщо сторінка вміщується; інакше — зменшення до ширини екрана
+  React.useEffect(() => {
+    const el = workspaceRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      if (zoomMode !== "fit") return
+      const width = el.clientWidth - 32
+      const fit = (width / pageStyle.width) * 100
+      const next = Math.round(Math.min(100, Math.max(30, fit)))
+      setZoom((prev) => (prev === next ? prev : next))
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [zoomMode, pageStyle.width])
+
+  function setZoomManual(value: number) {
+    setZoomMode("manual")
+    setZoom(Math.min(150, Math.max(30, Math.round(value))))
+  }
+
+  const pageCount = Math.max(1, Math.ceil((contentHeight || usableHeightPx) / pageStyle.height))
+  const scale = zoom / 100
+  const pagesHeight = pageCount * pageStyle.height + Math.max(0, pageCount - 1) * 24
+
+  function applyPageSettings(next: PageSettings) {
+    writeStoredPageSettings(template.id, next)
+  }
 
   const initialContent = React.useMemo(
     () =>
@@ -167,18 +233,21 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     if (pos == null) return null
     const range = getMarkRange(editor.state.doc.resolve(pos), editor.schema.marks.fill)
     if (!range) return null
-    const from = editor.view.coordsAtPos(range.from)
-    const to = editor.view.coordsAtPos(range.to)
     const key = el.getAttribute("data-fill-key") ?? ""
-    const wrapper = wrapperRef.current?.getBoundingClientRect()
-    fieldRectRef.current = { left: from.left, top: from.top, right: to.right, bottom: from.bottom }
+    // Координати відносно аркуша сторінки. getBoundingClientRect повертає viewport
+    // (вже масштабовані zoom) — ділимо на масштаб, щоб absolute-позиція в сторінці
+    // (немасштабований layout) знову не масштабувалася при zoom.
+    const fieldRect = el.getBoundingClientRect()
+    const pageRect = pageSheetRef.current?.getBoundingClientRect()
+    const scale = zoom / 100
+    fieldRectRef.current = { left: fieldRect.left, top: fieldRect.top, right: fieldRect.right, bottom: fieldRect.bottom }
     return {
       key,
       type,
       label: el.getAttribute("data-fill-label") ?? key,
       pos,
-      x: wrapper ? from.left - wrapper.left : from.left,
-      y: wrapper ? from.top - wrapper.top : from.top,
+      x: pageRect ? (fieldRect.left - pageRect.left) / scale : fieldRect.left,
+      y: pageRect ? (fieldRect.top - pageRect.top) / scale : fieldRect.top,
       ...computeGroup({ pos, key }),
     }
   }
@@ -418,7 +487,7 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
       const response = await fetch(`/api/templates/${template.id}/export`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ html }),
+        body: JSON.stringify({ html, page }),
       })
       const result = (await response.json()) as { message?: string; downloadUrl?: string }
       if (!response.ok) {
@@ -439,10 +508,6 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     }
   }
 
-  const isLandscape = template.paper === "А4 альбом"
-  const pageWidth = isLandscape ? A4_PX.landscapeWidth : A4_PX.width
-  const pageHeight = isLandscape ? A4_PX.landscapeHeight : A4_PX.height
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -462,6 +527,38 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
               {message.message}
             </p>
           )}
+          <Button type="button" variant="outline" onClick={() => setPageDialogOpen(true)} className="cursor-pointer">
+            Сторінка
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => setZoomManual(zoomMode === "fit" ? 100 : zoom - 10)} className="cursor-pointer" title="Зменшити">
+              −
+            </Button>
+            <Select
+              value={zoomMode === "fit" ? "fit" : String(zoom)}
+              onValueChange={(value) => {
+                if (value === "fit") setZoomMode("fit")
+                else setZoomManual(Number(value))
+              }}
+            >
+              <SelectTrigger className="h-7 w-[92px] justify-center text-xs" title="Масштаб">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fit">По ширині</SelectItem>
+                <SelectItem value="50">50%</SelectItem>
+                <SelectItem value="75">75%</SelectItem>
+                <SelectItem value="80">80%</SelectItem>
+                <SelectItem value="90">90%</SelectItem>
+                <SelectItem value="100">100%</SelectItem>
+                <SelectItem value="125">125%</SelectItem>
+                <SelectItem value="150">150%</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="outline" size="sm" onClick={() => setZoomManual(zoomMode === "fit" ? 100 : zoom + 10)} className="cursor-pointer" title="Збільшити">
+              +
+            </Button>
+          </div>
           <Button type="button" disabled={pending || noContent} onClick={onExport} className="cursor-pointer">
             {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Експортувати DOCX
@@ -469,84 +566,98 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
         </div>
       </div>
 
-      <div ref={wrapperRef} className="relative">
-        <div
-          className="a4-paper mx-auto bg-white text-[13px] leading-relaxed text-zinc-900 shadow-sm ring-1 ring-black/5"
-          style={{
-            fontFamily: "Times New Roman, serif",
-            width: pageWidth,
-            minHeight: pageHeight,
-            padding: A4_PADDING,
-            boxSizing: "border-box",
-            maxWidth: "100%",
-          }}
-          onMouseDown={() => {
-            mouseDownRef.current = true
-          }}
-          onMouseMove={(event) => {
-            // Тригер з'являється просто по наведенню на будь-яке спеціальне поле.
-            // Поки попап відкритий — не рухаємо. Якщо миша в «зоні утримання»
-            // (поле + область над ним, де висить тригер) — тригер не зникає,
-            // щоб користувач встиг на нього навести.
-            if (menuOpen) return
-            const target = findPickerTarget(event)
-            if (target) {
-              setPickerTarget((prev) => {
-                if (
-                  prev &&
-                  prev.pos === target.pos &&
-                  prev.x === target.x &&
-                  prev.y === target.y &&
-                  prev.hasSignature === target.hasSignature &&
-                  prev.groupPersonId === target.groupPersonId
-                ) {
-                  return prev
-                }
-                return target
-              })
-            } else {
-              const onTrigger = triggerWrapRef.current?.contains(event.target as Node)
-              const rect = fieldRectRef.current
-              const inZone = rect
-                ? event.clientX >= rect.left - 28 &&
-                  event.clientX <= rect.right + 28 &&
-                  event.clientY >= rect.top - 120 &&
-                  event.clientY <= rect.bottom + 28
-                : false
-              if (!onTrigger && !inZone) setPickerTarget((prev) => (prev ? null : prev))
-            }
-          }}
-        >
-          {noContent ? (
-            <div className="flex min-h-[40vh] items-center justify-center p-8 text-center text-sm text-muted-foreground">
-              <p>
-                Шаблон не має вмісту.
-                <br />
-                Відредагуйте його в адмін-панелі.
-              </p>
-            </div>
-          ) : (
-            <EditorContent editor={editor} />
-          )}
-        </div>
+      <PageSettingsDialog
+        open={pageDialogOpen}
+        onOpenChange={setPageDialogOpen}
+        page={page}
+        onApply={applyPageSettings}
+        onReset={() => clearStoredPageSettings(template.id)}
+      />
 
-        {pickerTarget && (
-          <div ref={triggerWrapRef} className="absolute z-50 -translate-y-[125%] translate-x-2" style={{ left: pickerTarget.x, top: pickerTarget.y }}>
-            <PersonPicker
-              open={menuOpen}
-              onOpenChange={setMenuOpen}
-              title={MENU_LABELS[pickerTarget.type] ?? "Шаблони"}
-              icon={fieldIcon}
-              triggerLabel={triggerText}
-              items={pickablePersons}
-              selectedId={pickerTarget.groupPersonId}
-              onSelect={(personId) => applyPerson(personId, pickerTarget)}
-              onClear={() => clearGroup(pickerTarget)}
-              onClearSignature={() => clearSignature(pickerTarget)}
-              showClearSignature={pickerTarget.hasSignature}
-            />
+      <div ref={wrapperRef} className="relative">
+        <div ref={workspaceRef} className="doc-workspace">
+          <div className="mx-auto" style={{ width: pageStyle.width * scale, height: pagesHeight * scale }}>
+            <div className="flex flex-col items-center" style={{ width: pageStyle.width, transform: `scale(${scale})`, transformOrigin: "top center" }}>
+            <div ref={pageSheetRef} className="page-sheet a4-paper relative" style={{ width: pageStyle.width, height: pageStyle.height, zIndex: 1 }}>
+              <div
+                ref={contentWrapRef}
+                className="page-content text-[13px] leading-relaxed text-zinc-900"
+                style={{ fontFamily: "Times New Roman, serif", padding: pageStyle.padding, minHeight: usableHeightPx }}
+                onMouseDown={() => {
+                  mouseDownRef.current = true
+                }}
+                onMouseMove={(event) => {
+                  // Тригер з'являється просто по наведенню на будь-яке спеціальне поле.
+                  // Поки попап відкритий — не рухаємо. Якщо миша в «зоні утримання»
+                  // (поле + область над ним, де висить тригер) — тригер не зникає,
+                  // щоб користувач встиг на нього навести.
+                  if (menuOpen) return
+                  const target = findPickerTarget(event)
+                  if (target) {
+                    setPickerTarget((prev) => {
+                      if (
+                        prev &&
+                        prev.pos === target.pos &&
+                        prev.x === target.x &&
+                        prev.y === target.y &&
+                        prev.hasSignature === target.hasSignature &&
+                        prev.groupPersonId === target.groupPersonId
+                      ) {
+                        return prev
+                      }
+                      return target
+                    })
+                  } else {
+                    const onTrigger = triggerWrapRef.current?.contains(event.target as Node)
+                    const rect = fieldRectRef.current
+                    const inZone = rect
+                      ? event.clientX >= rect.left - 28 &&
+                        event.clientX <= rect.right + 28 &&
+                        event.clientY >= rect.top - 120 &&
+                        event.clientY <= rect.bottom + 28
+                      : false
+                    if (!onTrigger && !inZone) setPickerTarget((prev) => (prev ? null : prev))
+                  }
+                }}
+              >
+                {noContent ? (
+                  <div className="flex min-h-[40vh] items-center justify-center p-8 text-center text-sm text-muted-foreground">
+                    <p>
+                      Шаблон не має вмісту.
+                      <br />
+                      Відредагуйте його в адмін-панелі.
+                    </p>
+                  </div>
+                ) : (
+                  <EditorContent editor={editor} />
+                )}
+              </div>
+
+              {pickerTarget && (
+                <div ref={triggerWrapRef} className="absolute z-50 -translate-y-[125%] translate-x-2" style={{ left: pickerTarget.x, top: pickerTarget.y }}>
+                  <PersonPicker
+                    open={menuOpen}
+                    onOpenChange={setMenuOpen}
+                    title={MENU_LABELS[pickerTarget.type] ?? "Шаблони"}
+                    icon={fieldIcon}
+                    triggerLabel={triggerText}
+                    items={pickablePersons}
+                    selectedId={pickerTarget.groupPersonId}
+                    onSelect={(personId) => applyPerson(personId, pickerTarget)}
+                    onClear={() => clearGroup(pickerTarget)}
+                    onClearSignature={() => clearSignature(pickerTarget)}
+                    showClearSignature={pickerTarget.hasSignature}
+                  />
+                </div>
+              )}
+            </div>
+
+            {Array.from({ length: Math.max(0, pageCount - 1) }).map((_, index) => (
+              <div key={index} className="page-sheet a4-paper relative" style={{ width: pageStyle.width, height: pageStyle.height, zIndex: 0 }} />
+            ))}
           </div>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   )

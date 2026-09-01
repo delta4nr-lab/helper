@@ -255,6 +255,30 @@
   scrollbar-width: thin;
 }
 
+/* Workspace для page-based перегляду документа (Word-like) */
+.doc-workspace {
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  background: #3b3f45; /* нейтральний темний фон */
+  padding: 24px 16px;
+  scrollbar-width: thin;
+}
+.doc-workspace .page-sheet {
+  background: #fff;
+  color-scheme: light;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+}
+.doc-workspace .page-sheet + .page-sheet {
+  margin-top: 24px;
+}
+/* Делікатні направляючі робочої області (межі page margins) */
+.doc-workspace .page-content {
+  outline: 1px dashed rgb(120 120 135 / 0.4);
+  outline-offset: -1px;
+}
+
 .a4-paper {
   box-sizing: border-box;
   color-scheme: light;
