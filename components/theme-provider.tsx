@@ -3,12 +3,13 @@
 import * as React from "react"
 
 type Theme = "light" | "dark" | "system"
+type ResolvedTheme = "light" | "dark"
 
 type ThemeContextValue = {
   theme: Theme
   setTheme: (theme: Theme) => void
-  resolvedTheme: "light" | "dark"
-  systemTheme?: "light" | "dark"
+  resolvedTheme: ResolvedTheme
+  systemTheme?: ResolvedTheme
 }
 
 const ThemeContext = React.createContext<ThemeContextValue | undefined>(undefined)
@@ -22,12 +23,56 @@ export function useTheme() {
   return ctx
 }
 
-function getSystemTheme(): "light" | "dark" {
+// ── Зовнішнє джерело теми (localStorage) ─────────────────────────────
+const STORAGE_KEY = "theme"
+const themeListeners = new Set<() => void>()
+
+function readStoredTheme(): Theme {
+  if (typeof window === "undefined") return "system"
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY)
+    return value === "light" || value === "dark" || value === "system" ? value : "system"
+  } catch {
+    return "system"
+  }
+}
+
+function subscribeTheme(callback: () => void) {
+  themeListeners.add(callback)
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) callback()
+  }
+  window.addEventListener("storage", onStorage)
+  return () => {
+    themeListeners.delete(callback)
+    window.removeEventListener("storage", onStorage)
+  }
+}
+
+function notifyThemeChange() {
+  for (const listener of themeListeners) listener()
+}
+
+function writeTheme(next: Theme) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, next)
+  } catch {}
+  notifyThemeChange()
+}
+
+// ── Зовнішнє джерело системної теми (matchMedia) ─────────────────────
+function readSystemTheme(): ResolvedTheme {
   if (typeof window === "undefined") return "light"
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
-function applyTheme(theme: Theme, systemTheme: "light" | "dark") {
+function subscribeSystem(callback: () => void) {
+  const mql = window.matchMedia("(prefers-color-scheme: dark)")
+  mql.addEventListener("change", callback)
+  return () => mql.removeEventListener("change", callback)
+}
+
+function applyTheme(theme: Theme, systemTheme: ResolvedTheme) {
   const resolved = theme === "system" ? systemTheme : theme
   const root = document.documentElement
   root.classList.remove("light", "dark")
@@ -36,50 +81,25 @@ function applyTheme(theme: Theme, systemTheme: "light" | "dark") {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = React.useState<Theme>("light")
-  const [systemTheme, setSystemTheme] = React.useState<"light" | "dark">("light")
-  const [mounted, setMounted] = React.useState(false)
+  const theme = React.useSyncExternalStore(subscribeTheme, readStoredTheme, () => "system" as Theme)
+  const systemTheme = React.useSyncExternalStore(subscribeSystem, readSystemTheme, () => "light" as ResolvedTheme)
 
-  // Initialize from localStorage / system
+  // Застосовуємо тему до документа (побічний ефект, без setState)
   React.useEffect(() => {
-    const stored = (localStorage.getItem("theme") as Theme | null) ?? "system"
-    setThemeState(stored)
-    const sys = getSystemTheme()
-    setSystemTheme(sys)
-    setMounted(true)
-  }, [])
-
-  // Listen to system changes
-  React.useEffect(() => {
-    const mql = window.matchMedia("(prefers-color-scheme: dark)")
-    const handler = (e: MediaQueryListEvent) => {
-      const sys = e.matches ? "dark" : "light"
-      setSystemTheme(sys)
-    }
-    mql.addEventListener("change", handler)
-    return () => mql.removeEventListener("change", handler)
-  }, [])
-
-  // Apply theme to document
-  React.useEffect(() => {
-    if (!mounted) return
     applyTheme(theme, systemTheme)
-  }, [theme, systemTheme, mounted])
+  }, [theme, systemTheme])
 
   const setTheme = React.useCallback((next: Theme) => {
-    setThemeState(next)
-    try {
-      localStorage.setItem("theme", next)
-    } catch {}
+    writeTheme(next)
   }, [])
 
-  const resolvedTheme = theme === "system" ? systemTheme : theme
+  const resolvedTheme: ResolvedTheme = theme === "system" ? systemTheme : theme
 
   const value = React.useMemo(
     () => ({
       theme,
       setTheme,
-      resolvedTheme: resolvedTheme as "light" | "dark",
+      resolvedTheme,
       systemTheme,
     }),
     [theme, setTheme, resolvedTheme, systemTheme]

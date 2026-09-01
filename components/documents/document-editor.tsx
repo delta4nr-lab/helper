@@ -8,10 +8,11 @@ import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
 import { TableKit } from "@tiptap/extension-table"
 import TextAlign from "@tiptap/extension-text-align"
-import { Loader2, Plus, Save } from "lucide-react"
+import { BadgeCheck, BriefcaseBusiness, Contact, Loader2, Save, Signature } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { A4_PX, A4_PADDING } from "@/components/editor/a4-page"
+import { PersonPicker } from "@/components/documents/person-picker"
 import { FillMark } from "@/lib/documents/editor/fill-mark"
 import { composeDocumentHtml } from "@/lib/documents/editor/fill-html"
 import { ParagraphWithIndent, StyledTable } from "@/lib/documents/editor/extensions"
@@ -38,6 +39,18 @@ type Personnel = {
   rank: string
   position: string
   signaturePath: string | null
+}
+
+// Поле, над яким наведена миша — для показу тригера вибору особи без зміни selection.
+type PickerTarget = {
+  key: string
+  type: string
+  label: string
+  pos: number
+  x: number
+  y: number
+  hasSignature: boolean
+  groupPersonId: string | null
 }
 
 type Props = {
@@ -69,13 +82,11 @@ function fullName(p: Personnel): string {
 
 export function DocumentEditor({ template, fields, personnel }: Props) {
   const wrapperRef = React.useRef<HTMLDivElement>(null)
-  const plusRef = React.useRef<HTMLButtonElement>(null)
-  const menuRef = React.useRef<HTMLDivElement>(null)
+  const triggerWrapRef = React.useRef<HTMLDivElement>(null)
   const mouseDownRef = React.useRef(false)
 
-  const [activeFill, setActiveFill] = React.useState<{ key: string; type: string; personId: string | null; label: string; hasSignature: boolean; groupPersonId: string | null } | null>(null)
-  const [plusPos, setPlusPos] = React.useState<{ x: number; y: number } | null>(null)
   const [menuOpen, setMenuOpen] = React.useState(false)
+  const [pickerTarget, setPickerTarget] = React.useState<PickerTarget | null>(null)
   const [pending, setPending] = React.useState(false)
   const [message, setMessage] = React.useState<{ ok: boolean; message: string } | null>(null)
 
@@ -109,105 +120,111 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
         style: "font-family: 'Times New Roman', serif; font-size: 18px;",
       },
     },
-    onSelectionUpdate: ({ editor }) => updateActiveField(editor),
-    onUpdate: ({ editor }) => updateActiveField(editor),
+    onSelectionUpdate: ({ editor }) => handleFieldSelection(editor),
   })
 
-  function updateActiveField(ed: Editor) {
-    const fillActive = ed.isActive("fill")
-    const sigActive = ed.isActive("signatureImage")
-
-    let key = ""
-    let type = ""
-    let label = ""
-    let personId: string | null = null
-
-    if (fillActive) {
-      const attrs = (ed.getAttributes("fill") ?? {}) as {
-        fillKey?: string
-        fillType?: string
-        fillLabel?: string
-        personId?: string | null
-      }
-      type = attrs.fillType ?? "text"
-      if (!SPECIAL_FIELD_TYPES.has(type)) {
-        setActiveFill(null)
-        setPlusPos(null)
-        return
-      }
-      key = attrs.fillKey ?? ""
-      label = attrs.fillLabel ?? key
-      personId = attrs.personId ?? null
-    } else if (sigActive) {
-      const attrs = (ed.getAttributes("signatureImage") ?? {}) as { fillKey?: string; personId?: string | null }
-      key = attrs.fillKey ?? ""
-      type = "signature"
-      label = "Підпис"
-      personId = attrs.personId ?? null
-    } else {
-      setActiveFill(null)
-      setPlusPos(null)
-      return
-    }
-
-    const suffix = key.match(/_(\d+)$/)?.[1] ?? key
-    setActiveFill({
-      key,
-      type,
-      personId,
-      label,
-      hasSignature: groupHasSignature(suffix, ed.state.selection.from),
-      groupPersonId: groupPerson(suffix, ed.state.selection.from),
-    })
-
-    // Перший клік мишею по ще не заповненому полю → виділити весь вміст, щоб друк одразу замінив підпис
-    if (mouseDownRef.current) {
-      const range = getMarkRange(ed.state.doc.resolve(ed.state.selection.from), ed.schema.marks.fill)
-      if (range) {
-        const text = ed.state.doc.textBetween(range.from, range.to, " ")
-        if (text === label) ed.commands.setTextSelection(range)
-      }
-      mouseDownRef.current = false
-    }
-
-    const wrapper = wrapperRef.current?.getBoundingClientRect()
-    const coords = ed.view.coordsAtPos(ed.state.selection.from)
-    if (wrapper) setPlusPos({ x: coords.left - wrapper.left, y: coords.top - wrapper.top })
+  // Клік мишею по fill-полю: якщо вміст — це назва поля (незаповнене), виділяємо його,
+  // щоб друк одразу замінив підпис.
+  function handleFieldSelection(ed: Editor) {
+    if (!mouseDownRef.current) return
+    mouseDownRef.current = false
+    if (!ed.isActive("fill")) return
+    const attrs = (ed.getAttributes("fill") ?? {}) as { fillKey?: string; fillType?: string; fillLabel?: string }
+    const label = attrs.fillLabel ?? attrs.fillKey ?? ""
+    const range = getMarkRange(ed.state.doc.resolve(ed.state.selection.from), ed.schema.marks.fill)
+    if (!range) return
+    const text = ed.state.doc.textBetween(range.from, range.to, " ")
+    if (text === label) ed.commands.setTextSelection(range)
   }
 
-  React.useEffect(() => {
-    if (!menuOpen) return
-    function onDocClick(event: MouseEvent) {
-      const target = event.target as Node
-      const inPlus = plusRef.current?.contains(target)
-      const inMenu = menuRef.current?.contains(target)
-      if (!inPlus && !inMenu) setMenuOpen(false)
-    }
-    document.addEventListener("mousedown", onDocClick)
-    return () => document.removeEventListener("mousedown", onDocClick)
-  }, [menuOpen])
+  // Кеш групи для hover-поля — не перераховуємо на кожен mousemove
+  const groupCacheRef = React.useRef<{ pos: number; hasSignature: boolean; groupPersonId: string | null } | null>(null)
+  // Прямокутник hover-поля (viewport-координати) — для «зони утримання» тригера
+  const fieldRectRef = React.useRef<{ left: number; top: number; right: number; bottom: number } | null>(null)
 
-  const menuItems = React.useMemo(() => {
-    if (!activeFill) return []
+  function computeGroup(target: { pos: number; key: string }): { hasSignature: boolean; groupPersonId: string | null } {
+    const cache = groupCacheRef.current
+    if (cache && cache.pos === target.pos) {
+      return { hasSignature: cache.hasSignature, groupPersonId: cache.groupPersonId }
+    }
+    const suffix = target.key.match(/_(\d+)$/)?.[1] ?? target.key
+    const result = {
+      hasSignature: groupHasSignature(suffix, target.pos),
+      groupPersonId: groupPerson(suffix, target.pos),
+    }
+    groupCacheRef.current = { pos: target.pos, ...result }
+    return result
+  }
+
+  // Поле (special) під курсором миші — для показу тригера по наведенню.
+  function findPickerTarget(event: React.MouseEvent): PickerTarget | null {
+    if (!editor) return null
+    const el = (event.target as HTMLElement | null)?.closest?.("span[data-fill-key]")
+    if (!(el instanceof HTMLElement)) return null
+    const type = el.getAttribute("data-fill-type") ?? "text"
+    if (!SPECIAL_FIELD_TYPES.has(type)) return null
+    const pos = editor.view.posAtDOM(el, 0)
+    if (pos == null) return null
+    const range = getMarkRange(editor.state.doc.resolve(pos), editor.schema.marks.fill)
+    if (!range) return null
+    const from = editor.view.coordsAtPos(range.from)
+    const to = editor.view.coordsAtPos(range.to)
+    const key = el.getAttribute("data-fill-key") ?? ""
+    const wrapper = wrapperRef.current?.getBoundingClientRect()
+    fieldRectRef.current = { left: from.left, top: from.top, right: to.right, bottom: from.bottom }
+    return {
+      key,
+      type,
+      label: el.getAttribute("data-fill-label") ?? key,
+      pos,
+      x: wrapper ? from.left - wrapper.left : from.left,
+      y: wrapper ? from.top - wrapper.top : from.top,
+      ...computeGroup({ pos, key }),
+    }
+  }
+
+  // Оновлює стан групи (підпис/особа) для поточного hover-поля після зміни документа.
+  function refreshPickerTarget() {
+    groupCacheRef.current = null
+    setPickerTarget((prev) => {
+      if (!prev || !editor) return prev
+      return { ...prev, ...computeGroup({ pos: prev.pos, key: prev.key }) }
+    })
+  }
+
+  const pickablePersons = React.useMemo(() => {
+    if (!pickerTarget) return []
     // Якщо група вже прив'язана до особи — у полях посада/звання/підпис показуємо лише її,
     // щоб випадково не вибрати іншу людину. ПІБ завжди показує весь штат (зміна особи).
     const candidates =
-      activeFill.groupPersonId && activeFill.type !== "person" ? personnel.filter((p) => p.id === activeFill.groupPersonId) : personnel
-    const seen = new Set<string>()
-    const items: { label: string; personId: string }[] = []
-    for (const p of candidates) {
-      const value =
-        activeFill.type === "position"
-          ? p.position
-          : activeFill.type === "rank"
-            ? p.rank
-            : fullName(p)
-      if (!value || seen.has(value)) continue
-      seen.add(value)
-      items.push({ label: value, personId: p.id })
+      pickerTarget.groupPersonId && pickerTarget.type !== "person" ? personnel.filter((p) => p.id === pickerTarget.groupPersonId) : personnel
+    return candidates.map((p) => ({
+      id: p.id,
+      name: fullName(p),
+      position: p.position,
+      rank: p.rank,
+    }))
+  }, [pickerTarget, personnel])
+
+  const triggerText = React.useMemo(() => {
+    if (!pickerTarget) return ""
+    if (pickerTarget.type === "person" && pickerTarget.groupPersonId) {
+      const person = personnel.find((p) => p.id === pickerTarget.groupPersonId)
+      if (person) return fullName(person)
     }
-    return items
-  }, [activeFill, personnel])
+    return pickerTarget.label
+  }, [pickerTarget, personnel])
+
+  const fieldIcon =
+    pickerTarget?.type === "position" ? (
+      <BriefcaseBusiness className="size-4 shrink-0" />
+    ) : pickerTarget?.type === "rank" ? (
+      <BadgeCheck className="size-4 shrink-0" />
+    ) : pickerTarget?.type === "signature" ? (
+      <Signature className="size-4 shrink-0" />
+    ) : (
+      <Contact className="size-4 shrink-0" />
+    )
 
   // Блок (абзац/комірка), в якому знаходиться позиція — для групування полів без числового суфікса
   function resolveGroupBlock(anchorPos: number): { from: number; to: number } | null {
@@ -329,14 +346,14 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
   }
 
   // Вибір особи зі штату → заповнює всю групу (ПІБ, посада, звання, підпис) її даними.
-  function applyPerson(personId: string) {
-    if (!editor || !activeFill) return
+  function applyPerson(personId: string, target: PickerTarget) {
+    if (!editor) return
     const person = personnel.find((p) => p.id === personId)
     if (!person) return
     const state = editor.state
     const fillType = state.schema.marks.fill
-    const suffix = activeFill.key.match(/_(\d+)$/)?.[1] ?? activeFill.key
-    const anchorPos = state.selection.from
+    const suffix = target.key.match(/_(\d+)$/)?.[1] ?? target.key
+    const anchorPos = target.pos
     updateGroupFields(suffix, (attrs) => {
       const mark = fillType.create({
         fillKey: attrs.fillKey,
@@ -357,35 +374,38 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
       }
       return null
     }, anchorPos)
+    refreshPickerTarget()
     setMenuOpen(false)
   }
 
   // Скидає всю групу — поля повертаються до підписів (незаповнені), особа знімається.
-  function clearGroup() {
-    if (!editor || !activeFill) return
+  function clearGroup(target: PickerTarget) {
+    if (!editor) return
     const state = editor.state
     const fillType = state.schema.marks.fill
-    const suffix = activeFill.key.match(/_(\d+)$/)?.[1] ?? activeFill.key
-    const anchorPos = state.selection.from
+    const suffix = target.key.match(/_(\d+)$/)?.[1] ?? target.key
+    const anchorPos = target.pos
     updateGroupFields(suffix, (attrs) => {
       const mark = fillType.create({ fillKey: attrs.fillKey, fillType: attrs.fillType, fillLabel: attrs.fillLabel, personId: null })
       return { content: state.schema.text(attrs.fillLabel, [mark]) }
     }, anchorPos)
+    refreshPickerTarget()
     setMenuOpen(false)
   }
 
   // Видаляє лише підпис у групі (ПІБ/посада/звання лишаються), повертаючи напис «Підпис».
-  function clearSignature() {
-    if (!editor || !activeFill) return
+  function clearSignature(target: PickerTarget) {
+    if (!editor) return
     const state = editor.state
     const fillType = state.schema.marks.fill
-    const suffix = activeFill.key.match(/_(\d+)$/)?.[1] ?? activeFill.key
-    const anchorPos = state.selection.from
+    const suffix = target.key.match(/_(\d+)$/)?.[1] ?? target.key
+    const anchorPos = target.pos
     updateGroupFields(suffix, (attrs) => {
       if (attrs.fillType !== "signature") return null
       const mark = fillType.create({ fillKey: attrs.fillKey, fillType: attrs.fillType, fillLabel: attrs.fillLabel, personId: null })
       return { content: state.schema.text(attrs.fillLabel, [mark]) }
     }, anchorPos)
+    refreshPickerTarget()
     setMenuOpen(false)
   }
 
@@ -463,6 +483,39 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
           onMouseDown={() => {
             mouseDownRef.current = true
           }}
+          onMouseMove={(event) => {
+            // Тригер з'являється просто по наведенню на будь-яке спеціальне поле.
+            // Поки попап відкритий — не рухаємо. Якщо миша в «зоні утримання»
+            // (поле + область над ним, де висить тригер) — тригер не зникає,
+            // щоб користувач встиг на нього навести.
+            if (menuOpen) return
+            const target = findPickerTarget(event)
+            if (target) {
+              setPickerTarget((prev) => {
+                if (
+                  prev &&
+                  prev.pos === target.pos &&
+                  prev.x === target.x &&
+                  prev.y === target.y &&
+                  prev.hasSignature === target.hasSignature &&
+                  prev.groupPersonId === target.groupPersonId
+                ) {
+                  return prev
+                }
+                return target
+              })
+            } else {
+              const onTrigger = triggerWrapRef.current?.contains(event.target as Node)
+              const rect = fieldRectRef.current
+              const inZone = rect
+                ? event.clientX >= rect.left - 28 &&
+                  event.clientX <= rect.right + 28 &&
+                  event.clientY >= rect.top - 120 &&
+                  event.clientY <= rect.bottom + 28
+                : false
+              if (!onTrigger && !inZone) setPickerTarget((prev) => (prev ? null : prev))
+            }
+          }}
         >
           {noContent ? (
             <div className="flex min-h-[40vh] items-center justify-center p-8 text-center text-sm text-muted-foreground">
@@ -477,64 +530,21 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
           )}
         </div>
 
-        {activeFill && plusPos && (
-          <div className="absolute z-50" style={{ left: plusPos.x, top: plusPos.y }}>
-            <button
-              ref={plusRef}
-              type="button"
-              aria-label="Шаблони для поля"
-              title={MENU_LABELS[activeFill.type] ?? "Шаблони"}
-              onClick={() => setMenuOpen((open) => !open)}
-              className="flex size-7 -translate-y-1/2 translate-x-1 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-white hover:bg-primary/90"
-            >
-              <Plus className="size-4" />
-            </button>
-            {menuOpen && (
-              <div
-                ref={menuRef}
-                className="absolute left-0 top-2 z-50 mt-1 w-72 overflow-hidden rounded-lg border bg-popover shadow-lg"
-              >
-                <div className="max-h-64 overflow-y-auto p-1">
-                  <div className="px-2.5 py-1.5 text-xs font-medium text-muted-foreground">
-                    {MENU_LABELS[activeFill.type] ?? "Шаблони"}
-                  </div>
-                  {menuItems.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-xs text-muted-foreground">Штат порожній</div>
-                  ) : (
-                    menuItems.map((item) => (
-                      <button
-                        key={`${item.personId}-${item.label}`}
-                        type="button"
-                        onClick={() => applyPerson(item.personId)}
-                        className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm hover:bg-muted"
-                      >
-                        {item.label}
-                      </button>
-                    ))
-                  )}
-                  {activeFill.hasSignature && (
-                    <>
-                      <div className="my-1 h-px bg-border" />
-                      <button
-                        type="button"
-                        onClick={clearSignature}
-                        className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm text-destructive hover:bg-muted"
-                      >
-                        Видалити підпис
-                      </button>
-                    </>
-                  )}
-                  <div className="my-1 h-px bg-border" />
-                  <button
-                    type="button"
-                    onClick={clearGroup}
-                    className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm text-muted-foreground hover:bg-muted"
-                  >
-                    Очистити (зняти особу)
-                  </button>
-                </div>
-              </div>
-            )}
+        {pickerTarget && (
+          <div ref={triggerWrapRef} className="absolute z-50 -translate-y-[125%] translate-x-2" style={{ left: pickerTarget.x, top: pickerTarget.y }}>
+            <PersonPicker
+              open={menuOpen}
+              onOpenChange={setMenuOpen}
+              title={MENU_LABELS[pickerTarget.type] ?? "Шаблони"}
+              icon={fieldIcon}
+              triggerLabel={triggerText}
+              items={pickablePersons}
+              selectedId={pickerTarget.groupPersonId}
+              onSelect={(personId) => applyPerson(personId, pickerTarget)}
+              onClear={() => clearGroup(pickerTarget)}
+              onClearSignature={() => clearSignature(pickerTarget)}
+              showClearSignature={pickerTarget.hasSignature}
+            />
           </div>
         )}
       </div>
