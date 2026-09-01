@@ -73,7 +73,7 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
   const menuRef = React.useRef<HTMLDivElement>(null)
   const mouseDownRef = React.useRef(false)
 
-  const [activeFill, setActiveFill] = React.useState<{ key: string; type: string; personId: string | null; label: string } | null>(null)
+  const [activeFill, setActiveFill] = React.useState<{ key: string; type: string; personId: string | null; label: string; hasSignature: boolean; groupPersonId: string | null } | null>(null)
   const [plusPos, setPlusPos] = React.useState<{ x: number; y: number } | null>(null)
   const [menuOpen, setMenuOpen] = React.useState(false)
   const [pending, setPending] = React.useState(false)
@@ -150,7 +150,15 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
       return
     }
 
-    setActiveFill({ key, type, personId, label })
+    const suffix = key.match(/_(\d+)$/)?.[1] ?? key
+    setActiveFill({
+      key,
+      type,
+      personId,
+      label,
+      hasSignature: groupHasSignature(suffix, ed.state.selection.from),
+      groupPersonId: groupPerson(suffix, ed.state.selection.from),
+    })
 
     // Перший клік мишею по ще не заповненому полю → виділити весь вміст, щоб друк одразу замінив підпис
     if (mouseDownRef.current) {
@@ -181,9 +189,13 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
 
   const menuItems = React.useMemo(() => {
     if (!activeFill) return []
+    // Якщо група вже прив'язана до особи — у полях посада/звання/підпис показуємо лише її,
+    // щоб випадково не вибрати іншу людину. ПІБ завжди показує весь штат (зміна особи).
+    const candidates =
+      activeFill.groupPersonId && activeFill.type !== "person" ? personnel.filter((p) => p.id === activeFill.groupPersonId) : personnel
     const seen = new Set<string>()
     const items: { label: string; personId: string }[] = []
-    for (const p of personnel) {
+    for (const p of candidates) {
       const value =
         activeFill.type === "position"
           ? p.position
@@ -197,26 +209,46 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     return items
   }, [activeFill, personnel])
 
-  // Застосовує до всіх fill-полів групи (однаковий числовий суфікс, напр. *_1) функцію update.
+  // Блок (абзац/комірка), в якому знаходиться позиція — для групування полів без числового суфікса
+  function resolveGroupBlock(anchorPos: number): { from: number; to: number } | null {
+    if (!editor) return null
+    const $r = editor.state.doc.resolve(anchorPos)
+    let d = $r.depth
+    while (d > 0 && $r.node(d).isInline) d -= 1
+    if (d === 0) return null
+    return { from: $r.before(d), to: $r.after(d) }
+  }
+
+  // Застосовує до всіх fill-полів групи функцію update.
+  // Група: поля з тим самим числовим суфіксом (напр. *_1) по всьому документу,
+  // а для полів без суфікса — усі спеціальні поля в тому ж блоці (абзаці/комірці).
   // update повертає marked-вузол (текст або зображення підпису) для вставки, або null — лишити як є.
   function updateGroupFields(
     suffix: string,
     update: (attrs: { fillKey: string; fillType: string; fillLabel: string; personId: string | null }) =>
       | { content: ProseMirrorNode }
-      | null
+      | null,
+    anchorPos?: number
   ) {
     if (!editor) return
     const fillType = editor.schema.marks.fill
     const state = editor.state
     const ops: { from: number; to: number; content: ProseMirrorNode }[] = []
     const seen = new Set<string>()
+    const numeric = /^\d+$/.test(suffix)
+    const block = anchorPos != null ? resolveGroupBlock(anchorPos) : null
     state.doc.descendants((node, pos) => {
       if (!node.isInline) return true
       const mark = node.marks.find((m) => m.type === fillType)
       if (!mark) return true
       const attrs = mark.attrs as { fillKey?: string; fillType?: string; fillLabel?: string; personId?: string | null }
       const key = attrs.fillKey ?? ""
-      if (!key.endsWith(`_${suffix}`)) return true
+      if (numeric) {
+        if (!key.endsWith(`_${suffix}`)) return true
+      } else {
+        if (!block) return true
+        if (pos < block.from || pos >= block.to) return true
+      }
       const range = getMarkRange(state.doc.resolve(pos), fillType)
       if (!range) return true
       const rangeKey = `${range.from}-${range.to}`
@@ -241,6 +273,61 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     editor.commands.focus()
   }
 
+  // Чи є в групі заповнений підпис (щоб показати дію «Видалити підпис»)
+  function groupHasSignature(suffix: string, anchorPos?: number): boolean {
+    if (!editor) return false
+    const fillType = editor.schema.marks.fill
+    const numeric = /^\d+$/.test(suffix)
+    const block = anchorPos != null ? resolveGroupBlock(anchorPos) : null
+    let found = false
+    editor.state.doc.descendants((node, pos) => {
+      if (!node.isInline) return true
+      const mark = node.marks.find((m) => m.type === fillType)
+      if (!mark) return true
+      const attrs = mark.attrs as { fillKey?: string; fillType?: string; personId?: string | null }
+      if (attrs.fillType !== "signature") return true
+      const key = attrs.fillKey ?? ""
+      if (numeric) {
+        if (!key.endsWith(`_${suffix}`)) return true
+      } else {
+        if (!block) return true
+        if (pos < block.from || pos >= block.to) return true
+      }
+      if (attrs.personId) found = true
+      return true
+    })
+    return found
+  }
+
+  // Особу, прив'язану до групи (з будь-якого заповненого поля) — для фільтрації меню.
+  function groupPerson(suffix: string, anchorPos?: number): string | null {
+    if (!editor) return null
+    const fillType = editor.schema.marks.fill
+    const numeric = /^\d+$/.test(suffix)
+    const block = anchorPos != null ? resolveGroupBlock(anchorPos) : null
+    let result: string | null = null
+    editor.state.doc.descendants((node, pos) => {
+      if (result) return false
+      if (!node.isInline) return true
+      const mark = node.marks.find((m) => m.type === fillType)
+      if (!mark) return true
+      const attrs = mark.attrs as { fillKey?: string; personId?: string | null }
+      const key = attrs.fillKey ?? ""
+      if (numeric) {
+        if (!key.endsWith(`_${suffix}`)) return true
+      } else {
+        if (!block) return true
+        if (pos < block.from || pos >= block.to) return true
+      }
+      if (attrs.personId) {
+        result = attrs.personId
+        return false
+      }
+      return true
+    })
+    return result
+  }
+
   // Вибір особи зі штату → заповнює всю групу (ПІБ, посада, звання, підпис) її даними.
   function applyPerson(personId: string) {
     if (!editor || !activeFill) return
@@ -249,12 +336,13 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     const state = editor.state
     const fillType = state.schema.marks.fill
     const suffix = activeFill.key.match(/_(\d+)$/)?.[1] ?? activeFill.key
+    const anchorPos = state.selection.from
     updateGroupFields(suffix, (attrs) => {
       const mark = fillType.create({
         fillKey: attrs.fillKey,
         fillType: attrs.fillType,
         fillLabel: attrs.fillLabel,
-        personId: attrs.fillType === "signature" ? person.id : null,
+        personId: person.id,
       })
       if (attrs.fillType === "person") return { content: state.schema.text(fullName(person), [mark]) }
       if (attrs.fillType === "position") return { content: state.schema.text(person.position, [mark]) }
@@ -268,7 +356,7 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
         return { content: state.schema.text(ZWSP, [mark]) }
       }
       return null
-    })
+    }, anchorPos)
     setMenuOpen(false)
   }
 
@@ -278,10 +366,26 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     const state = editor.state
     const fillType = state.schema.marks.fill
     const suffix = activeFill.key.match(/_(\d+)$/)?.[1] ?? activeFill.key
+    const anchorPos = state.selection.from
     updateGroupFields(suffix, (attrs) => {
       const mark = fillType.create({ fillKey: attrs.fillKey, fillType: attrs.fillType, fillLabel: attrs.fillLabel, personId: null })
       return { content: state.schema.text(attrs.fillLabel, [mark]) }
-    })
+    }, anchorPos)
+    setMenuOpen(false)
+  }
+
+  // Видаляє лише підпис у групі (ПІБ/посада/звання лишаються), повертаючи напис «Підпис».
+  function clearSignature() {
+    if (!editor || !activeFill) return
+    const state = editor.state
+    const fillType = state.schema.marks.fill
+    const suffix = activeFill.key.match(/_(\d+)$/)?.[1] ?? activeFill.key
+    const anchorPos = state.selection.from
+    updateGroupFields(suffix, (attrs) => {
+      if (attrs.fillType !== "signature") return null
+      const mark = fillType.create({ fillKey: attrs.fillKey, fillType: attrs.fillType, fillLabel: attrs.fillLabel, personId: null })
+      return { content: state.schema.text(attrs.fillLabel, [mark]) }
+    }, anchorPos)
     setMenuOpen(false)
   }
 
@@ -407,6 +511,18 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
                         {item.label}
                       </button>
                     ))
+                  )}
+                  {activeFill.hasSignature && (
+                    <>
+                      <div className="my-1 h-px bg-border" />
+                      <button
+                        type="button"
+                        onClick={clearSignature}
+                        className="flex w-full items-center rounded-md px-2.5 py-2 text-left text-sm text-destructive hover:bg-muted"
+                      >
+                        Видалити підпис
+                      </button>
+                    </>
                   )}
                   <div className="my-1 h-px bg-border" />
                   <button
