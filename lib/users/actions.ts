@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { auth } from "@/auth"
-import { prisma } from "@/lib/db"
+import { orm, nowTimestamp } from "@/lib/db"
 
 const userSchema = z.object({
   username: z.string().trim().toLowerCase().min(3).max(32).regex(/^[a-z0-9_-]+$/),
@@ -24,13 +24,19 @@ export async function createUserAction(input: unknown): Promise<{ ok: boolean; m
   try {
     const data = userSchema.parse(input)
     const password = await bcrypt.hash(data.password, 10)
-    await prisma.user.create({
-      data: {
-        username: data.username,
-        password,
-        role: data.role,
-        profile: { create: { lastName: data.lastName || null, firstName: data.firstName || null, middleName: data.middleName || null, rank: data.rank || null } },
-      },
+    await orm.User.create({
+      username: data.username,
+      password,
+      role: data.role,
+      updatedAt: nowTimestamp(),
+      profile: (profile) =>
+        profile.create({
+          lastName: data.lastName || null,
+          firstName: data.firstName || null,
+          middleName: data.middleName || null,
+          rank: data.rank || null,
+          updatedAt: nowTimestamp(),
+        }),
     })
     revalidatePath("/admin")
     return { ok: true, message: "Користувача створено" }

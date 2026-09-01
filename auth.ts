@@ -64,8 +64,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         try {
           // Динамічний імпорт щоб не тягнути Prisma (node:path, node:url) в Edge Runtime (middleware/proxy)
           // authorize виконується тільки в Node.js (route handler), але топ-рівневий import зламає Edge бандл
-          const { prisma } = await import("@/lib/db")
-          const user = await prisma.user.findUnique({ where: { username } })
+          const { db } = await import("@/lib/db")
+          const user = await db.orm.public.User.first({ username })
           if (!user) return null
           if (!user.isActive) return null
 

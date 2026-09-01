@@ -12,12 +12,12 @@ type ExportedFile = {
   fileName: string
   mimeType: string
   size: number
-  createdAt: Date
+  createdAt: string
   template: { title: string } | null
 }
 
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("uk-UA", { dateStyle: "medium", timeStyle: "short" }).format(date)
+function formatDate(date: string) {
+  return new Intl.DateTimeFormat("uk-UA", { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))
 }
 
 function formatSize(size: number) {

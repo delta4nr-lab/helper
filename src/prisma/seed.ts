@@ -1,26 +1,12 @@
 import "dotenv/config"
 import bcrypt from "bcrypt"
-import { PrismaClient } from "../lib/generated/prisma/client"
-import { PrismaPg } from "@prisma/adapter-pg"
-import { categories, templates } from "../lib/documents/catalog"
-import { normalizeDatabaseUrl } from "../lib/db/connection-string"
-
-const adapter = new PrismaPg({ connectionString: normalizeDatabaseUrl(process.env.DATABASE_URL!) })
-const prisma = new PrismaClient({ adapter })
+import { db, orm, nowTimestamp } from "./db"
+import { categories, templates } from "../../lib/documents/catalog"
 
 async function main() {
   console.log("Seeding categories (foundation for admin CRUD)...")
   for (const c of categories) {
-    await prisma.category.upsert({
-      where: { slug: c.slug },
-      update: {
-        title: c.title,
-        description: c.description,
-        longDescription: c.longDescription,
-        icon: c.icon,
-        countLabel: c.countLabel,
-        isActive: true,
-      },
+    await orm.Category.upsert({
       create: {
         slug: c.slug,
         title: c.title,
@@ -29,38 +15,33 @@ async function main() {
         icon: c.icon,
         countLabel: c.countLabel,
         isActive: true,
+        updatedAt: nowTimestamp(),
       },
+      update: {
+        title: c.title,
+        description: c.description,
+        longDescription: c.longDescription,
+        icon: c.icon,
+        countLabel: c.countLabel,
+        isActive: true,
+        updatedAt: nowTimestamp(),
+      },
+      conflictOn: { slug: c.slug },
     })
   }
   console.log(`Seeded ${categories.length} categories`)
 
   console.log("Seeding templates...")
   // Знайдемо адміна для createdById (якщо є)
-  let adminUser: { id: string } | null = await prisma.user.findUnique({
-    where: { username: "admin" },
-    select: { id: true },
-  })
+  const adminUser: { id: string } | null = await orm.User.select("id").first({ username: "admin" })
 
   const categoryMap = new Map<string, string>()
-  const dbCategories = await prisma.category.findMany({ select: { slug: true, id: true } })
+  const dbCategories = await orm.Category.select("slug", "id").all()
   for (const c of dbCategories) categoryMap.set(c.slug, c.id)
 
   for (const t of templates) {
     const categoryId = categoryMap.get(t.categorySlug) ?? null
-    await prisma.template.upsert({
-      where: { id: t.id },
-      update: {
-        categoryId,
-        categorySlug: t.categorySlug,
-        title: t.title,
-        fields: t.fields,
-        popular: t.popular,
-        description: t.description,
-        tags: t.tags,
-        paper: t.paper,
-        isActive: true,
-        ...(adminUser ? { createdById: adminUser.id } : {}),
-      },
+    await orm.Template.upsert({
       create: {
         id: t.id,
         categoryId,
@@ -69,10 +50,24 @@ async function main() {
         fields: t.fields,
         popular: t.popular,
         description: t.description,
-        tags: t.tags,
+        tags: [...t.tags],
         paper: t.paper,
         isActive: true,
         ...(adminUser ? { createdById: adminUser.id } : {}),
+        updatedAt: nowTimestamp(),
+      },
+      update: {
+        categoryId,
+        categorySlug: t.categorySlug,
+        title: t.title,
+        fields: t.fields,
+        popular: t.popular,
+        description: t.description,
+        tags: [...t.tags],
+        paper: t.paper,
+        isActive: true,
+        ...(adminUser ? { createdById: adminUser.id } : {}),
+        updatedAt: nowTimestamp(),
       },
     })
   }
@@ -82,36 +77,30 @@ async function main() {
   const keepCategorySlugs = new Set(categories.map((c) => c.slug)) // зараз тільки raporty
   const keepTemplateIds = new Set(templates.map((t) => t.id)) // зараз тільки raport-vidpustka
 
-  const staleCategories = await prisma.category.findMany({
-    where: { slug: { notIn: [...keepCategorySlugs] } },
-    select: { id: true, slug: true },
-  })
+  const staleCategories = await orm.Category.where((c) => c.slug.notIn([...keepCategorySlugs])).select("id", "slug").all()
   if (staleCategories.length > 0) {
     console.log(`Cleaning stale categories: ${staleCategories.map((c) => c.slug).join(", ")}`)
     const staleCatIds = staleCategories.map((c) => c.id)
     // видалити пов'язані шаблони/поля/експорти
-    const staleTpls = await prisma.template.findMany({ where: { categoryId: { in: staleCatIds } }, select: { id: true } })
+    const staleTpls = await orm.Template.where((t) => t.categoryId.in(staleCatIds)).select("id").all()
     const staleTplIds = staleTpls.map((t) => t.id)
     if (staleTplIds.length > 0) {
-      await prisma.templateField.deleteMany({ where: { templateId: { in: staleTplIds } } })
-      await prisma.exportedFile.deleteMany({ where: { templateId: { in: staleTplIds } } })
-      await prisma.template.deleteMany({ where: { id: { in: staleTplIds } } })
+      await orm.TemplateField.where((tf) => tf.templateId.in(staleTplIds)).deleteAll()
+      await orm.ExportedFile.where((ef) => ef.templateId.in(staleTplIds)).deleteAll()
+      await orm.Template.where((t) => t.id.in(staleTplIds)).deleteAll()
     }
-    await prisma.category.deleteMany({ where: { id: { in: staleCatIds } } })
+    await orm.Category.where((c) => c.id.in(staleCatIds)).deleteAll()
   }
 
-  const staleTemplates = await prisma.template.findMany({
-    where: { id: { notIn: [...keepTemplateIds] } },
-    select: { id: true },
-  })
+  const staleTemplates = await orm.Template.where((t) => t.id.notIn([...keepTemplateIds])).select("id").all()
   if (staleTemplates.length > 0) {
     console.log(`Cleaning stale templates: ${staleTemplates.map((t) => t.id).join(", ")}`)
-    await prisma.templateField.deleteMany({ where: { templateId: { in: staleTemplates.map((t) => t.id) } } })
-    await prisma.exportedFile.deleteMany({ where: { templateId: { in: staleTemplates.map((t) => t.id) } } })
-    await prisma.template.deleteMany({ where: { id: { in: staleTemplates.map((t) => t.id) } } })
+    await orm.TemplateField.where((tf) => tf.templateId.in(staleTemplates.map((t) => t.id))).deleteAll()
+    await orm.ExportedFile.where((ef) => ef.templateId.in(staleTemplates.map((t) => t.id))).deleteAll()
+    await orm.Template.where((t) => t.id.in(staleTemplates.map((t) => t.id))).deleteAll()
   }
   // Почистити поля для vidryadzhennya якщо лишаємо vidpustka
-  await prisma.templateField.deleteMany({ where: { templateId: "raport-vidryadzhennya" } })
+  await orm.TemplateField.where({ templateId: "raport-vidryadzhennya" }).deleteAll()
   console.log("Cleaned old fields for raport-vidryadzhennya")
 
   // Пілот: нейтральні поля для raport-vidpustka — єдиний рапорт (можуть перевикористовуватись в nakaz/dopovid)
@@ -130,28 +119,30 @@ async function main() {
 
   for (const f of pilotFields) {
     const p = f as { placeholder?: string; options?: unknown; validation?: unknown }
-    await prisma.templateField.upsert({
-      where: { templateId_key: { templateId: "raport-vidpustka", key: f.key } },
-      update: {
-        label: f.label,
-        type: f.type,
-        required: f.required,
-        placeholder: p.placeholder ?? null,
-        options: (p.options as never) ?? undefined,
-        validation: (p.validation as never) ?? undefined,
-        sortOrder: f.sortOrder,
-      },
+    await orm.TemplateField.upsert({
       create: {
         templateId: "raport-vidpustka",
         key: f.key,
         label: f.label,
-        type: f.type,
+        _type: f.type,
         required: f.required,
         placeholder: p.placeholder ?? null,
         options: (p.options as never) ?? undefined,
         validation: (p.validation as never) ?? undefined,
         sortOrder: f.sortOrder,
+        updatedAt: nowTimestamp(),
       },
+      update: {
+        label: f.label,
+        _type: f.type,
+        required: f.required,
+        placeholder: p.placeholder ?? null,
+        options: (p.options as never) ?? undefined,
+        validation: (p.validation as never) ?? undefined,
+        sortOrder: f.sortOrder,
+        updatedAt: nowTimestamp(),
+      },
+      conflictOn: { templateId: "raport-vidpustka", key: f.key },
     })
   }
   console.log(`Seeded ${pilotFields.length} fields for raport-vidpustka`)
@@ -165,10 +156,8 @@ async function main() {
     { lastName: "Богатир", firstName: "Руслан", middleName: "Олександрович", rank: "солдат", position: "курсант 1 взводу 4 роти", unit: "А1890", status: "в строю" },
   ]
   for (const p of demo) {
-    const exists = await prisma.personnel.findFirst({
-      where: { lastName: p.lastName, firstName: p.firstName, unit: p.unit },
-    })
-    if (!exists) await prisma.personnel.create({ data: p })
+    const exists = await orm.Personnel.where({ lastName: p.lastName, firstName: p.firstName, unit: p.unit }).first()
+    if (!exists) await orm.Personnel.create({ ...p, updatedAt: nowTimestamp() })
   }
   console.log(`Seeded ${demo.length} personnel`)
 
@@ -196,38 +185,33 @@ async function main() {
 
   for (const u of users) {
     const hash = await bcrypt.hash(u.password, 10)
-    const upserted = await prisma.user.upsert({
-      where: { username: u.username },
-      update: {
-        password: hash,
-        role: u.role,
-        isActive: true,
-        profile: {
-          upsert: {
-            create: u.profile,
-            update: u.profile,
-          },
-        },
-      },
+    const upserted = await orm.User.upsert({
       create: {
         username: u.username,
         password: hash,
         role: u.role,
         isActive: true,
-        profile: { create: u.profile },
+        updatedAt: nowTimestamp(),
       },
-      include: { profile: true },
+      update: {
+        password: hash,
+        role: u.role,
+        isActive: true,
+        updatedAt: nowTimestamp(),
+      },
+      conflictOn: { username: u.username },
+    })
+    await orm.Profile.upsert({
+      create: { userId: upserted.id, ...u.profile, updatedAt: nowTimestamp() },
+      update: { ...u.profile, updatedAt: nowTimestamp() },
+      conflictOn: { userId: upserted.id },
     })
     // Якщо шаблони вже засіяні без createdBy — оновити (для першого запуску де admin був null)
     if (u.username === "admin") {
-      await prisma.template.updateMany({
-        where: { createdById: null },
-        data: { createdById: upserted.id },
-      })
+      await orm.Template.where((t) => t.createdById.isNull()).updateAll({ createdById: upserted.id, updatedAt: nowTimestamp() })
     }
     console.log(` - ${u.username} (${u.role}) -> profile: ${u.profile.lastName} ${u.profile.firstName}, rank: ${u.profile.rank}`)
   }
-
 }
 
 main()
@@ -236,5 +220,5 @@ main()
     process.exit(1)
   })
   .finally(async () => {
-    await prisma.$disconnect()
+    await db.close()
   })

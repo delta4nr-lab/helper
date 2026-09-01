@@ -176,6 +176,22 @@
   color: #581c87;
   box-shadow: 0 0 0 1px #e9d5ff;
 }
+/* Редаговані поля заповнення документа (tip-tap) — дозволяємо перенос тексту та курсор-введення */
+.field-chip--editable {
+  white-space: normal;
+}
+.document-fill-editor {
+  min-height: 100%;
+  cursor: text;
+}
+/* Зображення підпису в редакторі заповнення */
+.signature-editor-img {
+  display: inline-block;
+  height: 4em;
+  width: auto;
+  max-width: 100%;
+  vertical-align: middle;
+}
 /* Підпис: слот займає рядок тексту (не рухає вміст/таблиці), а зображення позиціоноване поверх */
 .signature-slot {
     display: inline-block;

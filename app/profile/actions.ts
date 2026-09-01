@@ -4,7 +4,7 @@ import bcrypt from "bcrypt"
 import { revalidatePath } from "next/cache"
 
 import { auth } from "@/auth"
-import { prisma } from "@/lib/db"
+import { orm, nowTimestamp } from "@/lib/db"
 import { validateUsername } from "@/lib/auth"
 
 type ActionResult = { ok: boolean; message: string; field?: string }
@@ -36,16 +36,16 @@ export async function updateAccountAction(_prev: ActionResult | null, formData: 
   const err = validateUsername(rawUsername)
   if (err) return { ok: false, message: err, field: "username" }
 
-  const current = await prisma.user.findUnique({ where: { id: userId } })
+  const current = await orm.User.first({ id: userId })
   if (!current) return { ok: false, message: "Користувача не знайдено" }
 
   // Перевірка унікальності якщо логін змінився
   if (rawUsername !== current.username) {
-    const exists = await prisma.user.findUnique({ where: { username: rawUsername } })
+    const exists = await orm.User.first({ username: rawUsername })
     if (exists) return { ok: false, message: "Логін вже зайнятий", field: "username" }
   }
 
-  const data: Record<string, unknown> = {}
+  const data: { username?: string; password?: string } = {}
   if (rawUsername !== current.username) data.username = rawUsername
 
   // Пароль — необов'язковий
@@ -60,7 +60,7 @@ export async function updateAccountAction(_prev: ActionResult | null, formData: 
     return { ok: false, message: "Немає змін для збереження" }
   }
 
-  await prisma.user.update({ where: { id: userId }, data: data as never })
+  await orm.User.where({ id: userId }).update({ ...data, updatedAt: nowTimestamp() })
 
   revalidatePath("/profile")
   // JWT містить username — після зміни логіну треба перелогінитись
@@ -93,10 +93,10 @@ export async function updateProfileDetailsAction(_prev: ActionResult | null, for
     if (val && val.length > 64) return { ok: false, message: `${field} занадто довге (макс 64)`, field: field }
   }
 
-  await prisma.profile.upsert({
-    where: { userId },
-    create: { userId, lastName, firstName, middleName, rank },
-    update: { lastName, firstName, middleName, rank },
+  await orm.Profile.upsert({
+    create: { userId, lastName, firstName, middleName, rank, updatedAt: nowTimestamp() },
+    update: { lastName, firstName, middleName, rank, updatedAt: nowTimestamp() },
+    conflictOn: { userId },
   })
 
   revalidatePath("/profile")

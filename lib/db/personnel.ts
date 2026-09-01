@@ -1,6 +1,7 @@
 import "server-only"
 
-import { prisma } from "@/lib/db"
+import { orm, nowTimestamp } from "@/lib/db"
+import { or } from "@prisma/orm-postgres/orm-client"
 
 export type PersonnelOrderBy = "lastName" | "createdAt" | "rank"
 
@@ -14,37 +15,38 @@ export async function listPersonnel(params: {
   pageSize?: number
 }) {
   const { q, unit, status, orderBy = "lastName", orderDir = "asc", page = 1, pageSize = 20 } = params
-  const where: Record<string, unknown> = {}
+  let collection = orm.Personnel
   if (q) {
     const qq = q.trim()
     if (qq) {
-      ;(where as Record<string, unknown>).OR = [
-        { lastName: { contains: qq, mode: "insensitive" } },
-        { firstName: { contains: qq, mode: "insensitive" } },
-        { middleName: { contains: qq, mode: "insensitive" } },
-        { rank: { contains: qq, mode: "insensitive" } },
-        { position: { contains: qq, mode: "insensitive" } },
-        { unit: { contains: qq, mode: "insensitive" } },
-      ]
+      collection = collection.where((p) =>
+        or(
+          p.lastName.ilike(`%${qq}%`),
+          p.firstName.ilike(`%${qq}%`),
+          p.middleName.ilike(`%${qq}%`),
+          p.rank.ilike(`%${qq}%`),
+          p.position.ilike(`%${qq}%`),
+          p.unit.ilike(`%${qq}%`),
+        )
+      )
     }
   }
-  if (unit) (where as Record<string, string>).unit = unit
-  if (status) (where as Record<string, string>).status = status
+  if (unit) collection = collection.where({ unit })
+  if (status) collection = collection.where({ status })
+  collection = collection.orderBy((p) => {
+    const column = orderBy === "createdAt" ? p.createdAt : orderBy === "rank" ? p.rank : p.lastName
+    return orderDir === "desc" ? column.desc() : column.asc()
+  })
 
   const [items, total] = await Promise.all([
-    prisma.personnel.findMany({
-      where: where as never,
-      orderBy: { [orderBy]: orderDir },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.personnel.count({ where: where as never }),
+    collection.offset((page - 1) * pageSize).limit(pageSize).all(),
+    collection.aggregate((agg) => ({ count: agg.count() })),
   ])
-  return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
+  return { items, total: total.count, page, pageSize, totalPages: Math.ceil(total.count / pageSize) }
 }
 
 export async function getPersonnel(id: string) {
-  return prisma.personnel.findUnique({ where: { id } })
+  return orm.Personnel.first({ id })
 }
 
 export async function createPersonnel(data: {
@@ -56,5 +58,5 @@ export async function createPersonnel(data: {
   unit: string
   status?: string
 }) {
-  return prisma.personnel.create({ data })
+  return orm.Personnel.create({ ...data, updatedAt: nowTimestamp() })
 }

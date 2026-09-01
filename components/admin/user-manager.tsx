@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-type User = { id: string; username: string; role: string; isActive: boolean; profile: { lastName: string | null; firstName: string | null; rank: string | null } | null; _count: { exports: number } }
+type User = { id: string; username: string; role: string; isActive: boolean; profile: { lastName: string | null; firstName: string | null; rank: string | null } | null; exportedFiles: number }
 type FormState = { username: string; password: string; role: "USER" | "ADMIN"; lastName: string; firstName: string; middleName: string; rank: string }
 const emptyForm: FormState = { username: "", password: "", role: "USER", lastName: "", firstName: "", middleName: "", rank: "" }
 

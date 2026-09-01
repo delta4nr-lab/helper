@@ -15,7 +15,7 @@ import {
   getTemplatesByCategory as getFallbackTemplatesByCategory,
 } from "@/lib/documents/catalog"
 import { cn } from "@/lib/utils"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 
 type Params = { category: string }
 
@@ -32,16 +32,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { category } = await params
   try {
-    if (prisma && (prisma as unknown as { category: unknown }).category) {
-      const cat = await prisma.category.findUnique({
-        where: { slug: category },
-      })
-      if (cat)
-        return {
-          title: `${cat.title} — шаблони`,
-          description: cat.longDescription ?? cat.description,
-        }
-    }
+    const cat = await orm.Category.first({ slug: category })
+    if (cat)
+      return {
+        title: `${cat.title} — шаблони`,
+        description: cat.longDescription ?? cat.description,
+      }
   } catch {}
   const cat = getFallbackCategory(category)
   if (!cat) return { title: "Категорію не знайдено" }
@@ -74,34 +70,30 @@ export default async function CategoryPage({
     updatedAt: string
   }[] = []
   try {
-    if (prisma && (prisma as unknown as { category: unknown }).category) {
-      const dbCat = await prisma.category.findUnique({
-        where: { slug: category },
-      })
-      if (dbCat) {
-        cat = {
-          slug: dbCat.slug,
-          title: dbCat.title,
-          description: dbCat.description,
-          longDescription: dbCat.longDescription,
-          countLabel: dbCat.countLabel,
-        }
-        const dbTemplates = await prisma.template.findMany({
-          where: { categorySlug: category, isActive: true },
-          orderBy: [{ popular: "desc" }, { title: "asc" }],
-        })
-        items = dbTemplates.map((t) => ({
+    const dbCat = await orm.Category.first({ slug: category })
+    if (dbCat) {
+      cat = {
+        slug: dbCat.slug,
+        title: dbCat.title,
+        description: dbCat.description,
+        longDescription: dbCat.longDescription,
+        countLabel: dbCat.countLabel,
+      }
+      const dbTemplates = await orm.Template.where({ categorySlug: category, isActive: true }).orderBy((t) => t.title.asc()).all()
+      items = dbTemplates
+        .slice()
+        .sort((a, b) => Number(b.popular) - Number(a.popular))
+        .map((t) => ({
           id: t.id,
           title: t.title,
           categorySlug: t.categorySlug,
           fields: t.fields,
           popular: t.popular,
           description: t.description,
-          tags: t.tags,
+          tags: [...t.tags],
           paper: t.paper as "А4" | "А4 альбом",
-          updatedAt: t.updatedAt.toISOString().slice(0, 10),
+          updatedAt: t.updatedAt.slice(0, 10),
         }))
-      }
     }
   } catch {}
   if (!cat) {

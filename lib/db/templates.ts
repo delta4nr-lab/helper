@@ -1,46 +1,38 @@
 import "server-only"
 
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
+import { or } from "@prisma/orm-postgres/orm-client"
 
 export async function listTemplates(params?: { categorySlug?: string; popular?: boolean; q?: string }) {
-  const where: Record<string, unknown> = {}
-  if (params?.categorySlug) where.categorySlug = params.categorySlug
-  if (typeof params?.popular === "boolean") where.popular = params.popular
+  let collection = orm.Template
+  if (params?.categorySlug) collection = collection.where({ categorySlug: params.categorySlug })
+  if (typeof params?.popular === "boolean") collection = collection.where({ popular: params.popular })
   if (params?.q) {
     const q = params.q.trim()
     if (q) {
-      ;(where as Record<string, unknown>).OR = [
-        { title: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
-      ]
+      collection = collection.where((t) => or(t.title.ilike(`%${q}%`), t.description.ilike(`%${q}%`)))
     }
   }
-  return prisma.template.findMany({
-    where: where as never,
-    orderBy: [{ popular: "desc" }, { title: "asc" }],
-  })
+  const rows = await collection.orderBy((t) => t.title.asc()).all()
+  return rows.sort((a, b) => Number(b.popular) - Number(a.popular))
 }
 
 export async function getTemplate(id: string) {
-  return prisma.template.findUnique({ where: { id } })
+  return orm.Template.first({ id })
 }
 
 export async function getTemplateWithFields(id: string) {
-  return prisma.template.findUnique({
-    where: { id },
-    include: { fieldsConfig: { orderBy: { sortOrder: "asc" } }, category: true },
-  })
+  return orm.Template.where({ id })
+    .include("templateFields", (f) => f.orderBy((field) => field.sortOrder.asc()))
+    .include("category", (c) => c)
+    .first()
 }
 
 export async function getCategoryCounts() {
-  const [categories, counts] = await Promise.all([
-    prisma.template.findMany({ distinct: ["categorySlug"], select: { categorySlug: true } }),
-    prisma.template.groupBy({ by: ["categorySlug"], _count: true }),
-  ])
-  void categories
-  return counts.map((c) => ({ categorySlug: c.categorySlug, count: c._count }))
+  const counts = await orm.Template.groupBy("categorySlug").aggregate((agg) => ({ count: agg.count() }))
+  return counts.map((c) => ({ categorySlug: c.categorySlug, count: c.count }))
 }
 
 export async function listCategories() {
-  return prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } })
+  return orm.Category.where({ isActive: true }).orderBy((c) => c.sortOrder.asc()).all()
 }

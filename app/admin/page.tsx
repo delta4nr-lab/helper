@@ -13,18 +13,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
 export default async function AdminPage() {
   // Auth перевіряється в app/admin/layout.tsx (middleware + server layout)
-  const [usersTotal, exportsTotal, categoriesTotal, templatesTotal] =
+  const [{ count: usersTotal }, { count: exportsTotal }, { count: categoriesTotal }, { count: templatesTotal }] =
     await Promise.all([
-      prisma.user.count(),
-      prisma.exportedFile.count(),
-      prisma.category.count(),
-      prisma.template.count({ where: { isActive: true } }),
+      orm.User.aggregate((agg) => ({ count: agg.count() })),
+      orm.ExportedFile.aggregate((agg) => ({ count: agg.count() })),
+      orm.Category.aggregate((agg) => ({ count: agg.count() })),
+      orm.Template.where({ isActive: true }).aggregate((agg) => ({ count: agg.count() })),
     ])
 
   return (

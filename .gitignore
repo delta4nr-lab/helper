@@ -38,7 +38,10 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# prisma — згенерований клієнт (v7+: generated/prisma, legacy: lib/generated/prisma)
-generated/
-lib/generated/
-/generated/prisma
+# prisma — emitted contract artefacts are committed; nothing generated at build time
+
+# AGENTS skills 
+.agents
+.claude
+.cursor
+.devin

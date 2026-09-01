@@ -1,6 +1,7 @@
 import "server-only"
 
-import { prisma } from "@/lib/db"
+import { orm, nowTimestamp } from "@/lib/db"
+import { or } from "@prisma/orm-postgres/orm-client"
 import { hashPassword, requireAdmin, validateUsername, type SessionUser } from "@/lib/auth"
 
 export async function listUsers(params: {
@@ -10,48 +11,46 @@ export async function listUsers(params: {
   pageSize?: number
 }) {
   const { q, role, page = 1, pageSize = 20 } = params
-  const where: Record<string, unknown> = {}
-  if (role) where.role = role
+  let collection = orm.User
+  if (role) collection = collection.where({ role })
   if (q) {
     const qq = q.trim().toLowerCase()
     if (qq) {
-      where.OR = [
-        { username: { contains: qq, mode: "insensitive" } },
-        { profile: { lastName: { contains: qq, mode: "insensitive" } } },
-        { profile: { firstName: { contains: qq, mode: "insensitive" } } },
-      ]
+      collection = collection.where((u) =>
+        or(
+          u.username.ilike(`%${qq}%`),
+          u.profile.some((p) => p.lastName.ilike(`%${qq}%`)),
+          u.profile.some((p) => p.firstName.ilike(`%${qq}%`))
+        )
+      )
     }
   }
   const [items, total] = await Promise.all([
-    prisma.user.findMany({
-      where: where as never,
-      include: { profile: true, _count: { select: { exports: true } } },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.user.count({ where: where as never }),
+    collection
+      .include("profile", (p) => p)
+      .include("exportedFiles", (ef) => ef.count())
+      .orderBy((u) => u.createdAt.desc())
+      .offset((page - 1) * pageSize)
+      .limit(pageSize)
+      .all(),
+    collection.aggregate((agg) => ({ count: agg.count() })),
   ])
-  return { items, total, page, pageSize, totalPages: Math.ceil(total / pageSize) }
+  return { items, total: total.count, page, pageSize, totalPages: Math.ceil(total.count / pageSize) }
 }
 
 export async function getUserWithExports(username: string, session: SessionUser | null) {
   // USER бачить тільки свої, ADMIN — будь-кого
   if (!session) throw new Error("Не авторизовано")
-  const target = await prisma.user.findUnique({
-    where: { username },
-    include: { profile: true },
-  })
+  const target = await orm.User.where({ username }).include("profile", (p) => p).first()
   if (!target) return null
   if (session.role === "USER" && session.username !== username) {
     throw new Error("Недостатньо прав")
   }
-  const exports = await prisma.exportedFile.findMany({
-    where: { userId: target.id },
-    include: { template: true },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  })
+  const exports = await orm.ExportedFile.where({ userId: target.id })
+    .include("template", (t) => t)
+    .orderBy((f) => f.createdAt.desc())
+    .limit(50)
+    .all()
   return { user: target, exports }
 }
 
@@ -72,34 +71,29 @@ export async function createUser(
   if (!data.password || data.password.length < 8) throw new Error("Пароль мінімум 8 символів")
   if (data.role && !["ADMIN", "USER"].includes(data.role)) throw new Error("Невірна роль")
 
-  const exists = await prisma.user.findUnique({ where: { username } })
+  const exists = await orm.User.first({ username })
   if (exists) throw new Error("Користувач з таким логіном вже існує")
 
   const password = await hashPassword(data.password)
 
-  return prisma.user.create({
-    data: {
-      username,
-      password,
-      role: data.role ?? "USER",
-      profile: {
-        create: {
-          lastName: data.profile?.lastName?.trim() || null,
-          firstName: data.profile?.firstName?.trim() || null,
-          middleName: data.profile?.middleName?.trim() || null,
-          rank: data.profile?.rank?.trim() || null,
-        },
-      },
-    },
-    include: { profile: true },
+  return orm.User.create({
+    username,
+    password,
+    role: data.role ?? "USER",
+    updatedAt: nowTimestamp(),
+    profile: (profile) =>
+      profile.create({
+        lastName: data.profile?.lastName?.trim() || null,
+        firstName: data.profile?.firstName?.trim() || null,
+        middleName: data.profile?.middleName?.trim() || null,
+        rank: data.profile?.rank?.trim() || null,
+        updatedAt: nowTimestamp(),
+      }),
   })
 }
 
 export async function deactivateUser(username: string, session: SessionUser) {
   requireAdmin(session)
   if (session.username === username) throw new Error("Не можна деактивувати себе")
-  return prisma.user.update({
-    where: { username },
-    data: { isActive: false },
-  })
+  return orm.User.where({ username }).update({ isActive: false, updatedAt: nowTimestamp() })
 }

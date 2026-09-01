@@ -1,15 +1,13 @@
 import "server-only"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 
 export async function getCategoryBySlug(slug: string) {
-  return prisma.category.findUnique({ where: { slug } })
+  return orm.Category.first({ slug })
 }
 
 export async function listCategoriesWithCounts() {
-  const categories = await prisma.category.findMany({
-    where: { isActive: true },
-    orderBy: { sortOrder: "asc" },
-    include: { _count: { select: { templates: true } } },
-  })
-  return categories
+  return orm.Category.where({ isActive: true })
+    .orderBy([(c) => c.sortOrder.asc(), (c) => c.title.asc()])
+    .include("templates", (t) => t.count())
+    .all()
 }

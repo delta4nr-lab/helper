@@ -1,7 +1,7 @@
 import "server-only"
 
 import bcrypt from "bcrypt"
-import { prisma } from "@/lib/db"
+import { db } from "@/lib/db"
 
 // Простий session через cookies/JWT буде додано пізніше — зараз базові хелпери
 // Використовується тільки на сервері (AGENTS: Security)
@@ -78,8 +78,5 @@ export function validateUsername(username: string): string | null {
 }
 
 export async function getUserByUsername(username: string) {
-  return prisma.user.findUnique({
-    where: { username: username.trim().toLowerCase() },
-    include: { profile: true },
-  })
+  return db.orm.public.User.where({ username: username.trim().toLowerCase() }).include("profile", (p) => p).first()
 }

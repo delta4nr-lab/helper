@@ -1,0 +1,143 @@
+// use prisma-next
+// Contract inferred from the live database schema. Edit as needed, then run `prisma contract emit`.
+
+namespace public {
+  model Category {
+    @@map("Category")
+    id              String       @id(map: "Category_pkey") @default(nanoid())
+    slug            String       @unique(map: "Category_slug_key")
+    title           String
+    description     String
+    longDescription String?
+    icon            String?
+    countLabel      String       @default("шаблонів")
+    sortOrder       Int          @default(0)
+    isActive        Boolean      @default(true)
+    createdAt       TimestampString(3) @default(now())
+    updatedAt       TimestampString(3)
+    templates       Template[]
+
+    @@index([isActive, sortOrder], map: "Category_isActive_sortOrder_idx")
+  }
+
+  model User {
+    @@map("User")
+    id            String       @id(map: "User_pkey") @default(nanoid())
+    username      String       @unique(map: "User_username_key")
+    password      String
+    role          pg.enum(Role) @default("USER")
+    isActive      Boolean       @default(true)
+    createdAt     TimestampString(3)  @default(now())
+    updatedAt     TimestampString(3)
+    exportedFiles ExportedFile[]
+    profile       Profile?
+    templates     Template[]
+
+    @@index([role], map: "User_role_idx")
+  }
+
+  model Template {
+    @@map("Template")
+    id             String          @id(map: "Template_pkey") @default(nanoid())
+    categorySlug   String
+    title          String
+    fields         Int
+    popular        Boolean         @default(false)
+    description    String
+    tags           String[]        @noCheck(elementNotNull)
+    paper          String          @default("А4")
+    createdAt      TimestampString(3)    @default(now())
+    updatedAt      TimestampString(3)
+    createdById    String?
+    categoryId     String?
+    isActive       Boolean         @default(true)
+    bodyTemplate   String?
+    footerTemplate String?
+    headerTemplate String?
+    exportedFiles  ExportedFile[]
+    templateFields TemplateField[]
+    category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Template_categoryId_fkey", index: false)
+    createdBy      User?           @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Template_createdById_fkey")
+
+    @@index([categoryId, isActive], map: "Template_categoryId_isActive_idx")
+    @@index([categorySlug], map: "Template_categorySlug_idx")
+    @@index([createdById], map: "Template_createdById_idx")
+    @@index([popular], map: "Template_popular_idx")
+  }
+
+  model ExportedFile {
+    @@map("ExportedFile")
+    id         String       @id(map: "ExportedFile_pkey") @default(nanoid())
+    userId     String
+    templateId String
+    title      String
+    fileName   String
+    mimeType   String
+    size       Int
+    data       Bytes
+    createdAt  TimestampString(3) @default(now())
+    template   Template     @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: Cascade, map: "ExportedFile_templateId_fkey")
+    user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "ExportedFile_userId_fkey", index: false)
+
+    @@index([templateId], map: "ExportedFile_templateId_idx")
+    @@index([userId, createdAt], map: "ExportedFile_userId_createdAt_idx")
+  }
+
+  model Personnel {
+    @@map("Personnel")
+    id            String       @id(map: "Personnel_pkey") @default(nanoid())
+    lastName      String
+    firstName     String
+    middleName    String?
+    rank          String
+    position      String
+    unit          String?
+    status        String       @default("в строю")
+    createdAt     TimestampString(3) @default(now())
+    updatedAt     TimestampString(3)
+    signaturePath String?
+
+    @@index([lastName, firstName], map: "Personnel_lastName_firstName_idx")
+    @@index([rank], map: "Personnel_rank_idx")
+    @@index([status], map: "Personnel_status_idx")
+    @@index([unit], map: "Personnel_unit_idx")
+  }
+
+  model Profile {
+    @@map("Profile")
+    id         String       @id(map: "Profile_pkey") @default(nanoid())
+    userId     String       @unique(map: "Profile_userId_key")
+    lastName   String?
+    firstName  String?
+    middleName String?
+    rank       String?
+    createdAt  TimestampString(3) @default(now())
+    updatedAt  TimestampString(3)
+    user       User         @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "Profile_userId_fkey")
+  }
+
+  model TemplateField {
+    @@map("TemplateField")
+    id          String       @id(map: "TemplateField_pkey") @default(nanoid())
+    templateId  String
+    key         String
+    label       String
+    _type       String       @map("type")
+    required    Boolean      @default(true)
+    placeholder String?
+    options     Jsonb?
+    validation  Jsonb?
+    sortOrder   Int          @default(0)
+    createdAt   TimestampString(3) @default(now())
+    updatedAt   TimestampString(3)
+    template    Template     @relation(fields: [templateId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "TemplateField_templateId_fkey", index: false)
+
+    @@unique([templateId, key], map: "TemplateField_templateId_key_key")
+    @@index([templateId, sortOrder], map: "TemplateField_templateId_sortOrder_idx")
+  }
+
+  native_enum Role {
+    ADMIN = "ADMIN"
+    USER = "USER"
+  }
+}

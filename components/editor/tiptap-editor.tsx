@@ -4,8 +4,7 @@ import * as React from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
-import Paragraph from "@tiptap/extension-paragraph"
-import { Table, TableKit, TableView } from "@tiptap/extension-table"
+import { TableKit } from "@tiptap/extension-table"
 import { FontFamily, FontSize, TextStyle } from "@tiptap/extension-text-style"
 import TextAlign from "@tiptap/extension-text-align"
 import {
@@ -34,6 +33,7 @@ import {
 } from "lucide-react"
 
 import { FieldExtension } from "@/lib/documents/editor/field-extension"
+import { hasParagraphIndent, setParagraphIndent, ParagraphWithIndent, StyledTable } from "@/lib/documents/editor/extensions"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -245,9 +245,6 @@ function setTableWidthPercent(editor: NonNullable<ReturnType<typeof useEditor>>,
 }
 
 // ── Styled Table ─────────────────────────────────────────────────────────────
-// Стандартний "червоний рядок" 1.25см ≈ 47px
-const PARAGRAPH_INDENT_PX = 47
-
 type FieldType = "text" | "signature" | "rank" | "person" | "position"
 
 // Вставляє спеціальне поле (підпис / звання+прізвище / посада) з унікальним ключем:
@@ -267,113 +264,12 @@ function insertTypedField(editor: NonNullable<ReturnType<typeof useEditor>>, typ
   editor.chain().focus().insertContent({ type: "field", attrs: { fieldKey: key, label: nextLabel, type } }).run()
 }
 
-function hasParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>): boolean {
-  try {
-    return Boolean(editor.getAttributes("paragraph").textIndent)
-  } catch {
-    return false
-  }
-}
-
-// Вмикає/вимикає абзацний відступ (text-indent → "червоний рядок") на поточному абзаці
-function setParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>, enabled: boolean) {
-  editor.chain().focus().updateAttributes("paragraph", { textIndent: enabled ? `${PARAGRAPH_INDENT_PX}px` : null }).run()
-}
-
 function toggleParagraphIndent(editor: NonNullable<ReturnType<typeof useEditor>>) {
   setParagraphIndent(editor, !hasParagraphIndent(editor))
 }
 
 // Розширення Paragraph: зберігає text-indent окремим атрибутом (як TextAlign зберігає text-align),
 // щоб не конфліктувати з вирівнюванням і не перезаписувати style абзацу.
-const ParagraphWithIndent = Paragraph.extend({
-  addAttributes() {
-    return {
-      textIndent: {
-        default: null,
-        parseHTML: (element) => (element as HTMLElement).style.textIndent || null,
-        renderHTML: (attributes) => (attributes.textIndent ? { style: `text-indent: ${attributes.textIndent}` } : {}),
-      },
-    }
-  },
-  addKeyboardShortcuts() {
-    return {
-      Tab: () => {
-        // У таблицях/списках Tab керується іншими розширеннями (перехід по комірках, рівні списку)
-        if (this.editor.isActive("table")) return false
-        if (this.editor.isActive("bulletList") || this.editor.isActive("orderedList")) return false
-        setParagraphIndent(this.editor, true)
-        return true
-      },
-      "Shift-Tab": () => {
-        if (this.editor.isActive("table")) return false
-        if (this.editor.isActive("bulletList") || this.editor.isActive("orderedList")) return false
-        setParagraphIndent(this.editor, false)
-        return true
-      },
-    }
-  },
-})
-
-class StyledTableView extends TableView {
-  constructor(...args: ConstructorParameters<typeof TableView>) {
-    super(...args)
-    this.syncBorderlessState(this.node)
-  }
-
-  update(node: Parameters<TableView["update"]>[0]) {
-    const updated = super.update(node)
-    if (updated) this.syncBorderlessState(node)
-    return updated
-  }
-
-  private syncBorderlessState(node: Parameters<TableView["update"]>[0]) {
-    const borderless = node.attrs.borderless === true
-    this.table.classList.toggle("table-borderless", borderless)
-    if (borderless) this.table.setAttribute("data-borderless", "true")
-    else this.table.removeAttribute("data-borderless")
-  }
-}
-
-const StyledTable = Table.extend({
-  addAttributes() {
-    return {
-      ...this.parent?.(),
-      borderless: {
-        default: false,
-        parseHTML: (element) => element.getAttribute("data-borderless") === "true",
-        renderHTML: (attributes) => (attributes.borderless ? { "data-borderless": "true", class: "table-borderless" } : {}),
-      },
-      style: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("style"),
-        renderHTML: (attributes) => {
-          const style = attributes.style as string | null | undefined
-          let dataWidth = "auto"
-          if (typeof style === "string") {
-            const match = style.match(/width:\s*([\d.]+)(px|pt|%)/i)
-            if (match) dataWidth = match[2] === "%" ? "percent" : "fixed"
-          }
-          return { ...(style ? { style } : {}), "data-table-width": dataWidth }
-        },
-      },
-    }
-  },
-  addOptions() {
-    const parent = (this.parent?.() ?? {}) as Record<string, unknown>
-    return {
-      ...parent,
-      resizable: true,
-      handleWidth: 5,
-      cellMinWidth: 40,
-      lastColumnResizable: true,
-      allowTableNodeSelection: false,
-    } as never
-  },
-  addNodeView() {
-    return ({ node, view, HTMLAttributes }) => new StyledTableView(node, this.options.cellMinWidth, view, HTMLAttributes)
-  },
-})
 
 export type TiptapEditorHandle = {
   insertField: (fieldKey: string, label: string) => void

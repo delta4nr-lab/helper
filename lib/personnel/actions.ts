@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { auth } from "@/auth"
-import { prisma } from "@/lib/db"
+import { orm, nowTimestamp } from "@/lib/db"
 
 const personnelSchema = z.object({
   lastName: z.string().trim().min(1, "Вкажіть прізвище"),
@@ -35,16 +35,15 @@ export async function createPersonnelAction(input: unknown): Promise<{ ok: boole
   if (!adminId) return { ok: false, message: "Недостатньо прав" }
   try {
     const data = personnelSchema.parse(input)
-    await prisma.personnel.create({
-      data: {
-        lastName: data.lastName,
-        firstName: data.firstName,
-        middleName: data.middleName || null,
-        rank: data.rank,
-        position: data.position,
-        status: data.status,
-        signaturePath: data.signaturePath || null,
-      },
+    await orm.Personnel.create({
+      lastName: data.lastName,
+      firstName: data.firstName,
+      middleName: data.middleName || null,
+      rank: data.rank,
+      position: data.position,
+      status: data.status,
+      signaturePath: data.signaturePath || null,
+      updatedAt: nowTimestamp(),
     })
     revalidatePath("/admin/personnel")
     return { ok: true, message: "Людину додано до штату" }
@@ -58,18 +57,16 @@ export async function updatePersonnelAction(id: string, input: unknown): Promise
   if (!adminId) return { ok: false, message: "Недостатньо прав" }
   try {
     const data = personnelSchema.parse(input)
-    const existing = await prisma.personnel.findUnique({ where: { id }, select: { signaturePath: true } })
-    await prisma.personnel.update({
-      where: { id },
-      data: {
-        lastName: data.lastName,
-        firstName: data.firstName,
-        middleName: data.middleName || null,
-        rank: data.rank,
-        position: data.position,
-        status: data.status,
-        signaturePath: data.signaturePath || null,
-      },
+    const existing = await orm.Personnel.select("signaturePath").first({ id })
+    await orm.Personnel.where({ id }).update({
+      lastName: data.lastName,
+      firstName: data.firstName,
+      middleName: data.middleName || null,
+      rank: data.rank,
+      position: data.position,
+      status: data.status,
+      signaturePath: data.signaturePath || null,
+      updatedAt: nowTimestamp(),
     })
     // Старий підпис замінено новим або видалено — прибираємо файл
     if (existing?.signaturePath && existing.signaturePath !== data.signaturePath) {
@@ -86,8 +83,8 @@ export async function deletePersonnelAction(id: string): Promise<{ ok: boolean; 
   const adminId = await requireAdmin()
   if (!adminId) return { ok: false, message: "Недостатньо прав" }
   try {
-    const existing = await prisma.personnel.findUnique({ where: { id }, select: { signaturePath: true } })
-    await prisma.personnel.delete({ where: { id } })
+    const existing = await orm.Personnel.select("signaturePath").first({ id })
+    await orm.Personnel.where({ id }).delete()
     await removeSignatureFile(existing?.signaturePath)
     revalidatePath("/admin/personnel")
     return { ok: true, message: "Видалено зі штату" }

@@ -2,15 +2,14 @@ import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { TemplateManager } from "@/components/admin/template-manager"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
 export default async function AdminTemplatesPage() {
-  const templates = await prisma.template.findMany({
-    include: { category: { select: { title: true } } },
-    orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
-  })
+  const templates = await orm.Template.include("category", (c) => c.select("title"))
+    .orderBy((t) => t.updatedAt.desc())
+    .all()
   return (
     <div className="min-h-svh bg-muted/20">
       <SiteHeader />
@@ -30,7 +29,7 @@ export default async function AdminTemplatesPage() {
               description: template.description,
               fields: template.fields,
               isActive: template.isActive,
-              updatedAt: template.updatedAt.toISOString(),
+              updatedAt: template.updatedAt,
             }))}
           />
         </main>

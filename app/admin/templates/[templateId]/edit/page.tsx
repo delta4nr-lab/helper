@@ -4,7 +4,7 @@ import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { TemplateForm } from "@/app/admin/templates/new/template-form"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 
 type Params = { templateId: string }
 
@@ -17,15 +17,11 @@ export default async function EditTemplatePage({
 }) {
   const { templateId } = await params
   const [template, categories] = await Promise.all([
-    prisma.template.findUnique({
-      where: { id: templateId },
-      include: { fieldsConfig: { orderBy: { sortOrder: "asc" } } },
-    }),
-    prisma.category.findMany({
-      where: { isActive: true },
-      orderBy: { sortOrder: "asc" },
-      select: { slug: true, title: true },
-    }),
+    orm.Template.first({ id: templateId }),
+    orm.Category.where({ isActive: true })
+      .orderBy((c) => c.sortOrder.asc())
+      .select("slug", "title")
+      .all(),
   ])
   if (!template) notFound()
   return (

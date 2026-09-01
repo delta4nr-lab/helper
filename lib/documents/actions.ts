@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { auth } from "@/auth"
-import { prisma } from "@/lib/db"
+import { db, orm, nowTimestamp } from "@/lib/db"
 import { slugify } from "@/lib/slugify"
 
 type TemplateActionResult = { ok: boolean; message: string; templateId?: string }
@@ -77,34 +77,34 @@ export async function createTemplateAction(data: {
 
   let id = baseId
   let suffix = 2
-  while (await prisma.template.findUnique({ where: { id }, select: { id: true } })) {
+  while (await orm.Template.select("id").first({ id })) {
     id = `${baseId}-${suffix}`
     suffix += 1
   }
 
-  const category = await prisma.category.findUnique({ where: { slug: data.categorySlug } })
+  const category = await orm.Category.first({ slug: data.categorySlug })
   if (!category) return { ok: false, message: "Категорію не знайдено" }
 
   const keys = fieldEntries(data)
 
   const paper = data.paper === "А4 альбом" ? "А4 альбом" : "А4"
   try {
-    await prisma.template.create({
-      data: {
-        id,
-        categoryId: category.id,
-        categorySlug: category.slug,
-        title,
-        fields: keys.length,
-        description: data.description.trim(),
-        tags: [],
-        paper,
-        headerTemplate: data.headerTemplate,
-        bodyTemplate: data.bodyTemplate,
-        footerTemplate: data.footerTemplate,
-        createdById: userId,
-        fieldsConfig: { create: keys.map((field, sortOrder) => ({ key: field.key, label: field.label, type: field.type, sortOrder })) },
-      },
+    await orm.Template.create({
+      id,
+      categoryId: category.id,
+      categorySlug: category.slug,
+      title,
+      fields: keys.length,
+      description: data.description.trim(),
+      tags: [],
+      paper,
+      headerTemplate: data.headerTemplate,
+      bodyTemplate: data.bodyTemplate,
+      footerTemplate: data.footerTemplate,
+      createdById: userId,
+      updatedAt: nowTimestamp(),
+      templateFields: (fields) =>
+        fields.create(keys.map((field, sortOrder) => ({ key: field.key, label: field.label, _type: field.type, sortOrder, updatedAt: nowTimestamp() }))),
     })
   } catch {
     return { ok: false, message: "Не вдалося створити шаблон. Спробуйте ще раз." }
@@ -120,19 +120,31 @@ export async function updateTemplateAction(templateId: string, data: TemplateMut
   if (!userId) return { ok: false, message: "Недостатньо прав" }
   const title = data.title.trim()
   if (!title) return { ok: false, message: "Вкажіть назву шаблону" }
-  const category = await prisma.category.findUnique({ where: { slug: data.categorySlug } })
+  const category = await orm.Category.first({ slug: data.categorySlug })
   if (!category) return { ok: false, message: "Категорію не знайдено" }
   const keys = fieldEntries(data)
 
   const paper = data.paper === "А4 альбом" ? "А4 альбом" : "А4"
   try {
-    await prisma.$transaction(async (tx) => {
-      await tx.template.update({
-        where: { id: templateId },
-        data: { categoryId: category.id, categorySlug: category.slug, title, description: data.description.trim(), headerTemplate: data.headerTemplate, bodyTemplate: data.bodyTemplate, footerTemplate: data.footerTemplate, paper, fields: keys.length },
+    await db.transaction(async (tx) => {
+      await tx.orm.public.Template.where({ id: templateId }).update({
+        categoryId: category.id,
+        categorySlug: category.slug,
+        title,
+        description: data.description.trim(),
+        headerTemplate: data.headerTemplate,
+        bodyTemplate: data.bodyTemplate,
+        footerTemplate: data.footerTemplate,
+        paper,
+        fields: keys.length,
+        updatedAt: nowTimestamp(),
       })
-      await tx.templateField.deleteMany({ where: { templateId } })
-      if (keys.length) await tx.templateField.createMany({ data: keys.map((field, sortOrder) => ({ templateId, key: field.key, label: field.label, type: field.type, sortOrder })) })
+      await tx.orm.public.TemplateField.where({ templateId }).deleteAll()
+      if (keys.length) {
+        await tx.orm.public.TemplateField.createAndCount(
+          keys.map((field, sortOrder) => ({ templateId, key: field.key, label: field.label, _type: field.type, sortOrder, updatedAt: nowTimestamp() }))
+        )
+      }
     })
   } catch {
     return { ok: false, message: "Не вдалося оновити шаблон. Перевірте дані та спробуйте ще раз." }
@@ -148,18 +160,18 @@ export async function updateTemplateAction(templateId: string, data: TemplateMut
 export async function deleteTemplateAction(templateId: string): Promise<TemplateActionResult> {
   const userId = await requireAdmin()
   if (!userId) return { ok: false, message: "Недостатньо прав" }
-  const template = await prisma.template.findUnique({ where: { id: templateId }, include: { _count: { select: { exportedFiles: true } } } })
+  const template = await orm.Template.include("exportedFiles", (ef) => ef.count()).first({ id: templateId })
   if (!template) return { ok: false, message: "Шаблон не знайдено" }
 
   try {
-    if (template._count.exportedFiles > 0) {
-      await prisma.template.update({ where: { id: templateId }, data: { isActive: false } })
+    if (template.exportedFiles > 0) {
+      await orm.Template.where({ id: templateId }).update({ isActive: false, updatedAt: nowTimestamp() })
       revalidatePath("/templates")
       revalidatePath(`/templates/${template.categorySlug}`)
       revalidatePath("/admin/templates")
       return { ok: true, message: "Шаблон деактивовано: він має збережені експорти." }
     }
-    await prisma.template.delete({ where: { id: templateId } })
+    await orm.Template.where({ id: templateId }).delete()
   } catch {
     return { ok: false, message: "Не вдалося видалити шаблон." }
   }

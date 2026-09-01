@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { FileText, Shield } from "lucide-react"
 
 import { auth } from "@/auth"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -30,19 +30,17 @@ export default async function ProfilePage() {
   const userId = (session.user as unknown as { id: string }).id
   const role = (session.user as unknown as { role: string }).role ?? "USER"
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: { profile: true },
-  })
+  const user = await orm.User.where({ id: userId })
+    .include("profile", (p) => p.select("lastName", "firstName", "middleName", "rank"))
+    .first()
 
   if (!user) redirect("/unauthorized")
 
-  const exports = await prisma.exportedFile.findMany({
-    where: { userId },
-    include: { template: true },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  })
+  const exports = await orm.ExportedFile.where({ userId })
+    .include("template", (t) => t.select("title"))
+    .orderBy((f) => f.createdAt.desc())
+    .limit(100)
+    .all()
 
   const profile = user.profile
   const initial = avatarFallback(user.username)

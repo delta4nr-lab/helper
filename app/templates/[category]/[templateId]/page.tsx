@@ -9,8 +9,8 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { templates, getCategory } from "@/lib/documents/catalog"
 import { cn } from "@/lib/utils"
-import { prisma } from "@/lib/db"
-import { DocumentForm } from "@/components/documents/document-form"
+import { orm } from "@/lib/db"
+import { DocumentEditor } from "@/components/documents/document-editor"
 
 type Params = { category: string; templateId: string }
 type TemplateField = {
@@ -62,16 +62,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { category, templateId } = await params
   try {
-    if (prisma && (prisma as unknown as { template: unknown }).template) {
-      const tpl = await prisma.template.findUnique({
-        where: { id: templateId },
-      })
-      if (tpl) {
-        const cat = getCategory(category)
-        return {
-          title: `${tpl.title} — ${cat?.title ?? "Шаблони"}`,
-          description: tpl.description,
-        }
+    const tpl = await orm.Template.first({ id: templateId })
+    if (tpl) {
+      const cat = getCategory(category)
+      return {
+        title: `${tpl.title} — ${cat?.title ?? "Шаблони"}`,
+        description: tpl.description,
       }
     }
   } catch {}
@@ -101,27 +97,21 @@ export default async function TemplateDetailPage({
   let dbError: string | null = null
 
   try {
-    if (!prisma || !(prisma as unknown as { category: unknown }).category) {
-      throw new Error("Prisma не ініціалізовано")
-    }
-    const dbCat = await prisma.category.findUnique({
-      where: { slug: category },
-    })
+    const dbCat = await orm.Category.first({ slug: category })
     if (dbCat) {
       categoryTitle = dbCat.title
     }
-    const dbTpl = await prisma.template.findUnique({
-      where: { id: templateId },
-      include: {
-        fieldsConfig: { orderBy: { sortOrder: "asc" } },
-        category: true,
-      },
-    })
-    if (dbTpl) tpl = dbTpl as unknown as TemplateData
-    personnel = await prisma.personnel.findMany({
-      orderBy: { lastName: "asc" },
-      take: 500,
-    })
+    const dbTpl = await orm.Template.where({ id: templateId })
+      .include("templateFields", (f) => f.orderBy((field) => field.sortOrder.asc()))
+      .include("category")
+      .first()
+    if (dbTpl) {
+      tpl = {
+        ...dbTpl,
+        fieldsConfig: dbTpl.templateFields as unknown as TemplateField[],
+      } as unknown as TemplateData
+    }
+    personnel = await orm.Personnel.orderBy((p) => p.lastName.asc()).limit(500).all()
   } catch (e) {
     const msg = (e as Error).message
     if (msg.includes("NEXT_NOT_FOUND")) throw e
@@ -253,11 +243,10 @@ export default async function TemplateDetailPage({
         </div>
 
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
-          <DocumentForm
+          <DocumentEditor
             template={{
               id: tpl.id,
               title: tpl.title,
-              categorySlug: tpl.categorySlug,
               paper: (tpl as { paper?: string | null }).paper ?? "А4",
               headerTemplate:
                 (tpl as { headerTemplate?: string | null }).headerTemplate ??

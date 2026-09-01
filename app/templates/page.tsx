@@ -12,7 +12,7 @@ import {
   getCategoryCounts,
   templates as fallbackTemplates,
 } from "@/lib/documents/catalog"
-import { prisma } from "@/lib/db"
+import { orm } from "@/lib/db"
 import { auth } from "@/auth"
 
 export const metadata: Metadata = {
@@ -28,33 +28,24 @@ export default async function TemplatesPage() {
   let categories: ReturnType<typeof getCategoryCounts> = []
   let total = 0
   try {
-    if (prisma && (prisma as unknown as { category: unknown }).category) {
-      const dbCategories = await prisma.category.findMany({
-        where: { isActive: true },
-        orderBy: { sortOrder: "asc" },
-        include: {
-          _count: { select: { templates: { where: { isActive: true } } } },
-        },
-      })
-      const dbTemplatesCount = await prisma.template.count({
-        where: { isActive: true },
-      })
-      if (dbCategories.length > 0) {
-        categories = dbCategories.map((c) => ({
-          slug: c.slug,
-          title: c.title,
-          description: c.description,
-          longDescription: c.longDescription ?? c.description,
-          countLabel: c.countLabel,
-          icon: c.icon as "raporty",
-          count: c._count.templates,
-        }))
-        total = dbTemplatesCount
-      } else {
-        throw new Error("no categories in DB")
-      }
+    const dbCategories = await orm.Category.where({ isActive: true })
+      .orderBy((c) => c.sortOrder.asc())
+      .include("templates", (t) => t.where({ isActive: true }).count())
+      .all()
+    const { count: dbTemplatesCount } = await orm.Template.where({ isActive: true }).aggregate((agg) => ({ count: agg.count() }))
+    if (dbCategories.length > 0) {
+      categories = dbCategories.map((c) => ({
+        slug: c.slug,
+        title: c.title,
+        description: c.description,
+        longDescription: c.longDescription ?? c.description,
+        countLabel: c.countLabel,
+        icon: c.icon as "raporty",
+        count: c.templates,
+      }))
+      total = dbTemplatesCount
     } else {
-      throw new Error("prisma unavailable")
+      throw new Error("no categories in DB")
     }
   } catch {
     categories = getCategoryCounts()

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { auth } from "@/auth"
-import { prisma } from "@/lib/db"
+import { orm, nowTimestamp } from "@/lib/db"
 
 const categorySchema = z.object({
   title: z.string().trim().min(2, "Вкажіть назву категорії"),
@@ -27,7 +27,7 @@ export async function createCategoryAction(input: unknown): Promise<CategoryResu
   try {
     await requireAdmin()
     const data = categorySchema.parse(input)
-    await prisma.category.create({ data: { ...data, longDescription: data.longDescription || null, icon: data.icon || null } })
+    await orm.Category.create({ ...data, longDescription: data.longDescription || null, icon: data.icon || null, updatedAt: nowTimestamp() })
     revalidatePath("/admin")
     revalidatePath("/templates")
     return { ok: true, message: "Категорію створено" }
@@ -40,7 +40,7 @@ export async function updateCategoryAction(id: string, input: unknown): Promise<
   try {
     await requireAdmin()
     const data = categorySchema.parse(input)
-    await prisma.category.update({ where: { id }, data: { ...data, longDescription: data.longDescription || null, icon: data.icon || null } })
+    await orm.Category.where({ id }).update({ ...data, longDescription: data.longDescription || null, icon: data.icon || null, updatedAt: nowTimestamp() })
     revalidatePath("/admin")
     revalidatePath("/templates")
     revalidatePath(`/templates/${data.slug}`)
@@ -53,7 +53,7 @@ export async function updateCategoryAction(id: string, input: unknown): Promise<
 export async function toggleCategoryAction(id: string, isActive: boolean): Promise<CategoryResult> {
   try {
     await requireAdmin()
-    await prisma.category.update({ where: { id }, data: { isActive } })
+    await orm.Category.where({ id }).update({ isActive, updatedAt: nowTimestamp() })
     revalidatePath("/admin")
     revalidatePath("/templates")
     return { ok: true, message: isActive ? "Категорію активовано" : "Категорію деактивовано" }
@@ -65,10 +65,10 @@ export async function toggleCategoryAction(id: string, isActive: boolean): Promi
 export async function deleteCategoryAction(id: string): Promise<CategoryResult> {
   try {
     await requireAdmin()
-    const category = await prisma.category.findUnique({ where: { id }, include: { _count: { select: { templates: true } } } })
+    const category = await orm.Category.include("templates", (t) => t.count()).first({ id })
     if (!category) return { ok: false, message: "Категорію не знайдено" }
-    if (category._count.templates) return { ok: false, message: "Категорію з шаблонами не можна видалити. Деактивуйте її." }
-    await prisma.category.delete({ where: { id } })
+    if (category.templates) return { ok: false, message: "Категорію з шаблонами не можна видалити. Деактивуйте її." }
+    await orm.Category.where({ id }).delete()
     revalidatePath("/admin")
     revalidatePath("/templates")
     return { ok: true, message: "Категорію видалено" }
