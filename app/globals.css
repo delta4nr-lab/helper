@@ -180,6 +180,13 @@
 .field-chip--editable {
   white-space: normal;
 }
+/* Коли в полі «Підпис» вставлено зображення — прибираємо жовтий чіп, лишаємо лише підпис */
+.field-chip--editable:has(.signature-slot) {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin-left: 0;
+}
 .document-fill-editor {
   min-height: 100%;
   cursor: text;
@@ -208,7 +215,7 @@
     height: 4em;
     position: absolute;
     top: -1.25em;
-    right: -1.85em;
+    right: -1em;
 }
 
 .tiptap .tableWrapper {

@@ -2,6 +2,8 @@ import { Node, mergeAttributes } from "@tiptap/core"
 
 // Inline-зображення підпису в редакторі заповнення документа.
 // Вставляється всередину fill-марки поля «Підпис», коли обрано особу зі штату.
+// Рендериться як zero-width слот (не впливає на розміщення тексту/таблиць),
+// а саме зображення позиціонується поверх слота через CSS (.signature-img).
 export const SignatureImageNode = Node.create({
   name: "signatureImage",
   group: "inline",
@@ -14,7 +16,7 @@ export const SignatureImageNode = Node.create({
     return {
       src: {
         default: null,
-        parseHTML: (el) => el.getAttribute("src"),
+        parseHTML: (el) => el.querySelector("img")?.getAttribute("src") ?? null,
         renderHTML: (attrs) => (attrs.src ? { src: attrs.src } : {}),
       },
       fillKey: {
@@ -31,10 +33,15 @@ export const SignatureImageNode = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: "img[data-signature]" }]
+    return [{ tag: "span[data-signature]" }]
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ["img", mergeAttributes(HTMLAttributes, { "data-signature": "true", class: "signature-editor-img", alt: "підпис" })]
+    const { src, ...rest } = HTMLAttributes
+    return [
+      "span",
+      mergeAttributes({ class: "signature-slot", "data-signature": "true" }, rest),
+      ["img", { src: src ?? "", class: "signature-img", alt: "підпис" }],
+    ]
   },
 })

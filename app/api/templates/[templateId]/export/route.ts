@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { NextResponse } from "next/server"
+import { load } from "cheerio"
 
 import { auth } from "@/auth"
 import { orm } from "@/lib/db"
@@ -38,9 +39,14 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   const html = typeof body?.html === "string" ? body.html : ""
   if (!html.trim()) return NextResponse.json({ message: "Документ порожній." }, { status: 400 })
 
-  const sigSpans = Array.from(html.matchAll(/<span\b([^>]*data-fill-type=["']signature["'][^>]*)>[\s\S]*?<\/span>/gi))
+  const $ = load(html, null, false)
+  const sigSpans = $('span[data-fill-type="signature"]').toArray()
   const personIds = Array.from(
-    new Set(sigSpans.map((m) => m[1].match(/data-person-id="([^"]+)"/)?.[1]).filter((v): v is string => Boolean(v)))
+    new Set(
+      sigSpans
+        .map((el) => $(el).attr("data-person-id"))
+        .filter((v): v is string => Boolean(v))
+    )
   )
   const persons = personIds.length > 0 ? await orm.Personnel.where((p) => p.id.in(personIds)).all() : []
   const personsById = new Map(persons.map((p) => [p.id, p]))
@@ -48,9 +54,10 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   const signatureImages: Record<string, SignatureImage> = {}
   const nameByKey = new Map<string, string>()
   const imageLoads: Promise<void>[] = []
-  for (const m of sigSpans) {
-    const key = m[1].match(/data-fill-key="([^"]+)"/)?.[1]
-    const personId = m[1].match(/data-person-id="([^"]+)"/)?.[1]
+  for (const el of sigSpans) {
+    const $el = $(el)
+    const key = $el.attr("data-fill-key")
+    const personId = $el.attr("data-person-id")
     if (!key || !personId) continue
     const person = personsById.get(personId)
     if (!person) continue
@@ -72,17 +79,20 @@ export async function POST(request: Request, { params }: { params: Promise<Param
   }
   await Promise.all(imageLoads)
 
-  let processedHtml = html
-  // Спочатку замінюємо span підпису (m[0] містить <img data-signature>, який ще в HTML),
-  // потім прибираємо залишкові зображення редактора, щоб заміна не зривалася.
-  for (const m of sigSpans) {
-    const key = m[1].match(/data-fill-key="([^"]+)"/)?.[1]
-    if (!key) continue
-    if (!nameByKey.has(key)) continue
-    // Над підписом ПІБ не виводимо — лише зображення підпису
-    processedHtml = processedHtml.replace(m[0], signatureImages[key] ? `<img data-sig="${key}" />` : "")
-  }
-  processedHtml = processedHtml.replace(/<img\b[^>]*data-signature[^>]*\/?>/gi, "")
+  // Замінюємо span підпису: обрана особа → <img data-sig> (лише зображення, без ПІБ),
+  // інакше — прибираємо span (порожній підпис не потрапляє в документ).
+  sigSpans.forEach((el) => {
+    const $el = $(el)
+    const key = $el.attr("data-fill-key")
+    if (!key || !nameByKey.has(key)) return
+    if (signatureImages[key]) $el.replaceWith($(`<img data-sig="${key}" />`))
+    else $el.remove()
+  })
+  // Прибираємо залишкові елементи редактора: zero-width слот підпису та зображення
+  $("span[data-signature]").remove()
+  $("img[data-signature]").remove()
+
+  const processedHtml = $.html()
 
   const title = `${template.title} — ${new Date().toLocaleDateString("uk-UA")}`
   const fileName = safeFileName(title)
