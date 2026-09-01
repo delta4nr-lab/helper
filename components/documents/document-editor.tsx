@@ -12,7 +12,7 @@ import { BadgeCheck, BriefcaseBusiness, Contact, Loader2, Save, Signature } from
 
 import { Button } from "@/components/ui/button"
 import { pageCss } from "@/components/editor/a4-page"
-import { pageSettingsFromPaper, parsePageSettings, usablePx, type PageSettings } from "@/lib/documents/page"
+import { pageSettingsFromPaper, parsePageSettings, marginsPx, usablePx, type PageSettings } from "@/lib/documents/page"
 import { readStoredPageSettings, clearStoredPageSettings, subscribePageSettings, writeStoredPageSettings } from "@/lib/documents/page-store"
 import { PageSettingsDialog } from "@/components/documents/page-settings-dialog"
 import { PersonPicker } from "@/components/documents/person-picker"
@@ -116,6 +116,8 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
   const page = usePageSettings(template.id, fallbackPage)
   const pageStyle = React.useMemo(() => pageCss(page), [page])
   const usableHeightPx = React.useMemo(() => usablePx(page).height, [page])
+  const usableWidthPx = React.useMemo(() => usablePx(page).width, [page])
+  const lastUsableWidthRef = React.useRef<number | null>(null)
 
   // Вимірюємо висоту контенту — для розбиття на сторінки (аркуші)
   React.useEffect(() => {
@@ -151,6 +153,21 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
   const pageCount = Math.max(1, Math.ceil((contentHeight || usableHeightPx) / pageStyle.height))
   const scale = zoom / 100
   const pagesHeight = pageCount * pageStyle.height + Math.max(0, pageCount - 1) * 24
+  const marginGuidesStyle = {
+    "--guide-top": `${marginsPx(page).top}px`,
+    "--guide-right": `${marginsPx(page).right}px`,
+    "--guide-bottom": `${marginsPx(page).bottom}px`,
+    "--guide-left": `${marginsPx(page).left}px`,
+  } as React.CSSProperties
+
+  const marginLabels = (
+    <div className="page-margin-labels">
+      <span className="page-margin-label page-margin-label--top">Верх {page.margins.top} мм</span>
+      <span className="page-margin-label page-margin-label--bottom">Низ {page.margins.bottom} мм</span>
+      <span className="page-margin-label page-margin-label--left">Ліво {page.margins.left} мм</span>
+      <span className="page-margin-label page-margin-label--right">Право {page.margins.right} мм</span>
+    </div>
+  )
 
   function applyPageSettings(next: PageSettings) {
     writeStoredPageSettings(template.id, next)
@@ -188,6 +205,36 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
     },
     onSelectionUpdate: ({ editor }) => handleFieldSelection(editor),
   })
+
+  // Масштабує ширини колонок усіх таблиць пропорційно зміні робочої ширини,
+  // щоб таблиці не виходили за межі полів при зміні margins.
+  const scaleTableWidths = React.useCallback(
+    (scale: number) => {
+      if (!editor || scale === 1) return
+      const state = editor.state
+      const tr = state.tr
+      let changed = false
+      state.doc.descendants((node, pos) => {
+        if (node.type.name !== "tableCell" && node.type.name !== "tableHeader") return true
+        const colwidth = node.attrs.colwidth as number[] | null | undefined
+        if (!colwidth || colwidth.length === 0) return true
+        const next = colwidth.map((w) => Math.max(0, Math.round(w * scale)))
+        tr.setNodeMarkup(pos, undefined, { ...node.attrs, colwidth: next })
+        changed = true
+        return true
+      })
+      if (changed) editor.view.dispatch(tr)
+    },
+    [editor]
+  )
+
+  React.useEffect(() => {
+    if (!editor) return
+    const prev = lastUsableWidthRef.current
+    lastUsableWidthRef.current = usableWidthPx
+    if (prev == null || prev === usableWidthPx) return
+    scaleTableWidths(usableWidthPx / prev)
+  }, [usableWidthPx, editor, scaleTableWidths])
 
   // Клік мишею по fill-полю: якщо вміст — це назва поля (незаповнене), виділяємо його,
   // щоб друк одразу замінив підпис.
@@ -542,7 +589,7 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
               }}
             >
               <SelectTrigger className="h-7 w-[92px] justify-center text-xs" title="Масштаб">
-                <SelectValue />
+                <SelectValue>{(value) => (value === "fit" ? "По ширині" : `${value}%`)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="fit">По ширині</SelectItem>
@@ -570,6 +617,7 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
         open={pageDialogOpen}
         onOpenChange={setPageDialogOpen}
         page={page}
+        defaultPage={fallbackPage}
         onApply={applyPageSettings}
         onReset={() => clearStoredPageSettings(template.id)}
       />
@@ -577,7 +625,7 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
       <div ref={wrapperRef} className="relative">
         <div ref={workspaceRef} className="doc-workspace">
           <div className="mx-auto" style={{ width: pageStyle.width * scale, height: pagesHeight * scale }}>
-            <div className="flex flex-col items-center" style={{ width: pageStyle.width, transform: `scale(${scale})`, transformOrigin: "top center" }}>
+            <div className="flex flex-col items-center" style={{ width: pageStyle.width, transform: `scale(${scale})`, transformOrigin: "top left" }}>
             <div ref={pageSheetRef} className="page-sheet a4-paper relative" style={{ width: pageStyle.width, height: pageStyle.height, zIndex: 1 }}>
               <div
                 ref={contentWrapRef}
@@ -633,6 +681,12 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
                 )}
               </div>
 
+              <div
+                className="page-margin-guides"
+                style={marginGuidesStyle}
+              />
+              {marginLabels}
+
               {pickerTarget && (
                 <div ref={triggerWrapRef} className="absolute z-50 -translate-y-[125%] translate-x-2" style={{ left: pickerTarget.x, top: pickerTarget.y }}>
                   <PersonPicker
@@ -653,7 +707,10 @@ export function DocumentEditor({ template, fields, personnel }: Props) {
             </div>
 
             {Array.from({ length: Math.max(0, pageCount - 1) }).map((_, index) => (
-              <div key={index} className="page-sheet a4-paper relative" style={{ width: pageStyle.width, height: pageStyle.height, zIndex: 0 }} />
+              <div key={index} className="page-sheet a4-paper relative" style={{ width: pageStyle.width, height: pageStyle.height, zIndex: 0 }}>
+                <div className="page-margin-guides" style={marginGuidesStyle} />
+                {marginLabels}
+              </div>
             ))}
           </div>
           </div>

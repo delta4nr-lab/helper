@@ -213,21 +213,21 @@
 }
 /* Підпис: слот займає рядок тексту (не рухає вміст/таблиці), а зображення позиціоноване поверх */
 .signature-slot {
-    display: inline-block;
-    position: relative;
-    height: 1em;
-    width: 0;
-    overflow: visible;
-    vertical-align: baseline;
+  display: inline-block;
+  position: relative;
+  height: 1em;
+  width: 0;
+  overflow: visible;
+  vertical-align: baseline;
 }
 .signature-img {
-    object-fit: contain;
-    width: auto;
-    max-width: 400px;
-    height: 4em;
-    position: absolute;
-    top: -1.25em;
-    right: -1em;
+  object-fit: contain;
+  width: auto;
+  max-width: 400px;
+  height: 4em;
+  position: absolute;
+  top: -1.25em;
+  right: -1em;
 }
 
 .tiptap .tableWrapper {
@@ -269,14 +269,103 @@
   color-scheme: light;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   border-radius: 2px;
+  /* границя документа (тонка, ледь помітна) */
+  outline: 1px solid rgb(0 0 0 / 0.14);
+  outline-offset: -1px;
 }
 .doc-workspace .page-sheet + .page-sheet {
   margin-top: 24px;
 }
-/* Делікатні направляючі робочої області (межі page margins) */
-.doc-workspace .page-content {
-  outline: 1px dashed rgb(120 120 135 / 0.4);
-  outline-offset: -1px;
+/* Делікатні направляючі page margins: окремі лінії по осі X та Y.
+   Малюються через CSS-градієнти на сторінці — не залежать від контенту. */
+.doc-workspace .page-margin-guides {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+/* Чотири лінії через background (vertical = повторюваний 1px стовпець, horizontal = рядок).
+   Відступи — CSS-змінні з редактора (значення полів у px). */
+.doc-workspace .page-margin-guides {
+  background:
+    /* праве поле (вертикальна лінія по Y) — від правого краю, світліша */
+    linear-gradient(
+      to right,
+      transparent calc(100% - var(--guide-right)),
+      rgb(120 120 135 / 0.4) calc(100% - var(--guide-right)),
+      rgb(120 120 135 / 0.4) calc(100% - var(--guide-right)),
+      transparent calc(100% - var(--guide-right) + 1px)
+    ),
+    /* нижнє поле (горизонтальна лінія по X) — від нижнього краю */
+    linear-gradient(
+        to bottom,
+        transparent calc(100% - var(--guide-bottom)),
+        rgb(120 120 135 / 0.4) calc(100% - var(--guide-bottom)),
+        rgb(120 120 135 / 0.4) calc(100% - var(--guide-bottom)),
+        transparent calc(100% - var(--guide-bottom) + 1px)
+      ),
+    /* ліве поле (вертикальна лінія по Y) — від лівого краю, світліша */
+    linear-gradient(
+        to right,
+        transparent var(--guide-left),
+        rgb(140 140 150 / 0.4) var(--guide-left),
+        rgb(140 140 150 / 0.4) calc(var(--guide-left)),
+        transparent calc(var(--guide-left) + 1px)
+      ),
+    /* верхнє поле (горизонтальна лінія по X) — від верхнього краю */
+    linear-gradient(
+        to bottom,
+        transparent var(--guide-top),
+        rgb(120 120 135 / 0.4) var(--guide-top),
+        rgb(120 120 135 / 0.4) calc(var(--guide-top)),
+        transparent calc(var(--guide-top) + 1px)
+      );
+}
+
+/* Мітки значень полів на сторінці (в зонах margins, поза робочою областю) */
+.doc-workspace .page-margin-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+}
+.doc-workspace .page-margin-label {
+  position: absolute;
+  white-space: nowrap;
+  font-size: 9px;
+  line-height: 1.4;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgb(120 120 135 / 0.65);
+}
+/* Верхнє поле — зверху по центру */
+.doc-workspace .page-margin-label--top {
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+/* Нижнє поле — знизу по центру */
+.doc-workspace .page-margin-label--bottom {
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+/* Ліве поле — вертикальний текст зліва по центру */
+.doc-workspace .page-margin-label--left {
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+/* Праве поле — вертикальний текст справа по центру */
+.doc-workspace .page-margin-label--right {
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
 }
 
 .a4-paper {
@@ -329,6 +418,7 @@
 
 .a4-paper table {
   table-layout: fixed;
+  max-width: 100%;
 }
 
 @media (max-width: 860px) {

@@ -12,6 +12,7 @@ type PageSettingsDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   page: PageSettings
+  defaultPage?: PageSettings
   onApply: (page: PageSettings) => void
   onReset?: () => void
 }
@@ -25,10 +26,12 @@ function clampNumber(value: number, min: number, max: number): number {
 // при відкритті — стан draft скидається автоматично (без setState в ефекті).
 function PageSettingsForm({
   page,
+  defaultPage,
   onApply,
   onReset,
 }: {
   page: PageSettings
+  defaultPage?: PageSettings
   onApply: (page: PageSettings) => void
   onReset?: () => void
 }) {
@@ -50,7 +53,7 @@ function PageSettingsForm({
             <Label>Формат</Label>
             <Select value={draft.size} onValueChange={(value) => setDraft((prev) => ({ ...prev, size: value as PageSettings["size"] }))}>
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue>{(value) => (value === "A4" ? "A4 (210 × 297 мм)" : value)}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="A4">A4 (210 × 297 мм)</SelectItem>
@@ -64,7 +67,7 @@ function PageSettingsForm({
               onValueChange={(value) => setDraft((prev) => ({ ...prev, orientation: value as PageSettings["orientation"] }))}
             >
               <SelectTrigger className="w-full">
-                <SelectValue />
+                <SelectValue>{(value) => (value === "landscape" ? "Альбомна" : "Книжкова")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="portrait">Книжкова</SelectItem>
@@ -108,8 +111,15 @@ function PageSettingsForm({
       </div>
 
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={() => { onReset?.(); onApply({ ...page }) }}>
-          Скинути
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            onReset?.()
+            setDraft(defaultPage ?? page)
+          }}
+        >
+          За замовчуванням
         </Button>
         <Button type="button" onClick={() => onApply(draft)}>
           Застосувати
@@ -119,11 +129,16 @@ function PageSettingsForm({
   )
 }
 
-export function PageSettingsDialog({ open, onOpenChange, page, onApply, onReset }: PageSettingsDialogProps) {
+export function PageSettingsDialog({ open, onOpenChange, page, defaultPage, onApply, onReset }: PageSettingsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <PageSettingsForm page={page} onApply={(next) => { onApply(next); onOpenChange(false) }} onReset={onReset} />
+        <PageSettingsForm
+          page={page}
+          defaultPage={defaultPage}
+          onApply={(next) => { onApply(next); onOpenChange(false) }}
+          onReset={onReset}
+        />
       </DialogContent>
     </Dialog>
   )
