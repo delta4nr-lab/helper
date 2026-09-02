@@ -1,46 +1,56 @@
-// Клієнтське збереження налаштувань сторінки в localStorage.
-// Ключ прив'язаний до конкретного шаблону — налаштування зберігаються
-// для документа цього користувача/браузера і не впливають на інших.
-import { parsePageSettings, serializePageSettings, type PageSettings } from "./page"
+import { serializePageSettings, parsePageSettings, type PageSettings } from "./page"
 
-const PREFIX = "page-settings:"
+// Збереження налаштувань сторінки для конкретного шаблону в localStorage.
+// Ключ: `page:<templateId>`. Значення — JSON PageSettings.
+
+const keyFor = (templateId: string) => `page:${templateId}`
+
+export function readStoredPageSettings(templateId: string): PageSettings | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(keyFor(templateId))
+    return parsePageSettings(raw)
+  } catch {
+    return null
+  }
+}
+
+export function writeStoredPageSettings(templateId: string, page: PageSettings): void {
+  try {
+    window.localStorage.setItem(keyFor(templateId), serializePageSettings(page))
+    notifyPageSettingsChanged()
+  } catch {
+    // localStorage недоступний — ігноруємо
+  }
+}
+
+export function clearStoredPageSettings(templateId: string): void {
+  try {
+    window.localStorage.removeItem(keyFor(templateId))
+    notifyPageSettingsChanged()
+  } catch {
+    // localStorage недоступний — ігноруємо
+  }
+}
+
+// Підписка на зміни localStorage (для useSyncExternalStore).
+// Викликається з клієнтських компонентів.
 const listeners = new Set<() => void>()
 
-function storageKey(templateId: string): string {
-  return PREFIX + templateId
+export function subscribePageSettings(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
 }
 
-export function readStoredPageSettings(templateId: string): string | null {
-  if (typeof window === "undefined") return null
-  return window.localStorage.getItem(storageKey(templateId))
-}
-
-export function writeStoredPageSettings(templateId: string, settings: PageSettings) {
-  if (typeof window === "undefined") return
-  try {
-    window.localStorage.setItem(storageKey(templateId), serializePageSettings(settings))
-  } catch {}
+export function notifyPageSettingsChanged(): void {
   for (const listener of listeners) listener()
 }
 
-export function clearStoredPageSettings(templateId: string) {
+// Слухає подію storage (інші вкладки) та власні зміни — щоб useSyncExternalStore
+// оновлювався навіть після writeStoredPageSettings.
+export function initPageSettingsSync(): void {
   if (typeof window === "undefined") return
-  window.localStorage.removeItem(storageKey(templateId))
-  for (const listener of listeners) listener()
-}
-
-export function subscribePageSettings(callback: () => void) {
-  listeners.add(callback)
-  const onStorage = (event: StorageEvent) => {
-    if (event.key && event.key.startsWith(PREFIX)) callback()
-  }
-  window.addEventListener("storage", onStorage)
-  return () => {
-    listeners.delete(callback)
-    window.removeEventListener("storage", onStorage)
-  }
-}
-
-export function getStoredPageSettings(templateId: string): PageSettings | null {
-  return parsePageSettings(readStoredPageSettings(templateId))
+  window.addEventListener("storage", (event) => {
+    if (event.key?.startsWith("page:")) notifyPageSettingsChanged()
+  })
 }

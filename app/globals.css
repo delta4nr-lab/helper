@@ -128,67 +128,29 @@
   }
 }
 
-/* Tables stay usable in the editor while borderless tables print cleanly. */
-.tiptap table,
-.document-preview-content table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  max-width: 100%;
-}
-/* Таблиці з фіксованою шириною показуємо так, як вони будуть експортовані (1:1), а не розтягуємо на 100% */
-.tiptap table[data-table-width="fixed"],
-.document-preview-content table[data-table-width="fixed"] {
-  width: auto;
+/* Робоча область редактора (Word-like) */
+.doc-workspace {
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+  background: #3b3f45;
+  padding: 24px 16px;
+  scrollbar-width: thin;
 }
 
-/* Курсор і текстовий карет над таблицею редактора — видимі незалежно від теми */
-.a4-paper .document-fill-editor table,
-.a4-paper .document-fill-editor td,
-.a4-paper .document-fill-editor th {
-  cursor: text;
-}
-.a4-paper .document-fill-editor,
-.a4-paper .document-fill-editor td,
-.a4-paper .document-fill-editor th {
-  caret-color: #18181b;
-}
-
-/* Чіп поля (місце для вводу даних) — ізольований стиль, не залежить від глобальних утиліт (напр. .inline-flex) */
+/* Чіп поля (місце для вводу даних) — жовтий блок заповнення */
 .field-chip {
   white-space: nowrap;
   border-radius: 0.25rem;
   background: #fef3c7; /* amber-100 */
   padding: 0.125rem 0.375rem; /* py-0.5 px-1.5 */
-  font-size: 18px;
   font-weight: 500;
   color: #78350f; /* amber-900 */
   box-shadow: 0 0 0 1px #fde68a; /* ring-amber-200 */
   vertical-align: middle;
   margin-left: 4px;
 }
-/* Типові варіанти чіпів: підпис (sky), звання (orange), ПІБ (green), посада (purple) */
-.field-chip--signature {
-  background: #e0f2fe;
-  color: #0c4a6e;
-  box-shadow: 0 0 0 1px #bae6fd;
-}
-.field-chip--rank {
-  background: #ffedd5;
-  color: #7c2d12;
-  box-shadow: 0 0 0 1px #fed7aa;
-}
-.field-chip--person {
-  background: #dcfce7;
-  color: #14532d;
-  box-shadow: 0 0 0 1px #bbf7d0;
-}
-.field-chip--position {
-  background: #f3e8ff;
-  color: #581c87;
-  box-shadow: 0 0 0 1px #e9d5ff;
-}
-/* Редаговані поля заповнення документа (tip-tap) — дозволяємо перенос тексту та курсор-введення */
+/* Редаговані поля заповнення — дозволяємо перенос тексту та курсор-введення */
 .field-chip--editable {
   white-space: normal;
 }
@@ -199,18 +161,7 @@
   padding: 0;
   margin-left: 0;
 }
-.document-fill-editor {
-  min-height: 100%;
-  cursor: text;
-}
-/* Зображення підпису в редакторі заповнення */
-.signature-editor-img {
-  display: inline-block;
-  height: 4em;
-  width: auto;
-  max-width: 100%;
-  vertical-align: middle;
-}
+
 /* Підпис: слот займає рядок тексту (не рухає вміст/таблиці), а зображення позиціоноване поверх */
 .signature-slot {
   display: inline-block;
@@ -230,12 +181,65 @@
   right: -1em;
 }
 
-.tiptap .tableWrapper {
+/* Зображення документа (image node) */
+.doc-image-node {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.doc-image-node img {
+  display: block;
+  max-width: 100%;
+}
+.doc-image-align-center {
+  text-align: center;
+}
+.doc-image-align-right {
+  text-align: right;
+}
+.doc-image-node[data-selected] img {
+  outline: 2px solid hsl(var(--primary) / 0.6);
+  outline-offset: 1px;
+}
+.doc-image-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  background: #fff;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 2px;
+  z-index: 5;
+  touch-action: none;
+}
+.doc-image-handle--nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.doc-image-handle--ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.doc-image-handle--sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.doc-image-handle--se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+
+/* Редактор документа: базові стилі таблиць та курсор */
+.document-editor table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  max-width: 100%;
+}
+.document-editor td,
+.document-editor th {
+  border: 1px solid #a1a1aa;
+  padding: 4px 8px;
+  vertical-align: top;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.document-editor th {
+  font-weight: 700;
+}
+.document-editor .tableWrapper {
   overflow-x: auto;
   margin: 0.75rem 0;
 }
-
-.tiptap .column-resize-handle {
+.document-editor .column-resize-handle {
   position: absolute;
   right: -2px;
   top: 0;
@@ -245,243 +249,25 @@
   pointer-events: none;
   z-index: 10;
 }
-
-.tiptap table .selectedCell {
+.document-editor table .selectedCell {
   background: hsl(var(--primary) / 0.08);
 }
-
-/* A4 page — завжди світлий аркуш, незалежно від теми додатка */
-.a4-page-outer {
-  scrollbar-width: thin;
+.document-editor table,
+.document-editor td,
+.document-editor th {
+  cursor: text;
+  caret-color: #18181b;
 }
-
-/* Workspace для page-based перегляду документа (Word-like) */
-.doc-workspace {
-  display: flex;
-  justify-content: center;
-  overflow: auto;
-  background: #3b3f45; /* нейтральний темний фон */
-  padding: 24px 16px;
-  scrollbar-width: thin;
+.document-editor .column-resize-handle {
+  cursor: col-resize;
 }
-.doc-workspace .page-sheet {
-  background: #fff;
-  color-scheme: light;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
-  border-radius: 2px;
-  /* границя документа (тонка, ледь помітна) */
-  outline: 1px solid rgb(0 0 0 / 0.14);
-  outline-offset: -1px;
+.document-editor {
+  min-height: 100%;
+  cursor: text;
+  background-color: white;
+  color: #18181b;
 }
-.doc-workspace .page-sheet + .page-sheet {
-  margin-top: 24px;
-}
-/* Делікатні направляючі page margins: окремі лінії по осі X та Y.
-   Малюються через CSS-градієнти на сторінці — не залежать від контенту. */
-.doc-workspace .page-margin-guides {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-}
-/* Чотири лінії через background (vertical = повторюваний 1px стовпець, horizontal = рядок).
-   Відступи — CSS-змінні з редактора (значення полів у px). */
-.doc-workspace .page-margin-guides {
-  background:
-    /* праве поле (вертикальна лінія по Y) — від правого краю, світліша */
-    linear-gradient(
-      to right,
-      transparent calc(100% - var(--guide-right)),
-      rgb(120 120 135 / 0.4) calc(100% - var(--guide-right)),
-      rgb(120 120 135 / 0.4) calc(100% - var(--guide-right)),
-      transparent calc(100% - var(--guide-right) + 1px)
-    ),
-    /* нижнє поле (горизонтальна лінія по X) — від нижнього краю */
-    linear-gradient(
-        to bottom,
-        transparent calc(100% - var(--guide-bottom)),
-        rgb(120 120 135 / 0.4) calc(100% - var(--guide-bottom)),
-        rgb(120 120 135 / 0.4) calc(100% - var(--guide-bottom)),
-        transparent calc(100% - var(--guide-bottom) + 1px)
-      ),
-    /* ліве поле (вертикальна лінія по Y) — від лівого краю, світліша */
-    linear-gradient(
-        to right,
-        transparent var(--guide-left),
-        rgb(140 140 150 / 0.4) var(--guide-left),
-        rgb(140 140 150 / 0.4) calc(var(--guide-left)),
-        transparent calc(var(--guide-left) + 1px)
-      ),
-    /* верхнє поле (горизонтальна лінія по X) — від верхнього краю */
-    linear-gradient(
-        to bottom,
-        transparent var(--guide-top),
-        rgb(120 120 135 / 0.4) var(--guide-top),
-        rgb(120 120 135 / 0.4) calc(var(--guide-top)),
-        transparent calc(var(--guide-top) + 1px)
-      );
-}
-
-/* Мітки значень полів на сторінці (в зонах margins, поза робочою областю) */
-.doc-workspace .page-margin-labels {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  user-select: none;
-}
-.doc-workspace .page-margin-label {
-  position: absolute;
-  white-space: nowrap;
-  font-size: 9px;
-  line-height: 1.4;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: rgb(120 120 135 / 0.65);
-}
-/* Верхнє поле — зверху по центру */
-.doc-workspace .page-margin-label--top {
-  top: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-/* Нижнє поле — знизу по центру */
-.doc-workspace .page-margin-label--bottom {
-  bottom: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-/* Ліве поле — вертикальний текст зліва по центру */
-.doc-workspace .page-margin-label--left {
-  left: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-}
-/* Праве поле — вертикальний текст справа по центру */
-.doc-workspace .page-margin-label--right {
-  right: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-}
-
-.a4-paper {
-  box-sizing: border-box;
-  color-scheme: light;
-  background: white;
-  color: #18181b; /* zinc-900 */
-}
-
-/* Форсуємо світлу палітру всередині білого аркуша — щоб не було білий-на-білому в темній темі */
-.a4-paper .tiptap,
-.a4-paper .ProseMirror,
-.a4-paper .document-preview-content,
-.a4-paper .prose {
-  color: #18181b !important;
-  --tw-prose-body: #18181b !important;
-  --tw-prose-headings: #18181b !important;
-  --tw-prose-lead: #27272a !important;
-  --tw-prose-links: #2563eb !important;
-  --tw-prose-bold: #18181b !important;
-  --tw-prose-counters: #71717a !important;
-  --tw-prose-bullets: #a1a1aa !important;
-  --tw-prose-hr: #e4e4e7 !important;
-  --tw-prose-quotes: #18181b !important;
-  --tw-prose-quote-borders: #e4e4e7 !important;
-  --tw-prose-captions: #71717a !important;
-  --tw-prose-code: #18181b !important;
-  --tw-prose-pre-code: #18181b !important;
-  --tw-prose-pre-bg: #f4f4f5 !important;
-  --tw-prose-th-borders: #a1a1aa !important;
-  --tw-prose-td-borders: #a1a1aa !important;
-  --tw-prose-invert-body: #18181b !important;
-  --tw-prose-invert-headings: #18181b !important;
-}
-
-.a4-paper p,
-.a4-paper li,
-.a4-paper td,
-.a4-paper th,
-.a4-paper h1,
-.a4-paper h2,
-.a4-paper h3 {
-  color: #18181b !important;
-}
-
-.a4-paper .tiptap table,
-.a4-paper .document-preview-content table {
+.document-editor .ProseMirror {
   color: #18181b;
 }
 
-.a4-paper table {
-  table-layout: fixed;
-  max-width: 100%;
-}
-
-@media (max-width: 860px) {
-  .a4-page-outer {
-    padding: 8px;
-    justify-content: flex-start;
-  }
-  .a4-paper {
-    transform-origin: top left;
-  }
-}
-
-@media print {
-  .a4-page-outer {
-    background: white !important;
-    padding: 0 !important;
-  }
-  .a4-paper {
-    box-shadow: none !important;
-    ring: 0 !important;
-    width: 100% !important;
-    min-height: auto !important;
-    padding: 20mm 10mm 20mm 20mm !important;
-  }
-}
-
-.tiptap td,
-.tiptap th,
-.document-preview-content td,
-.document-preview-content th {
-  border: 1px solid #a1a1aa;
-  padding: 4px 8px;
-  vertical-align: top;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.tiptap th,
-.document-preview-content th {
-  font-weight: 700;
-}
-
-.tiptap table[data-borderless="true"] td,
-.tiptap table[data-borderless="true"] th {
-  border: 1px dashed rgb(156 163 175 / 50%) !important;
-  background: transparent !important;
-}
-
-.tiptap table[data-borderless="true"],
-.tiptap table.table-borderless {
-  background: transparent;
-}
-
-.document-preview-content table[data-borderless="true"] td,
-.document-preview-content table[data-borderless="true"] th {
-  border-color: transparent;
-}
-
-@media print {
-  .document-preview-content table[data-borderless="true"] td,
-  .document-preview-content table[data-borderless="true"] th {
-    border-color: transparent !important;
-    background: transparent !important;
-  }
-}

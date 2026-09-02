@@ -1,5 +1,5 @@
 // Трансформація HTML шаблону у редагований вміст редактора заповнення.
-// Плейсхолдери {{key}} та field-chip спани адмін-редактора → жовті fill-спани.
+// Плейсхолдери {{key}} та field-chip спани → жовті fill-спани.
 
 export type FillFieldMeta = { label?: string; type?: string }
 
@@ -15,9 +15,9 @@ function fillSpan(key: string, label: string, type: string): string {
   return `<span data-fill-key="${escapeAttr(key)}" data-fill-type="${escapeAttr(type)}" data-fill-label="${escapeAttr(label)}">${escapeText(label)}</span>`
 }
 
-// Перетворює HTML шаблону (плейсхолдери + спани адмін-редактора) у fill-спани.
+// Перетворює HTML шаблону (плейсхолдери + спани з data-field-key) у fill-спани.
 export function toEditableHtml(html: string, metaByKey: Record<string, FillFieldMeta>): string {
-  // Спочатку спани адмін-редактора (<span data-field-key>), щоб їх вміст не попав у {{key}}-regex
+  // Спочатку спани з data-field-key, щоб їх вміст не попав у {{key}}-regex
   let out = html.replace(/<span\b[^>]*data-field-key=["'](\w+)["'][^>]*>[\s\S]*?<\/span>/gi, (match, key: string) => {
     const meta = metaByKey[key] ?? {}
     const label = match.match(/data-label=["']([^"']*)["']/)?.[1] ?? meta.label ?? key

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
-import { FileText, LogIn, Menu, X, Shield } from "lucide-react"
+import { LogIn, Menu, X, Shield } from "lucide-react"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"

@@ -1,5 +1,7 @@
-import "server-only"
+﻿import "server-only"
 
+import { readFile } from "node:fs/promises"
+import path from "node:path"
 import {
   AlignmentType,
   BorderStyle,
@@ -19,13 +21,61 @@ import {
 import { load } from "cheerio"
 
 import { extractTableModel, getUsableWidthDxa } from "./parse-tables"
-import { marginsDxa, pageSizeDxa, type PageSettings } from "../page"
+import { marginsDxa, mmToPx, pageSizeDxa, type PageSettings } from "../page"
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character)
 }
 
 export type SignatureImage = { name: string; buffer: Buffer; mime: string }
+
+// Зображення документа, вбудовані з файлів сервера (src → buffer)
+export type EmbeddedImage = { buffer: Buffer; mime: string }
+export type ImageMap = Record<string, EmbeddedImage>
+
+const ALIGN_MAP: Record<string, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
+  left: AlignmentType.LEFT,
+  center: AlignmentType.CENTER,
+  right: AlignmentType.RIGHT,
+}
+
+// Читає зображення, на які посилається HTML, з файлової системи (public/)
+async function collectEmbeddedImages(html: string): Promise<ImageMap> {
+  const srcs = Array.from(html.matchAll(/<img\b[^>]*src="(\/uploads\/[^"]+)"/g)).map((m) => m[1])
+  const unique = Array.from(new Set(srcs))
+  const map: ImageMap = {}
+  await Promise.all(
+    unique.map(async (src) => {
+      try {
+        const rel = src.replace(/^\//, "")
+        const buffer = await readFile(path.join(process.cwd(), "public", rel))
+        const mime = src.endsWith(".png") ? "image/png" : src.endsWith(".webp") ? "image/webp" : "image/jpeg"
+        // Word не вбудовує WEBP — пропускаємо (наприклад, при експорті webp-файлу)
+        if (mime === "image/webp") return
+        map[src] = { buffer, mime }
+      } catch {
+        // файл відсутній — зображення пропускаємо
+      }
+    })
+  )
+  return map
+}
+
+// Створює ImageRun з атрибутів <img> нашого image node (фізичні розміри в mm)
+function imageRunFromImg($img: Parameters<CheerioAPI>[0], $: CheerioAPI, images?: ImageMap): ImageRun | null {
+  if (!images) return null
+  const src = $($img).attr("src") ?? ""
+  const embedded = images[src]
+  if (!embedded) return null
+  const widthMm = Number($($img).attr("data-width-mm")) || 0
+  const heightMm = Number($($img).attr("data-height-mm")) || 0
+  if (widthMm <= 0 || heightMm <= 0) return null
+  return new ImageRun({
+    data: embedded.buffer,
+    transformation: { width: Math.max(1, Math.round(mmToPx(widthMm))), height: Math.max(1, Math.round(mmToPx(heightMm))) },
+    type: embedded.mime === "image/png" ? "png" : "jpg",
+  })
+}
 
 // Визначає розміри зображення (PNG/JPEG) — для підпису під шрифт документа
 function imageSize(buffer: Buffer): { width: number; height: number } {
@@ -286,7 +336,7 @@ function signatureParagraphsFromHtml(
   return [new Paragraph({ alignment, children })]
 }
 
-function cellParagraphsFromHtml(html: string, signatureImages?: Record<string, SignatureImage>): Paragraph[] {
+function cellParagraphsFromHtml(html: string, signatureImages?: Record<string, SignatureImage>, images?: ImageMap): Paragraph[] {
   if (!html.trim()) return [new Paragraph({ children: [] })]
   // Обгортаємо щоб cheerio не додав html/body
   const $ = load(`<div>${html}</div>`, null, false)
@@ -310,6 +360,15 @@ function cellParagraphsFromHtml(html: string, signatureImages?: Record<string, S
       // Підпис у комірці — текст + зображення
       if ($el.find("img[data-sig]").length > 0) {
         out.push(...signatureParagraphsFromHtml($el.html() ?? "", signatureImages, fs, ff, alignment))
+        return
+      }
+      if ($el.find('img[src^="/uploads/"]').length > 0) {
+        const children: (TextRun | ImageRun)[] = collectTextRuns($el, $, false, false, false, fs, ff)
+        $el.find('img[src^="/uploads/"]').each((_, imgEl) => {
+          const run = imageRunFromImg(imgEl, $, images)
+          if (run) children.push(run)
+        })
+        out.push(new Paragraph({ heading, alignment, children }))
         return
       }
       // Порожній <p> — пропущений рядок ентером: зберігаємо відступ як порожній параграф
@@ -339,11 +398,19 @@ function cellParagraphsFromHtml(html: string, signatureImages?: Record<string, S
       alignmentFromStyle($wrap.attr("style"))
     )
   }
+  if ($wrap.find('img[src^="/uploads/"]').length > 0) {
+    const children: (TextRun | ImageRun)[] = collectTextRuns($wrap, $, false, false, false, fontSizeToHalfPoints($wrap.attr("style") ?? ""), fontFamilyFromStyle($wrap.attr("style") ?? ""))
+    $wrap.find('img[src^="/uploads/"]').each((_, imgEl) => {
+      const run = imageRunFromImg(imgEl, $, images)
+      if (run) children.push(run)
+    })
+    return [new Paragraph({ alignment: alignmentFromStyle($wrap.attr("style")), children })]
+  }
   const runs = collectTextRuns($wrap, $, false, false, false, fontSizeToHalfPoints($wrap.attr("style") ?? ""), fontFamilyFromStyle($wrap.attr("style") ?? ""))
   return [new Paragraph({ alignment: alignmentFromStyle($wrap.attr("style")), children: runs.length ? runs : [new TextRun({ text: $wrap.text() || "" })] })]
 }
 
-function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureImages?: Record<string, SignatureImage>): (Paragraph | Table)[] {
+function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureImages?: Record<string, SignatureImage>, images?: ImageMap): (Paragraph | Table)[] {
   const $ = load(`<div id="root">${html}</div>`, null, false)
   const $root = $("#root")
   const blocks: (Paragraph | Table)[] = []
@@ -361,7 +428,7 @@ function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureIma
     if (tag === "table") {
       const $table = $(node as unknown as Parameters<CheerioAPI>[0])
       const model = extractTableModel($table, $, page)
-      const table = buildDocxTable(model, page, signatureImages)
+      const table = buildDocxTable(model, page, signatureImages, images)
       blocks.push(table)
       return
     }
@@ -390,13 +457,23 @@ function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureIma
         $el.find("table").each((_, tEl) => {
           const $t = $(tEl)
           const m = extractTableModel($t, $, page)
-          blocks.push(buildDocxTable(m, page, signatureImages))
+          blocks.push(buildDocxTable(m, page, signatureImages, images))
         })
         return
       }
       // Підпис (зображення): текст + вбудований підпис
       if ($el.find("img[data-sig]").length > 0) {
         blocks.push(...signatureParagraphsFromHtml($el.html() ?? "", signatureImages, fs, ff, alignment))
+        return
+      }
+      // Зображення документа (наші): текст + вбудовані зображення
+      if ($el.find('img[src^="/uploads/"]').length > 0) {
+        const children: (TextRun | ImageRun)[] = collectTextRuns($el, $, false, false, false, fs, ff)
+        $el.find('img[src^="/uploads/"]').each((_, imgEl) => {
+          const run = imageRunFromImg(imgEl, $, images)
+          if (run) children.push(run)
+        })
+        blocks.push(new Paragraph({ heading, alignment, children }))
         return
       }
       const paraProps: Record<string, unknown> = { heading, alignment, children: runs.length ? runs : [new TextRun({ text: $el.text() || "" })] }
@@ -427,6 +504,16 @@ function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureIma
       blocks.push(new Paragraph({ children: [] }))
       return
     }
+    if (tag === "img") {
+      const $img = $(node as unknown as Parameters<CheerioAPI>[0])
+      const run = imageRunFromImg(node as unknown as Parameters<CheerioAPI>[0], $, images)
+      if (run) {
+        const align = ($img.attr("data-align") ?? "left") as string
+        const pageBreakBefore = $img.attr("data-page-break") === "true"
+        blocks.push(new Paragraph({ alignment: ALIGN_MAP[align] ?? AlignmentType.LEFT, pageBreakBefore, children: [run] }))
+      }
+      return
+    }
     // Інше — спробувати як параграф
     const $el = $(node as unknown as Parameters<CheerioAPI>[0])
     const fs = fontSizeToHalfPoints($el.attr("style") ?? "")
@@ -438,7 +525,7 @@ function htmlToDocxBlocks(html: string, page?: PageSettings | null, signatureIma
   return blocks
 }
 
-function buildDocxTable(model: ReturnType<typeof extractTableModel>, page?: PageSettings | null, signatureImages?: Record<string, SignatureImage>): Table {
+function buildDocxTable(model: ReturnType<typeof extractTableModel>, page?: PageSettings | null, signatureImages?: Record<string, SignatureImage>, images?: ImageMap): Table {
   const { isBorderless, width, rows } = model
   let { colWidthsDxa } = model
 
@@ -501,7 +588,7 @@ function buildDocxTable(model: ReturnType<typeof extractTableModel>, page?: Page
       if (w === 0) w = Math.floor(tableWidthDxa / row.length)
       colIndex += span
 
-      const paragraphs = cellParagraphsFromHtml(cell.html, signatureImages)
+      const paragraphs = cellParagraphsFromHtml(cell.html, signatureImages, images)
       return new TableCell({
         columnSpan: span,
         rowSpan: cell.rowspan > 1 ? cell.rowspan : undefined,
@@ -536,14 +623,17 @@ export async function createDocxBuffer(input: {
   const parts = [input.header, input.body, input.footer].filter(Boolean) as string[]
   const html = parts.map((part) => replaceFields(part, input.data, input.signatureImages)).join('<p></p>')
 
-  // Якщо шаблон порожній — один параграф заголовка
-  const blocks = html.trim() ? htmlToDocxBlocks(html, input.page, input.signatureImages) : []
+  const images = await collectEmbeddedImages(html)
+
+  const blocks = html.trim() ? htmlToDocxBlocks(html, input.page, input.signatureImages, images) : []
 
   // Якщо жодного блоку — додамо заголовок
   const children: (Paragraph | Table)[] =
     blocks.length > 0 ? blocks : [new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: input.title, bold: true })] })]
 
-  const pageSize = pageSizeDxa(input.page)
+  // Бібліотека docx для landscape сама обмінює width/height місцями,
+  // тому передаємо розміри в портретній орієнтації, а орієнтацію — окремо.
+  const pageSize = pageSizeDxa({ ...input.page, orientation: "portrait" })
   const margin = marginsDxa(input.page)
   const doc = new Document({
     styles: {

@@ -29,7 +29,6 @@ export async function createCategoryAction(input: unknown): Promise<CategoryResu
     const data = categorySchema.parse(input)
     await orm.Category.create({ ...data, longDescription: data.longDescription || null, icon: data.icon || null, updatedAt: nowTimestamp() })
     revalidatePath("/admin")
-    revalidatePath("/templates")
     return { ok: true, message: "Категорію створено" }
   } catch (error) {
     return { ok: false, message: error instanceof z.ZodError ? error.issues[0]?.message ?? "Перевірте дані" : "Не вдалося створити категорію" }
@@ -42,8 +41,6 @@ export async function updateCategoryAction(id: string, input: unknown): Promise<
     const data = categorySchema.parse(input)
     await orm.Category.where({ id }).update({ ...data, longDescription: data.longDescription || null, icon: data.icon || null, updatedAt: nowTimestamp() })
     revalidatePath("/admin")
-    revalidatePath("/templates")
-    revalidatePath(`/templates/${data.slug}`)
     return { ok: true, message: "Категорію оновлено" }
   } catch (error) {
     return { ok: false, message: error instanceof z.ZodError ? error.issues[0]?.message ?? "Перевірте дані" : "Не вдалося оновити категорію" }
@@ -55,7 +52,6 @@ export async function toggleCategoryAction(id: string, isActive: boolean): Promi
     await requireAdmin()
     await orm.Category.where({ id }).update({ isActive, updatedAt: nowTimestamp() })
     revalidatePath("/admin")
-    revalidatePath("/templates")
     return { ok: true, message: isActive ? "Категорію активовано" : "Категорію деактивовано" }
   } catch {
     return { ok: false, message: "Не вдалося змінити статус категорії" }
@@ -70,7 +66,6 @@ export async function deleteCategoryAction(id: string): Promise<CategoryResult> 
     if (category.templates) return { ok: false, message: "Категорію з шаблонами не можна видалити. Деактивуйте її." }
     await orm.Category.where({ id }).delete()
     revalidatePath("/admin")
-    revalidatePath("/templates")
     return { ok: true, message: "Категорію видалено" }
   } catch {
     return { ok: false, message: "Не вдалося видалити категорію" }

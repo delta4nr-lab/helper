@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { FileText, Folder, Users, UsersRound } from "lucide-react"
+import { Folder, Users, UsersRound } from "lucide-react"
 
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { SiteFooter } from "@/components/site-footer"
@@ -19,12 +19,10 @@ export const dynamic = "force-dynamic"
 
 export default async function AdminPage() {
   // Auth перевіряється в app/admin/layout.tsx (middleware + server layout)
-  const [{ count: usersTotal }, { count: exportsTotal }, { count: categoriesTotal }, { count: templatesTotal }] =
+  const [{ count: usersTotal }, { count: categoriesTotal }] =
     await Promise.all([
       orm.User.aggregate((agg) => ({ count: agg.count() })),
-      orm.ExportedFile.aggregate((agg) => ({ count: agg.count() })),
       orm.Category.aggregate((agg) => ({ count: agg.count() })),
-      orm.Template.where({ isActive: true }).aggregate((agg) => ({ count: agg.count() })),
     ])
 
   return (
@@ -65,17 +63,6 @@ export default async function AdminPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                  <CardDescription>Експорти</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">
-                  {exportsTotal}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                Збережені файли користувачів
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
                 <CardDescription>Категорії</CardDescription>
                 <CardTitle className="text-2xl tabular-nums">
                   {categoriesTotal}
@@ -89,17 +76,6 @@ export default async function AdminPage() {
                   <Folder className="size-3.5" />
                   Керувати категоріями
                 </Link>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardDescription>Активні шаблони</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">
-                  {templatesTotal}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                Доступні для створення документів
               </CardContent>
             </Card>
           </div>
@@ -135,15 +111,6 @@ export default async function AdminPage() {
               >
                 <UsersRound className="size-4" />
                 Штат
-              </Button>
-
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={<Link href="/admin/templates" />}
-              >
-                <FileText className="size-4" />
-                Керувати шаблонами
               </Button>
             </CardContent>
           </Card>

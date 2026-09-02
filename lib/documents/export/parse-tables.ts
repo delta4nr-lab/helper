@@ -1,4 +1,4 @@
-import "server-only"
+﻿import "server-only"
 
 import { DEFAULT_PAGE_SETTINGS, usableDxa, type PageSettings } from "../page"
 

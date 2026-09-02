@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { FileText, Folder, LayoutDashboard, Settings, Shield, Users, UsersRound } from "lucide-react"
+import { Folder, LayoutDashboard, Settings, Shield, Users, UsersRound } from "lucide-react"
 
 export function AdminSidebar() {
   return (
@@ -34,13 +34,6 @@ export function AdminSidebar() {
         >
           <UsersRound className="size-4" />
           Штат
-        </Link>
-        <Link
-          href="/admin/templates"
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <FileText className="size-4" />
-          Керування шаблонами
         </Link>
         <Link
           href="/admin/categories"

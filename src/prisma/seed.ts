@@ -1,11 +1,20 @@
 import "dotenv/config"
 import bcrypt from "bcrypt"
 import { db, orm, nowTimestamp } from "./db"
-import { categories, templates } from "../../lib/documents/catalog"
 
 async function main() {
   console.log("Seeding categories (foundation for admin CRUD)...")
-  for (const c of categories) {
+  const seedCategories = [
+    {
+      slug: "raporty",
+      title: "Рапорти",
+      description: "Відпустки, відрядження, заохочення, переміщення",
+      longDescription: "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
+      icon: "raporty",
+      countLabel: "шаблонів",
+    },
+  ]
+  for (const c of seedCategories) {
     await orm.Category.upsert({
       create: {
         slug: c.slug,
@@ -29,123 +38,45 @@ async function main() {
       conflictOn: { slug: c.slug },
     })
   }
-  console.log(`Seeded ${categories.length} categories`)
+  console.log(`Seeded ${seedCategories.length} categories`)
 
-  console.log("Seeding templates...")
-  // Знайдемо адміна для createdById (якщо є)
+  console.log("Seeding template (raport-vidpustka)...")
   const adminUser: { id: string } | null = await orm.User.select("id").first({ username: "admin" })
-
   const categoryMap = new Map<string, string>()
   const dbCategories = await orm.Category.select("slug", "id").all()
   for (const c of dbCategories) categoryMap.set(c.slug, c.id)
 
-  for (const t of templates) {
-    const categoryId = categoryMap.get(t.categorySlug) ?? null
-    await orm.Template.upsert({
-      create: {
-        id: t.id,
-        categoryId,
-        categorySlug: t.categorySlug,
-        title: t.title,
-        fields: t.fields,
-        popular: t.popular,
-        description: t.description,
-        tags: [...t.tags],
-        paper: t.paper,
-        isActive: true,
-        ...(adminUser ? { createdById: adminUser.id } : {}),
-        updatedAt: nowTimestamp(),
-      },
-      update: {
-        categoryId,
-        categorySlug: t.categorySlug,
-        title: t.title,
-        fields: t.fields,
-        popular: t.popular,
-        description: t.description,
-        tags: [...t.tags],
-        paper: t.paper,
-        isActive: true,
-        ...(adminUser ? { createdById: adminUser.id } : {}),
-        updatedAt: nowTimestamp(),
-      },
-    })
-  }
-  console.log(`Seeded ${templates.length} templates in ${categories.length} categories`)
-
-  // Видалити все лишнє — лишити тільки рапорти/відпустку (1 категорія, 1 шаблон)
-  const keepCategorySlugs = new Set(categories.map((c) => c.slug)) // зараз тільки raporty
-  const keepTemplateIds = new Set(templates.map((t) => t.id)) // зараз тільки raport-vidpustka
-
-  const staleCategories = await orm.Category.where((c) => c.slug.notIn([...keepCategorySlugs])).select("id", "slug").all()
-  if (staleCategories.length > 0) {
-    console.log(`Cleaning stale categories: ${staleCategories.map((c) => c.slug).join(", ")}`)
-    const staleCatIds = staleCategories.map((c) => c.id)
-    // видалити пов'язані шаблони/поля/експорти
-    const staleTpls = await orm.Template.where((t) => t.categoryId.in(staleCatIds)).select("id").all()
-    const staleTplIds = staleTpls.map((t) => t.id)
-    if (staleTplIds.length > 0) {
-      await orm.TemplateField.where((tf) => tf.templateId.in(staleTplIds)).deleteAll()
-      await orm.ExportedFile.where((ef) => ef.templateId.in(staleTplIds)).deleteAll()
-      await orm.Template.where((t) => t.id.in(staleTplIds)).deleteAll()
-    }
-    await orm.Category.where((c) => c.id.in(staleCatIds)).deleteAll()
-  }
-
-  const staleTemplates = await orm.Template.where((t) => t.id.notIn([...keepTemplateIds])).select("id").all()
-  if (staleTemplates.length > 0) {
-    console.log(`Cleaning stale templates: ${staleTemplates.map((t) => t.id).join(", ")}`)
-    await orm.TemplateField.where((tf) => tf.templateId.in(staleTemplates.map((t) => t.id))).deleteAll()
-    await orm.ExportedFile.where((ef) => ef.templateId.in(staleTemplates.map((t) => t.id))).deleteAll()
-    await orm.Template.where((t) => t.id.in(staleTemplates.map((t) => t.id))).deleteAll()
-  }
-  // Почистити поля для vidryadzhennya якщо лишаємо vidpustka
-  await orm.TemplateField.where({ templateId: "raport-vidryadzhennya" }).deleteAll()
-  console.log("Cleaned old fields for raport-vidryadzhennya")
-
-  // Пілот: нейтральні поля для raport-vidpustka — єдиний рапорт (можуть перевикористовуватись в nakaz/dopovid)
-  console.log("Seeding TemplateField for raport-vidpustka (нейтральні, унікальні key)...")
-  const pilotFields = [
-    { key: "personnelId", label: "Особовий склад", type: "personnel", required: false, placeholder: "Оберіть зі списку", sortOrder: 0 },
-    { key: "documentType", label: "Тип відпустки", type: "select", required: true, options: ["щорічна", "соціальна", "за сімейними обставинами", "навчальна", "для лікування після поранення"], sortOrder: 1 },
-    { key: "startDate", label: "Дата початку", type: "date", required: true, sortOrder: 2 },
-    { key: "durationDays", label: "Тривалість (діб)", type: "number", required: true, placeholder: "45", sortOrder: 3, validation: { min: 1, max: 90 } },
-    { key: "location", label: "Місце проведення", type: "text", required: true, placeholder: "Одеська обл., м. Одеса, вул. Академіка Гамале, 60", sortOrder: 4 },
-    { key: "documentNumber", label: "Номер документа-підстави (ВЛК)", type: "text", required: false, placeholder: "2026-0724-1157-2892-7", sortOrder: 5 },
-    { key: "documentDate", label: "Дата документа-підстави (ВЛК)", type: "date", required: false, sortOrder: 6 },
-    { key: "contactPhone", label: "Контактний телефон", type: "text", required: false, placeholder: "(050) 2289154", sortOrder: 7 },
-    { key: "basis", label: "Підстава / примітка", type: "textarea", required: false, placeholder: "Рішення ВЛК, виписка №5263 від 27.07.2026...", sortOrder: 8 },
-  ] as const
-
-  for (const f of pilotFields) {
-    const p = f as { placeholder?: string; options?: unknown; validation?: unknown }
-    await orm.TemplateField.upsert({
-      create: {
-        templateId: "raport-vidpustka",
-        key: f.key,
-        label: f.label,
-        _type: f.type,
-        required: f.required,
-        placeholder: p.placeholder ?? null,
-        options: (p.options as never) ?? undefined,
-        validation: (p.validation as never) ?? undefined,
-        sortOrder: f.sortOrder,
-        updatedAt: nowTimestamp(),
-      },
-      update: {
-        label: f.label,
-        _type: f.type,
-        required: f.required,
-        placeholder: p.placeholder ?? null,
-        options: (p.options as never) ?? undefined,
-        validation: (p.validation as never) ?? undefined,
-        sortOrder: f.sortOrder,
-        updatedAt: nowTimestamp(),
-      },
-      conflictOn: { templateId: "raport-vidpustka", key: f.key },
-    })
-  }
-  console.log(`Seeded ${pilotFields.length} fields for raport-vidpustka`)
+  await orm.Template.upsert({
+    create: {
+      id: "raport-vidpustka",
+      categoryId: categoryMap.get("raporty") ?? null,
+      categorySlug: "raporty",
+      title: "Рапорт на відпустку",
+      fields: 6,
+      popular: true,
+      description: "Щорічна, соціальна, за сімейними обставинами. Розрахунок діб, місце проведення.",
+      tags: ["відпустка", "дати", "наказ"],
+      paper: "А4",
+      isActive: true,
+      ...(adminUser ? { createdById: adminUser.id } : {}),
+      updatedAt: nowTimestamp(),
+    },
+    update: {
+      categoryId: categoryMap.get("raporty") ?? null,
+      categorySlug: "raporty",
+      title: "Рапорт на відпустку",
+      fields: 6,
+      popular: true,
+      description: "Щорічна, соціальна, за сімейними обставинами. Розрахунок діб, місце проведення.",
+      tags: ["відпустка", "дати", "наказ"],
+      paper: "А4",
+      isActive: true,
+      ...(adminUser ? { createdById: adminUser.id } : {}),
+      updatedAt: nowTimestamp(),
+    },
+    conflictOn: { id: "raport-vidpustka" },
+  })
+  console.log("Seeded 1 template (raport-vidpustka)")
 
   console.log("Seeding personnel demo...")
   const demo = [
@@ -206,10 +137,6 @@ async function main() {
       update: { ...u.profile, updatedAt: nowTimestamp() },
       conflictOn: { userId: upserted.id },
     })
-    // Якщо шаблони вже засіяні без createdBy — оновити (для першого запуску де admin був null)
-    if (u.username === "admin") {
-      await orm.Template.where((t) => t.createdById.isNull()).updateAll({ createdById: upserted.id, updatedAt: nowTimestamp() })
-    }
     console.log(` - ${u.username} (${u.role}) -> profile: ${u.profile.lastName} ${u.profile.firstName}, rank: ${u.profile.rank}`)
   }
 }

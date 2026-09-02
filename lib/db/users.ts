@@ -28,7 +28,6 @@ export async function listUsers(params: {
   const [items, total] = await Promise.all([
     collection
       .include("profile", (p) => p)
-      .include("exportedFiles", (ef) => ef.count())
       .orderBy((u) => u.createdAt.desc())
       .offset((page - 1) * pageSize)
       .limit(pageSize)
@@ -36,22 +35,6 @@ export async function listUsers(params: {
     collection.aggregate((agg) => ({ count: agg.count() })),
   ])
   return { items, total: total.count, page, pageSize, totalPages: Math.ceil(total.count / pageSize) }
-}
-
-export async function getUserWithExports(username: string, session: SessionUser | null) {
-  // USER бачить тільки свої, ADMIN — будь-кого
-  if (!session) throw new Error("Не авторизовано")
-  const target = await orm.User.where({ username }).include("profile", (p) => p).first()
-  if (!target) return null
-  if (session.role === "USER" && session.username !== username) {
-    throw new Error("Недостатньо прав")
-  }
-  const exports = await orm.ExportedFile.where({ userId: target.id })
-    .include("template", (t) => t)
-    .orderBy((f) => f.createdAt.desc())
-    .limit(50)
-    .all()
-  return { user: target, exports }
 }
 
 export async function createUser(

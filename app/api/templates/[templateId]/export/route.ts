@@ -6,7 +6,7 @@ import { load } from "cheerio"
 import { auth } from "@/auth"
 import { orm } from "@/lib/db"
 import { createDocxBuffer, type SignatureImage } from "@/lib/documents/export/docx"
-import { pageSettingsFromPaper, type PageSettings } from "@/lib/documents/page"
+import { pageSettingsFromPaper, PAGE_SIZE_MM, type PageSettings } from "@/lib/documents/page"
 
 type Params = { templateId: string }
 
@@ -22,7 +22,7 @@ function mimeFromPath(filePath: string): string {
 
 // Валідація налаштувань сторінки від клієнта: розумні межі полів (мм)
 function sanitizePageSettings(value: PageSettings): PageSettings | null {
-  if (value?.size !== "A4") return null
+  if (!value?.size || !(value.size in PAGE_SIZE_MM)) return null
   const clamp = (n: number, min: number, max: number) => (Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : NaN)
   const margins = {
     top: clamp(Number(value.margins?.top), 0, 50),
@@ -32,7 +32,7 @@ function sanitizePageSettings(value: PageSettings): PageSettings | null {
   }
   if (![margins.top, margins.right, margins.bottom, margins.left].every((n) => Number.isFinite(n))) return null
   return {
-    size: "A4",
+    size: value.size as keyof typeof PAGE_SIZE_MM,
     orientation: value.orientation === "landscape" ? "landscape" : "portrait",
     margins,
   }

@@ -145,7 +145,7 @@ export default async function CategoryPage({
                   </div>
                   <p className="max-w-[70ch] text-sm leading-relaxed text-muted-foreground">
                     {cat.longDescription} Оберіть потрібний документ — картки
-                    нижче підтримують пошук як і шаблони.
+                    нижче підтримують пошук.
                   </p>
                 </div>
 
@@ -162,7 +162,6 @@ export default async function CategoryPage({
 
               <Separator />
 
-              {/* швидкі чіпи — якірний пошук */}
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>Швидко знайти:</span>
                 {items.slice(0, 4).map((t) => (
@@ -181,19 +180,6 @@ export default async function CategoryPage({
 
         <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
           <CategoryTemplatesClient templates={items} />
-
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6 text-sm">
-            <p className="text-muted-foreground">
-              Не знайшли потрібне? Створіть кастомний шаблон на базі існуючого.
-            </p>
-            <Link
-              href="/templates"
-              className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-            >
-              Переглянути інші категорії
-              <ChevronRight className="size-4" />
-            </Link>
-          </div>
         </div>
       </main>
 

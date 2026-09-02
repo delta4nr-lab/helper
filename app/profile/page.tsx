@@ -9,11 +9,10 @@ import { SiteFooter } from "@/components/site-footer"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { AccountForm } from "@/components/profile/account-form"
 import { ProfileDetailsForm } from "@/components/profile/profile-details-form"
-import { ExportsLog } from "@/components/profile/exports-log"
 
 export const dynamic = "force-dynamic"
 
@@ -35,12 +34,6 @@ export default async function ProfilePage() {
     .first()
 
   if (!user) redirect("/unauthorized")
-
-  const exports = await orm.ExportedFile.where({ userId })
-    .include("template", (t) => t.select("title"))
-    .orderBy((f) => f.createdAt.desc())
-    .limit(100)
-    .all()
 
   const profile = user.profile
   const initial = avatarFallback(user.username)
@@ -95,35 +88,10 @@ export default async function ProfilePage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm">Підказка</CardTitle>
                 <CardDescription className="text-sm leading-relaxed">
-                  ПІБ та звання не обов&apos;язкові. Їх можна заповнити пізніше — вони підставляються у шаблони рапортів та наказів. Логін
+                  ПІБ та звання не обов&apos;язкові. Їх можна заповнити пізніше. Логін
                   має бути унікальним.
                 </CardDescription>
               </CardHeader>
-            </Card>
-          </div>
-
-          {/* Права колонка: лог документів */}
-          <div className="flex flex-col gap-6">
-            <ExportsLog files={exports} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Статистика</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-3 gap-3 text-center">
-                <div className="rounded-xl border bg-muted/30 p-3">
-                  <div className="text-lg font-semibold leading-none">{exports.length}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">експортів</div>
-                </div>
-                <div className="rounded-xl border bg-muted/30 p-3">
-                  <div className="text-lg font-semibold leading-none">{new Set(exports.map((file) => file.templateId)).size}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">шаблонів</div>
-                </div>
-                <div className="rounded-xl border bg-muted/30 p-3">
-                  <div className="text-lg font-semibold leading-none">{exports.reduce((sum, file) => sum + file.size, 0) > 1024 * 1024 ? `${(exports.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} МБ` : `${Math.max(0, Math.round(exports.reduce((sum, file) => sum + file.size, 0) / 1024))} КБ`}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">сховище</div>
-                </div>
-              </CardContent>
             </Card>
           </div>
         </div>

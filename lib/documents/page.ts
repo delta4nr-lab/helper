@@ -2,11 +2,8 @@
 // Всі значення (розміри, поля) зберігаються в мм.
 // Конвертери для CSS (px) та DOCX (DXA/twips) — єдине джерело істини,
 // щоб редактор і експорт завжди збігалися.
-//
-// Архітектура дозволяє додавати інші формати (A3, Letter, custom) —
-// поки реалізовано A4.
 
-export type PageSize = "A4"
+export type PageSize = "A4" | "A3" | "A5" | "LETTER" | "LEGAL" | "TABLOID"
 export type PageOrientation = "portrait" | "landscape"
 
 export type PageMargins = {
@@ -27,7 +24,16 @@ export const MM_PER_INCH = 25.4
 export const PX_PER_INCH = 96
 export const TWIPS_PER_INCH = 1440 // 1 pt = 20 twips
 
-export const A4_MM = { width: 210, height: 297 } as const
+// Розміри аркушів у мм (ширина × висота). Збігаються з PAGE_SIZES пакета
+// tiptap-pagination-plus (px при 96dpi).
+export const PAGE_SIZE_MM: Record<PageSize, { width: number; height: number }> = {
+  A4: { width: 210, height: 297 },
+  A3: { width: 297, height: 420 },
+  A5: { width: 148, height: 210 },
+  LETTER: { width: 215.9, height: 279.4 },
+  LEGAL: { width: 215.9, height: 355.6 },
+  TABLOID: { width: 279.4, height: 431.8 },
+}
 
 // ── Конвертери ─────────────────────────────────────────────────────
 export function mmToPx(mm: number): number {
@@ -48,7 +54,7 @@ export const DEFAULT_PAGE_SETTINGS: PageSettings = {
 
 // ── Обчислення ─────────────────────────────────────────────────────
 export function pageSizeMm(settings: PageSettings): { width: number; height: number } {
-  const base = A4_MM
+  const base = PAGE_SIZE_MM[settings.size] ?? PAGE_SIZE_MM.A4
   return settings.orientation === "landscape"
     ? { width: base.height, height: base.width }
     : { width: base.width, height: base.height }
@@ -114,8 +120,9 @@ export function parsePageSettings(raw: string | null | undefined): PageSettings 
   try {
     const value = JSON.parse(raw) as PageSettings
     if (value?.size && value?.margins) {
+      const size = value.size in PAGE_SIZE_MM ? (value.size as PageSize) : "A4"
       return {
-        size: value.size === "A4" ? "A4" : "A4",
+        size,
         orientation: value.orientation === "landscape" ? "landscape" : "portrait",
         margins: {
           top: Number(value.margins.top),

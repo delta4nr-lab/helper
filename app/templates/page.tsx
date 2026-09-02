@@ -13,7 +13,6 @@ import {
   templates as fallbackTemplates,
 } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
-import { auth } from "@/auth"
 
 export const metadata: Metadata = {
   title: "Шаблони документів",
@@ -52,20 +51,11 @@ export default async function TemplatesPage() {
     total = fallbackTemplates.length
   }
 
-  let isAdmin = false
-  try {
-    const session = await (
-      auth as unknown as () => Promise<{ user?: { role?: string } } | null>
-    )()
-    isAdmin = (session?.user as unknown as { role?: string })?.role === "ADMIN"
-  } catch {}
-
   return (
     <div className="flex min-h-svh flex-col bg-background">
       <SiteHeader />
 
       <main className="flex-1">
-        {/* Хлібні крихти + заголовок */}
         <div className="border-b bg-muted/30">
           <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
             <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -73,12 +63,7 @@ export default async function TemplatesPage() {
                 Головна
               </Link>
               <ChevronRight className="size-3.5" />
-              <Link
-                href="/templates"
-                className="font-medium text-foreground hover:underline"
-              >
-                Шаблони
-              </Link>
+              <span className="font-medium text-foreground">Шаблони</span>
             </nav>
 
             <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -90,20 +75,10 @@ export default async function TemplatesPage() {
                   <Badge variant="secondary" className="rounded-full">
                     {total} шаблонів
                   </Badge>
-                  {isAdmin && (
-                    <Link
-                      href="/admin/templates/new"
-                      className="text-sm font-medium text-primary hover:underline"
-                    >
-                      + Створити шаблон
-                    </Link>
-                  )}
                 </div>
                 <p className="max-w-[65ch] text-sm leading-relaxed text-muted-foreground">
-                  Оберіть категорію — всередині знайдете потрібний документ.
-                  {isAdmin
-                    ? " Як адмін ви можете створювати та редагувати шаблони."
-                    : " Кожен шаблон має валідацію, підказки та передперегляд."}
+                  Оберіть категорію — всередині знайдете потрібний документ і
+                  зможете одразу заповнити його в редакторі.
                 </p>
               </div>
 
@@ -118,9 +93,7 @@ export default async function TemplatesPage() {
                       {categories.length === 1 ? "категорія" : "категорій"}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {categories.length === 1
-                        ? "Тільки рапорти"
-                        : "Від рапортів до листування"}
+                      {categories.length === 1 ? "Тільки рапорти" : "Від рапортів до листування"}
                     </div>
                   </div>
                   <Separator orientation="vertical" className="h-8" />
@@ -139,7 +112,7 @@ export default async function TemplatesPage() {
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1">
                 <Search className="size-3" />
-                Порада: всередині категорії є пошук за назвою, кодом і тегами
+                Всередині категорії є пошук за назвою, кодом і тегами
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1">
                 <FileText className="size-3" />
@@ -149,27 +122,11 @@ export default async function TemplatesPage() {
           </div>
         </div>
 
-        {/* Сітка категорій */}
         <div className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6 lg:px-8">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {categories.map((c) => (
               <CategoryCard key={c.slug} category={c} count={c.count} />
             ))}
-          </div>
-
-          <div className="mt-8 rounded-xl border border-dashed bg-muted/20 p-4 text-sm leading-relaxed text-muted-foreground">
-            <span className="font-medium text-foreground">
-              Адмін додасть категорії
-            </span>{" "}
-            — хаб читає з БД (
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">
-              prisma.category
-            </code>
-            ), без хардкоду. Архітектура{" "}
-            <span className="font-mono text-xs">
-              Дані → Схема → Шаблон → Рендер → Export
-            </span>{" "}
-            підхопить новий тип автоматично.
           </div>
         </div>
       </main>

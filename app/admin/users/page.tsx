@@ -9,7 +9,6 @@ export const dynamic = "force-dynamic"
 export default async function AdminUsersPage() {
   const users = await orm.User.select("id", "username", "role", "isActive")
     .include("profile", (p) => p.select("lastName", "firstName", "rank"))
-    .include("exportedFiles", (ef) => ef.count())
     .orderBy((u) => u.createdAt.desc())
     .limit(100)
     .all()

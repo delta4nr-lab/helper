@@ -6,7 +6,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { PageSettings } from "@/lib/documents/page"
+import type { PageSettings, PageSize } from "@/lib/documents/page"
+import { PAGE_SIZE_MM } from "@/lib/documents/page"
+
+const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = (
+  Object.keys(PAGE_SIZE_MM) as PageSize[]
+).map((value) => {
+  const { width, height } = PAGE_SIZE_MM[value]
+  return { value, label: `${value} (${width} × ${height} мм)` }
+})
 
 type PageSettingsDialogProps = {
   open: boolean
@@ -23,7 +31,7 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 // Форма налаштувань. Рендериться всередині DialogContent, який монтується
-// при відкритті — стан draft скидається автоматично (без setState в ефекті).
+// при відкритті — стан draft скидається автоматично.
 function PageSettingsForm({
   page,
   defaultPage,
@@ -53,10 +61,14 @@ function PageSettingsForm({
             <Label>Формат</Label>
             <Select value={draft.size} onValueChange={(value) => setDraft((prev) => ({ ...prev, size: value as PageSettings["size"] }))}>
               <SelectTrigger className="w-full">
-                <SelectValue>{(value) => (value === "A4" ? "A4 (210 × 297 мм)" : value)}</SelectValue>
+                <SelectValue placeholder="Оберіть формат" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="A4">A4 (210 × 297 мм)</SelectItem>
+                {PAGE_SIZE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -136,7 +148,10 @@ export function PageSettingsDialog({ open, onOpenChange, page, defaultPage, onAp
         <PageSettingsForm
           page={page}
           defaultPage={defaultPage}
-          onApply={(next) => { onApply(next); onOpenChange(false) }}
+          onApply={(next) => {
+            onApply(next)
+            onOpenChange(false)
+          }}
           onReset={onReset}
         />
       </DialogContent>
