@@ -5,6 +5,7 @@ import { normalizeImageBytes, useDocxEditor } from "@docx-editor.dev/react"
 import { ArrowLeftRight, Eraser, UserRound } from "lucide-react"
 
 import { PersonPicker, type PersonPickerItem } from "@/components/documents/person-picker"
+import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 
 import { Button } from "@/components/ui/button"
@@ -75,6 +76,7 @@ export function FillPanel({
   const [openPickerId, setOpenPickerId] = React.useState<string | null>(null)
   const [selected, setSelected] = React.useState<Record<string, string>>({})
   const [simpleValues, setSimpleValues] = React.useState<Record<string, string>>({})
+  const [status, setStatus] = React.useState<string | null>(null)
 
   const pickerItems: PersonPickerItem[] = React.useMemo(
     () =>
@@ -87,20 +89,35 @@ export function FillPanel({
     [personnel]
   )
 
-  // Підпис: зображення з public/ → на місце плейсхолдера {{key}}.
-  async function fillSignature(key: string, person: EditorPersonnel): Promise<boolean> {
-    if (!editor || !person.signaturePath) return false
+  // Підпис: зображення з public/ → всередину поля-контролу (content control).
+  // Механізм той самий, що для текстових полів: setValue за id пише унікальну
+  // мітку у поле. Далі знаходимо абзац мітки через query paragraphs (findMatches
+  // всередину контролів не заглядає), ставимо коллапсовану каретку на початок
+  // абзацу (валідна для insertImage селекція), вставляємо зображення і стираємо
+  // мітку. Працює для будь-якої кількості підписів: кожен контрол адресуємо за id.
+  async function fillSignature(controlId: string, key: string, person: EditorPersonnel): Promise<boolean> {
+    const surface = editor?.surface
+    if (!surface || !person.signaturePath) return false
+    bounceSuspend.begin()
     try {
       const response = await fetch(person.signaturePath)
       if (!response.ok) return false
       const normalized = normalizeImageBytes(new Uint8Array(await response.arrayBuffer()))
       if (!normalized.ok) return false
 
-      const match = editor.findMatches(`{{${key}}}`)[0]
-      if (match) {
-        editor.selectMatch(match)
-        editor.surface?.deleteForward()
-      }
+      // Мітка поля: унікальний текст у контролі (замінює і старе зображення теж)
+      const marker = `SIGFIELD-${key}-SLOT`
+      if (!surface.contentControls.setValue(controlId, marker)) return false
+      // Чекаємо, поки верстка флешне новий текст у знімок документа
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      // Абзац мітки
+      const paragraphs = editor.query({ type: "paragraphs" })
+      const para = paragraphs.find((p) => p.paraId && p.text.includes(marker))
+      if (!para?.paraId) return false
+
+      // Коллапсована каретка на початку абзацу поля — валідна селекція для вставки
+      if (!editor.exec({ type: "setSelection", anchor: { paraId: para.paraId } }).ok) return false
       const ratio = normalized.heightPoints > 0 ? normalized.widthPoints / normalized.heightPoints : 2.4
       const result = await editor.executeImageCommand({
         type: "insertImage",
@@ -109,12 +126,25 @@ export function FillPanel({
         widthPoints: Math.max(24, Math.round(ratio * SIGNATURE_HEIGHT_PT)),
         heightPoints: SIGNATURE_HEIGHT_PT,
       })
-      return result.ok
+      if (!result.ok) return false
+
+      // Стираємо мітку: exec setSelection з search-фразою ставить surface-каретку
+      // на початок мітки ( єдиний робочий шлях до каретки без фокусу документа),
+      // далі посимвольно deleteForward. Офсети тексту не зсунулись — зображення не текст.
+      const fresh = editor.query({ type: "paragraphs" }).find((p) => p.paraId === para.paraId)
+      if (fresh?.text.includes(marker)) {
+        const anchored = editor.exec({ type: "setSelection", anchor: { paraId: para.paraId, search: marker } })
+        if (anchored.ok) {
+          for (let i = 0; i < marker.length; i++) surface.deleteForward()
+        }
+      }
+      return true
     } catch {
       return false
+    } finally {
+      bounceSuspend.end()
     }
   }
-
   function setValueByTag(key: string, value: string): boolean {
     if (!editor) return false
     const controls = editor.query({ type: "contentControls", filter: { tag: key } })
@@ -128,9 +158,11 @@ export function FillPanel({
   // Вибір особи → заповнює всі поля групи (ПІБ, посада, звання, підпис).
   async function applyPerson(group: PersonGroup, personId: string) {
     const person = personnel.find((p) => p.id === personId)
-    if (!person) return
+    if (!person || !editor) return
     setSelected((prev) => ({ ...prev, [group.id]: personId }))
     setOpenPickerId(null)
+    let signatureMissing = false
+    let signatureFailed = false
     for (const field of group.fields) {
       const value =
         field.type === "person"
@@ -142,13 +174,23 @@ export function FillPanel({
               : null
       if (value !== null) {
         setValueByTag(field.key, value)
-      } else if (field.type === "signature" && person.signaturePath) {
-        await fillSignature(field.key, person)
+      } else if (field.type === "signature") {
+        if (!person.signaturePath) {
+          signatureMissing = true
+          continue
+        }
+        const sigControls = editor.query({ type: "contentControls", filter: { tag: field.key } })
+        for (const control of sigControls) {
+          if (!(await fillSignature(control.id, field.key, person))) signatureFailed = true
+        }
       }
     }
+    if (signatureMissing) setStatus(`У ${fullName(person)} немає підпису в картці персоналії`)
+    else if (signatureFailed) setStatus(`Не вдалося вставити підпис ${fullName(person)}`)
+    else setStatus(null)
   }
 
-  // Скидання групи: поля повертаються до підписів, підпис — до плейсхолдера.
+  // Скидання групи: поля повертаються до підписів полів, підпис — до напису «Підпис».
   function clearGroup(group: PersonGroup) {
     setSelected((prev) => {
       const next = { ...prev }
@@ -156,8 +198,7 @@ export function FillPanel({
       return next
     })
     for (const field of group.fields) {
-      const value = field.type === "signature" ? `{{${field.key}}}` : field.label
-      setValueByTag(field.key, value)
+      setValueByTag(field.key, field.label)
     }
   }
 
@@ -172,11 +213,11 @@ export function FillPanel({
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l bg-background">
-      <div className="border-b px-3 py-2 text-sm font-semibold">Заповнення</div>
+    <aside className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-border/50 bg-background">
+      <div className="border-b border-border/50 px-3 py-2 text-sm font-semibold">Заповнення</div>
 
       {groups.length > 0 && (
-        <section className="border-b p-3">
+        <section className="border-b border-border/50 p-3">
           <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <UserRound className="size-3.5" />
             Зі штату
@@ -214,6 +255,7 @@ export function FillPanel({
               )
             })}
           </div>
+          {status && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{status}</p>}
         </section>
       )}
 

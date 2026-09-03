@@ -7,6 +7,7 @@ import { Download, FileCheck2, Loader2, ScanText } from "lucide-react"
 import "@docx-editor.dev/core/styles/editor.css"
 
 import { FillPanel } from "@/components/documents/docx-editor/fill-panel"
+import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 import { useTheme } from "@/components/theme-provider"
 
@@ -24,24 +25,40 @@ type WorkspaceProps = {
 
 type ExportMessage = { ok: boolean; text: string }
 
-// Режим «лише заповнення»: карет може жити лише всередині полів (content controls).
-// Рушій обмежує тільки навігацію Tab, тому доповнюємо: коли каретка опинилась
-// поза полем — автоматично повертаємо її в найближче поле.
+// Режим «лише заповнення»: каретка мусить жити лише всередині полів (content controls).
+// Рушій обмежує тільки Tab-навігацію, тому доповнюємо синхронною підпискою:
+// щойно каретка покидає поле (клік поза ним) — одразу повертаємо її в найближче поле,
+// до того, як користувач встигне щось надрукувати. На час програмного заповнення
+// підпису відскік призупинено (bounceSuspend), щоб не перехоплювати sélection-зміни.
 function FormFillToggle() {
   const editor = useDocxEditor()
-  const { formFill, toggleFormFill, control } = useContentControl()
+  const { formFill, toggleFormFill, controls } = useContentControl()
 
   React.useEffect(() => {
-    if (!formFill || control || !editor?.surface) return
-    editor.surface.contentControls.navigate("next")
-  }, [editor, formFill, control])
+    if (!formFill || !editor) return
+    return editor.on("selectionChange", (snapshot) => {
+      if (bounceSuspend.active || !editor.surface || !snapshot.editable) return
+      const atControl = editor.query({ type: "contentControlAt" })
+      if (atControl) return
+      editor.surface.contentControls.navigate("next")
+    })
+  }, [editor, formFill])
+
+  function handleToggle() {
+    const turningOn = !formFill
+    toggleFormFill()
+    if (turningOn && editor?.surface && !editor.query({ type: "contentControlAt" })) {
+      editor.surface.contentControls.navigate("next")
+    }
+  }
 
   return (
     <Button
       type="button"
       variant={formFill ? "secondary" : "ghost"}
       size="sm"
-      onClick={toggleFormFill}
+      onClick={handleToggle}
+      disabled={controls.length === 0}
       title="Режим заповнення: редагування лише всередині полів"
     >
       <ScanText className="size-4" />
