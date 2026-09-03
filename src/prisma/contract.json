@@ -691,13 +691,6 @@
           },
           "Template": {
             "fields": {
-              "bodyTemplate": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
               "categoryId": {
                 "nullable": true,
                 "type": {
@@ -736,24 +729,17 @@
                   "kind": "scalar"
                 }
               },
+              "docxData": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/bytea@1",
+                  "kind": "scalar"
+                }
+              },
               "fields": {
                 "nullable": false,
                 "type": {
                   "codecId": "pg/int4@1",
-                  "kind": "scalar"
-                }
-              },
-              "footerTemplate": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "headerTemplate": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
                   "kind": "scalar"
                 }
               },
@@ -875,9 +861,6 @@
             },
             "storage": {
               "fields": {
-                "bodyTemplate": {
-                  "column": "bodyTemplate"
-                },
                 "categoryId": {
                   "column": "categoryId"
                 },
@@ -893,14 +876,11 @@
                 "description": {
                   "column": "description"
                 },
+                "docxData": {
+                  "column": "docxData"
+                },
                 "fields": {
                   "column": "fields"
-                },
-                "footerTemplate": {
-                  "column": "footerTemplate"
-                },
-                "headerTemplate": {
-                  "column": "headerTemplate"
                 },
                 "id": {
                   "column": "id"
@@ -1780,11 +1760,6 @@
             },
             "Template": {
               "columns": {
-                "bodyTemplate": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
                 "categoryId": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -1817,20 +1792,15 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "docxData": {
+                  "codecId": "pg/bytea@1",
+                  "nativeType": "bytea",
+                  "nullable": true
+                },
                 "fields": {
                   "codecId": "pg/int4@1",
                   "nativeType": "int4",
                   "nullable": false
-                },
-                "footerTemplate": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
-                "headerTemplate": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
                 },
                 "id": {
                   "codecId": "pg/text@1",
@@ -2199,7 +2169,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "fc96aa99933a9f703bfefa133c7327c6e1a31d54c71b25e7bec0b15fb65f5a18"
+    "storageHash": "7e568d4177634b1aa898a0304f98da8e1ae67b6db12a5f5ece49171861d1e8fd"
   },
   "execution": {
     "executionHash": "9a1533b69221a3c9d809792c41978cdf6bb6137cdaa5b42e91920addc954f22b",

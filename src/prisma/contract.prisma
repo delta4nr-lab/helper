@@ -51,10 +51,8 @@ namespace public {
     updatedAt      TimestampString(3)
     createdById    String?
     categoryId     String?
-    isActive       Boolean         @default(true)
-    bodyTemplate   String?
-    footerTemplate String?
-    headerTemplate String?
+    isActive       Boolean      @default(true)
+    docxData       Bytes?
     exportedFiles  ExportedFile[]
     templateFields TemplateField[]
     category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Template_categoryId_fkey", index: false)

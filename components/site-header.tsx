@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { AuthModal } from "@/components/auth/auth-modal"
 import { UserMenu } from "@/components/auth/user-menu"
+import { ThemeSwitcher } from "@/components/theme-switcher"
 
 const nav = [
   { label: "Шаблони", href: "/templates" },
@@ -54,6 +55,7 @@ export function SiteHeader() {
           </div>
 
           <div className="hidden items-center gap-2 lg:flex">
+            <ThemeSwitcher />
             <Separator orientation="vertical" className="mx-1 h-6" />
             {status === "loading" ? (
               <div className="h-8 w-20 animate-pulse rounded-full bg-muted" />
@@ -68,6 +70,7 @@ export function SiteHeader() {
           </div>
 
           <div className="flex items-center gap-1 lg:hidden">
+            <ThemeSwitcher />
             {status === "loading" ? (
               <div className="size-7 animate-pulse rounded-full bg-muted" />
             ) : isAuthed ? (

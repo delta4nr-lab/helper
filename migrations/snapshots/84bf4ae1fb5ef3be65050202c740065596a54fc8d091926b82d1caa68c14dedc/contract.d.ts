@@ -33,7 +33,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'7e568d4177634b1aa898a0304f98da8e1ae67b6db12a5f5ece49171861d1e8fd'>;
+  StorageHashBase<'84bf4ae1fb5ef3be65050202c740065596a54fc8d091926b82d1caa68c14dedc'>;
 export type ExecutionHash =
   ExecutionHashBase<'9a1533b69221a3c9d809792c41978cdf6bb6137cdaa5b42e91920addc954f22b'>;
 export type ProfileHash =
@@ -315,6 +315,9 @@ export type FieldOutputTypes = {
       readonly categoryId: CodecTypes['pg/text@1']['output'] | null;
       readonly isActive: CodecTypes['pg/bool@1']['output'];
       readonly docxData: CodecTypes['pg/bytea@1']['output'] | null;
+      readonly bodyTemplate: CodecTypes['pg/text@1']['output'] | null;
+      readonly footerTemplate: CodecTypes['pg/text@1']['output'] | null;
+      readonly headerTemplate: CodecTypes['pg/text@1']['output'] | null;
     };
     readonly TemplateField: {
       readonly id: CodecTypes['pg/text@1']['output'];
@@ -417,6 +420,9 @@ export type FieldInputTypes = {
       readonly categoryId: CodecTypes['pg/text@1']['input'] | null;
       readonly isActive: CodecTypes['pg/bool@1']['input'];
       readonly docxData: CodecTypes['pg/bytea@1']['input'] | null;
+      readonly bodyTemplate: CodecTypes['pg/text@1']['input'] | null;
+      readonly footerTemplate: CodecTypes['pg/text@1']['input'] | null;
+      readonly headerTemplate: CodecTypes['pg/text@1']['input'] | null;
     };
     readonly TemplateField: {
       readonly id: CodecTypes['pg/text@1']['input'];
@@ -505,6 +511,7 @@ export type StorageColumnTypes = {
       readonly userId: CodecTypes['pg/text@1']['output'];
     };
     readonly Template: {
+      readonly bodyTemplate: CodecTypes['pg/text@1']['output'] | null;
       readonly categoryId: CodecTypes['pg/text@1']['output'] | null;
       readonly categorySlug: CodecTypes['pg/text@1']['output'];
       readonly createdAt: TimestampString<3>;
@@ -512,6 +519,8 @@ export type StorageColumnTypes = {
       readonly description: CodecTypes['pg/text@1']['output'];
       readonly docxData: CodecTypes['pg/bytea@1']['output'] | null;
       readonly fields: CodecTypes['pg/int4@1']['output'];
+      readonly footerTemplate: CodecTypes['pg/text@1']['output'] | null;
+      readonly headerTemplate: CodecTypes['pg/text@1']['output'] | null;
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly isActive: CodecTypes['pg/bool@1']['output'];
       readonly paper: CodecTypes['pg/text@1']['output'];
@@ -607,6 +616,7 @@ export type StorageColumnInputTypes = {
       readonly userId: CodecTypes['pg/text@1']['input'];
     };
     readonly Template: {
+      readonly bodyTemplate: CodecTypes['pg/text@1']['input'] | null;
       readonly categoryId: CodecTypes['pg/text@1']['input'] | null;
       readonly categorySlug: CodecTypes['pg/text@1']['input'];
       readonly createdAt: CodecTypes['pg/timestamp-string@1']['input'];
@@ -614,6 +624,8 @@ export type StorageColumnInputTypes = {
       readonly description: CodecTypes['pg/text@1']['input'];
       readonly docxData: CodecTypes['pg/bytea@1']['input'] | null;
       readonly fields: CodecTypes['pg/int4@1']['input'];
+      readonly footerTemplate: CodecTypes['pg/text@1']['input'] | null;
+      readonly headerTemplate: CodecTypes['pg/text@1']['input'] | null;
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly isActive: CodecTypes['pg/bool@1']['input'];
       readonly paper: CodecTypes['pg/text@1']['input'];
@@ -1167,6 +1179,21 @@ type ContractBase = Omit<
                 readonly docxData: {
                   readonly nativeType: 'bytea';
                   readonly codecId: 'pg/bytea@1';
+                  readonly nullable: true;
+                };
+                readonly bodyTemplate: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly footerTemplate: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly headerTemplate: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
                   readonly nullable: true;
                 };
               };
@@ -1878,6 +1905,18 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bytea@1' };
               };
+              readonly bodyTemplate: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly footerTemplate: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly headerTemplate: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
             };
             readonly relations: {
               readonly category: {
@@ -1940,6 +1979,9 @@ type ContractBase = Omit<
                 readonly categoryId: { readonly column: 'categoryId' };
                 readonly isActive: { readonly column: 'isActive' };
                 readonly docxData: { readonly column: 'docxData' };
+                readonly bodyTemplate: { readonly column: 'bodyTemplate' };
+                readonly footerTemplate: { readonly column: 'footerTemplate' };
+                readonly headerTemplate: { readonly column: 'headerTemplate' };
               };
             };
           };
