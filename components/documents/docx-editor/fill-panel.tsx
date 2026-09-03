@@ -145,17 +145,10 @@ export function FillPanel({
       if (selected) {
         surface.applyDrawingOps([{ op: "setDrawingWrap", drawingNodeId: selected.id, wrap: "inFront" } as never])
 
-        // Свободне перетягування як у Word: якір картинки має бути ПОЗА таблицею
-        // (якір у комірці обмежує об'єкт межами комірки). Переносимо зображення
-        // в останній абзац документа і ставимо сторінково-абсолютну позицію —
-        // воно лишається точно на місці підпису, але перетягується по всій сторінці.
         const old = editor.getSelectedImage()
         const paragraphs = editor.query({ type: "paragraphs" })
         const last = [...paragraphs].reverse().find((p) => p.paraId)
-        // Позиція зображення на сторінці (px від лівого верхнього кута сторінки).
-        // Якщо поле підпису всередині таблиці — картинку ставимо НАД таблицею
-        // (низ зображення впритул до верхнього краю таблиці), інакше — на місці поля.
-        const drawingEl = document.querySelector(`[data-drawing-node-id="${selected.id}"]`)
+        const drawingEl = document.querySelector(`[data-drawing-node-id="${old?.id ?? selected.id}"]`)
         const pageEl = drawingEl?.closest(".docx-editor-page") ?? drawingEl?.closest("[class*='docx-page']")
         if (old && drawingEl && pageEl && last?.paraId) {
           const dRect = drawingEl.getBoundingClientRect()
@@ -169,7 +162,10 @@ export function FillPanel({
           }
           const pageXEmu = Math.round((dRect.left - pRect.left) * 9525)
           const pageYEmu = Math.round(Math.max(0, pageYpx) * 9525)
-          surface.deleteImage(old.id)
+          // Старe inline-зображення видаляємо командою фасада (surface-метод мовчки
+          // відмовляв, і старе «ховалось» за таблицею)
+          const deleted = editor.exec({ type: "deleteImage", drawingNodeId: old.id })
+          if (!deleted.ok) return false
           if (editor.exec({ type: "setSelection", anchor: { paraId: last.paraId } }).ok) {
             const reinserted = await editor.executeImageCommand({
               type: "insertImage",
