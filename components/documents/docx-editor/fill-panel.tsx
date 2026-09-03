@@ -77,23 +77,22 @@ export function FillPanel({
   const [selected, setSelected] = React.useState<Record<string, string>>({})
   const [simpleValues, setSimpleValues] = React.useState<Record<string, string>>({})
   const [status, setStatus] = React.useState<string | null>(null)
-  // Активні підписи: tag → { мітка заповнення, id вставленого drawing }. Слухач
-  // change нижче повертає назву полю, коли картинка підпису зникла.
-  const sigMarkers = React.useRef<Map<string, { marker: string; drawingId: string }>>(new Map())
+  // Активні підписи: tag → id плаваючого drawing. Слухач change нижче повертає
+  // назву полю, коли картинка підпису зникла.
+  const sigMarkers = React.useRef<Map<string, { drawingId: string }>>(new Map())
 
   // Дефолтне значення поля — його назва. Коли користувач видаляє картинку підпису,
   // полю автоматично повертається назва — поле знову можна заповнити (хоч скільки
   // разів). Ознака живого підписа — drawing за id у DOM. Він може з'явитись із
   // запізненням на кілька кадрів після вставки, тому перед «смертю» підписа
-  // коротко перепитуємо верстку; хром контрола — лише декорація (boundary +
-  // label-чип), вона не придатна для перевірки вмісту.
+  // коротко перепитуємо верстку.
   React.useEffect(() => {
     if (!editor) return
     let checkQueued = false
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
     const drawingAlive = (drawingId: string) =>
       Boolean(document.querySelector(`[data-drawing-node-id="${drawingId}"]:not(.docx-image-selection-overlay)`))
-    const verify = async (tag: string, info: { marker: string; drawingId: string }) => {
+    const verify = async (tag: string, info: { drawingId: string }) => {
       for (let attempt = 0; attempt < 6; attempt++) {
         if (bounceSuspend.active || sigMarkers.current.get(tag) !== info) return
         if (drawingAlive(info.drawingId)) return
@@ -130,11 +129,12 @@ export function FillPanel({
     [personnel]
   )
 
-  // Підпис: зображення з картки персоналії → всередину поля-контрола (inline).
-  // Контрол сам ховає назву, коли має вміст, а семантика поля зберігається у DOCX:
-  // SDT з тегом залишається в документі разом із картинкою. Повторне заповнення
-  // перезаписує вміст контрола, видалення картинки користувачем відстежує слухач
-  // change (назва повертається автоматично).
+  // Підпис: зображення з картки персоналії → плаваючий шар «перед текстом»
+  // (фіксований розмір, не ростить рядок) зі сторінковою позицією «зліва від
+  // ПІБ». Якір — останній абзац документа поза таблицею: рендер не малює
+  // anchored-картинки, що виходять за межі комірки якоря. Контрол поля при цьому
+  // НЕ чіпаємо структурно (тег/назва лишаються в DOCX): назва ховається на час
+  // заповненості і повертається, коли картинку видалили (слухач change).
   async function fillSignature(key: string, person: EditorPersonnel): Promise<boolean> {
     const surface = editor?.surface
     if (!surface || !person.signaturePath) return false
@@ -149,48 +149,65 @@ export function FillPanel({
 
     bounceSuspend.begin()
     let ok = false
+    let drawingId: string | null = null
     try {
-      // Знімок id наявних drawing — ДО будь-яких мутацій: нова картинка може
-      // відрендеритись синхронно, і пізніший знімок включив би її в «старі».
+      // Попередній плаваючий підпис поля прибираємо за id (без виділення)
+      const previous = sigMarkers.current.get(key)
+      sigMarkers.current.delete(key)
+      if (previous) surface.deleteImage(previous.drawingId)
+
+      const personKey = key.replace(/^signature/, "person")
+      const heightEmu = Math.round(SIGNATURE_HEIGHT_PT * 12700)
+      const widthEmu = Math.round((normalized.widthPoints / normalized.heightPoints) * heightEmu)
+      const widthPx = widthEmu / 9525
+      const heightPx = heightEmu / 9525
+
+      // Геометрія полів ДО вставки: плаваюча картинка рядок не ростить, тож
+      // вимірювання залишаються валідними і після wrap. Коротке опитування хромів.
+      let pageRect: DOMRect | null = null
+      let sigRect: DOMRect | null = null
+      let personLefts: number[] = []
+      for (let attempt = 0; attempt < 20 && !pageRect; attempt++) {
+        const sigChrome = document.querySelector<HTMLElement>(`.docx-content-control-chrome[data-tag="${key}"]`)
+        const personChrome = document.querySelector<HTMLElement>(`.docx-content-control-chrome[data-tag="${personKey}"]`)
+        sigRect = sigChrome?.querySelector<HTMLElement>(".docx-content-control-boundary")?.getBoundingClientRect() ?? null
+        personLefts = [...(personChrome?.querySelectorAll<HTMLElement>(".docx-content-control-boundary") ?? [])].map(
+          (b) => b.getBoundingClientRect().left,
+        )
+        pageRect = (sigChrome?.closest(".docx-editor-page") ?? sigChrome?.closest("[class*='docx-page']"))?.getBoundingClientRect() ?? null
+        if (!pageRect || !sigRect || personLefts.length === 0) {
+          pageRect = null
+          await new Promise((resolve) => setTimeout(resolve, 25))
+        }
+      }
+      if (!pageRect || !sigRect || personLefts.length === 0) return false
+
+      // Якір: останній абзац документа з w14:paraId (адресований; поза таблицею)
+      const anchorParaId = [...editor.query({ type: "paragraphs" })].filter((p) => p.paraId).at(-1)?.paraId
+      if (!anchorParaId) return false
+      if (!editor.exec({ type: "setSelection", anchor: { paraId: anchorParaId } }).ok) return false
+
+      // Знімок id наявних drawing — ДО мутацій: нова картинка може відрендеритись
+      // синхронно, і пізніший знімок включив би її в «старі».
       const knownIds = new Set(
         [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")].map((el) => el.getAttribute("data-drawing-node-id") ?? ""),
       )
-      // Скидаємо попередній вміст контрола (стара картка зникає разом із міткою)
-      // і ставимо невидиму мітку: 12 нуль-шириних символів (U+2060/U+200B), біти
-      // хешу controlId — унікальна послідовність, у абзаці зустрічається рівно
-      // один раз. Мітка адресує каретку всередині контрола й лишається в документі
-      // (невидима в прев'ю і в Word).
-      sigMarkers.current.delete(key)
-      const idNum = [...controlId].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 4096, 7)
-      const marker = Array.from({ length: 12 }, (_, i) => ((idNum >> i) & 1 ? "\u200b" : "\u2060")).join("")
-      if (!surface.contentControls.setValue(controlId, marker)) return false
 
-      // Абзац мітки: коротке опитування, поки верстка флешне новий текст (зазвичай 1-й тик)
-      let paraId: string | undefined
-      for (let attempt = 0; attempt < 20 && !paraId; attempt++) {
-        const found = editor.query({ type: "paragraphs" }).find((p) => p.paraId && p.text.includes(marker))
-        paraId = found?.paraId
-        if (!paraId) await new Promise((resolve) => setTimeout(resolve, 25))
-      }
-      if (!paraId) return false
-
-      // Каретка на мітку (всередину контрола) → inline-зображення на її місці.
-      // Якщо комірка вужча за картинку, движок сам пропорційно зменшить вставку.
-      const anchored = editor.exec({ type: "setSelection", anchor: { paraId: paraId, search: marker } })
-      if (!anchored.ok) return false
       const result = await editor.executeImageCommand({
         type: "insertImage",
         data: normalized.bytes,
         mime: normalized.mime,
-        widthPoints: Math.max(24, Math.round((normalized.widthPoints / normalized.heightPoints) * SIGNATURE_HEIGHT_PT)),
-        heightPoints: SIGNATURE_HEIGHT_PT,
+        // Мікро-розмір: проміжний inline-кадр, якщо він відрендериться, —
+        // невидима крапка, а не картинка на новому рядку
+        widthPoints: 2,
+        heightPoints: 2,
       })
       if (!result.ok) return false
 
-      // Id вставленого drawing: виділення або DOM-диф (виділення буває скинутим,
-      // якщо перед вставкою щось змінило модель).
-      let drawingId: string | null = editor.getSelectedImage()?.id ?? null
-      for (let attempt = 0; attempt < 20 && !drawingId; attempt++) {
+      // Id вставленого drawing: виділення або короткий DOM-диф (виділення
+      // буває скинутим, якщо перед вставкою щось змінило модель)
+      drawingId = editor.getSelectedImage()?.id ?? null
+      for (let attempt = 0; attempt < 8 && !drawingId; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 25))
         drawingId =
           editor.getSelectedImage()?.id ??
@@ -201,19 +218,56 @@ export function FillPanel({
       }
       if (!drawingId) return false
 
-      sigMarkers.current.set(key, { marker, drawingId })
+      // Один комміт: фіксований розмір + «перед текстом» + позиція «зліва від
+      // ПІБ» — картинка з'являється одразу на місці. Конвертація inline →
+      // anchored рідко змінює id вузла: тоді позиція відмовить, перезнайдемо
+      // id і ретраїмо.
+      const pageXEmu = Math.max(0, Math.round((Math.min(...personLefts) - 4 - widthPx - pageRect.left) * 9525))
+      const pageYEmu = Math.max(0, Math.round((sigRect.top + sigRect.height / 2 - heightPx / 2 - pageRect.top) * 9525))
+      let positioned = false
+      for (let attempt = 0; attempt < 6 && !positioned; attempt++) {
+        const applied = surface.applyDrawingOps([
+          { op: "resizeDrawing", drawingNodeId: drawingId, extentEmu: { cx: widthEmu, cy: heightEmu } },
+          { op: "setDrawingWrap", drawingNodeId: drawingId, wrap: "inFront" },
+          {
+            op: "positionDrawing",
+            drawingNodeId: drawingId,
+            position: { horizontalEmu: pageXEmu, relativeToH: "page", verticalEmu: pageYEmu, relativeToV: "page" },
+          },
+        ])
+        positioned = applied.committed
+        if (positioned) break
+        const fresh = [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+          .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
+          .find((id) => !knownIds.has(id))
+        if (fresh) drawingId = fresh
+        await new Promise((resolve) => setTimeout(resolve, 120))
+      }
+      if (!positioned) return false
+
+      // Ховаємо назву поля («Підпис») — картинка її замінила
+      surface.contentControls.setValue(controlId, "")
+      sigMarkers.current.set(key, { drawingId })
       ok = true
       return true
     } finally {
       bounceSuspend.end()
-      // Невдала вставка не має лишати контрол з невидимою міткою — повертаємо назву
-      if (!ok) surface.contentControls.setValue(controlId, label)
+      if (!ok) {
+        // Невдале заповнення: прибираємо щойно вставлену картинку, назва повертається
+        if (drawingId) surface.deleteImage(drawingId)
+        surface.contentControls.setValue(controlId, label)
+      }
     }
   }
   function setValueByTag(key: string, value: string): boolean {
     if (!editor) return false
-    // Перезапис вмісту контрола прибирає й картинку підпису — знімаємо маркер
-    sigMarkers.current.delete(key)
+    // Плаваюча картинка підпису живе поза контролом — при перезаписі вмісту
+    // поля прибираємо її за id
+    const previous = sigMarkers.current.get(key)
+    if (previous) {
+      editor.surface?.deleteImage(previous.drawingId)
+      sigMarkers.current.delete(key)
+    }
     const controls = editor.query({ type: "contentControls", filter: { tag: key } })
     let applied = controls.length > 0
     for (const control of controls) {
