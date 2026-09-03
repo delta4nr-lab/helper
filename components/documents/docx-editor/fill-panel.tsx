@@ -77,30 +77,38 @@ export function FillPanel({
   const [selected, setSelected] = React.useState<Record<string, string>>({})
   const [simpleValues, setSimpleValues] = React.useState<Record<string, string>>({})
   const [status, setStatus] = React.useState<string | null>(null)
-  // Теги контролів, заповнені даними (текст або підпис-картинка). Слухач change
-  // нижче повертає назву полю, коли заповнений контрол спорожнів.
-  const filledTags = React.useRef<Set<string>>(new Set())
+  // Активні підписи: tag → { мітка заповнення, id вставленого drawing }. Слухач
+  // change нижче повертає назву полю, коли картинка підпису зникла.
+  const sigMarkers = React.useRef<Map<string, { marker: string; drawingId: string }>>(new Map())
 
-  // Дефолтне значення поля — його назва. Коли користувач видаляє дані з поля
-  // (текст або картинку підпису), полю автоматично повертається назва — поле
-  // знову можна заповнити (хоч скільки разів). DOM перевіряємо після флешу
-  // верстки (подвійний requestAnimationFrame): подія change летить до перекреслення.
+  // Дефолтне значення поля — його назва. Коли користувач видаляє картинку підпису,
+  // полю автоматично повертається назва — поле знову можна заповнити (хоч скільки
+  // разів). Ознака живого підписа — drawing за id у DOM. Він може з'явитись із
+  // запізненням на кілька кадрів після вставки, тому перед «смертю» підписа
+  // коротко перепитуємо верстку; хром контрола — лише декорація (boundary +
+  // label-чип), вона не придатна для перевірки вмісту.
   React.useEffect(() => {
     if (!editor) return
     let checkQueued = false
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const drawingAlive = (drawingId: string) =>
+      Boolean(document.querySelector(`[data-drawing-node-id="${drawingId}"]:not(.docx-image-selection-overlay)`))
+    const verify = async (tag: string, info: { marker: string; drawingId: string }) => {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (bounceSuspend.active || sigMarkers.current.get(tag) !== info) return
+        if (drawingAlive(info.drawingId)) return
+        await sleep(80)
+      }
+      sigMarkers.current.delete(tag)
+      const label = fields.find((f) => f.key === tag)?.label
+      const controlId = editor.query({ type: "contentControls", filter: { tag } })[0]?.id
+      if (label && controlId) editor.surface?.contentControls.setValue(controlId, label)
+    }
     const check = () => {
       checkQueued = false
       if (bounceSuspend.active) return
-      for (const tag of filledTags.current) {
-        const chrome = document.querySelector(`.docx-content-control-chrome[data-tag="${tag}"]`)
-        const hasImage = chrome?.querySelector("[data-drawing-node-id]:not(.docx-image-selection-overlay)")
-        const hasText = (chrome?.textContent ?? "").replace(/[\u200b\u2060]/g, "").trim() !== ""
-        console.warn("[restore] check", tag, { hasImage: Boolean(hasImage), hasText, chromeText: (chrome?.textContent ?? "").slice(0, 30) })
-        if (hasImage || hasText) continue
-        filledTags.current.delete(tag)
-        const label = fields.find((f) => f.key === tag)?.label
-        const controlId = editor.query({ type: "contentControls", filter: { tag } })[0]?.id
-        if (label && controlId) editor.surface?.contentControls.setValue(controlId, label)
+      for (const [tag, info] of [...sigMarkers.current]) {
+        void verify(tag, info)
       }
     }
     const onChange = () => {
@@ -142,16 +150,20 @@ export function FillPanel({
     bounceSuspend.begin()
     let ok = false
     try {
+      // Знімок id наявних drawing — ДО будь-яких мутацій: нова картинка може
+      // відрендеритись синхронно, і пізніший знімок включив би її в «старі».
+      const knownIds = new Set(
+        [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")].map((el) => el.getAttribute("data-drawing-node-id") ?? ""),
+      )
       // Скидаємо попередній вміст контрола (стара картка зникає разом із міткою)
       // і ставимо невидиму мітку: 12 нуль-шириних символів (U+2060/U+200B), біти
       // хешу controlId — унікальна послідовність, у абзаці зустрічається рівно
       // один раз. Мітка адресує каретку всередині контрола й лишається в документі
       // (невидима в прев'ю і в Word).
-      filledTags.current.delete(key)
+      sigMarkers.current.delete(key)
       const idNum = [...controlId].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 4096, 7)
       const marker = Array.from({ length: 12 }, (_, i) => ((idNum >> i) & 1 ? "\u200b" : "\u2060")).join("")
       if (!surface.contentControls.setValue(controlId, marker)) return false
-      console.warn("[sig] marker set, controlId:", controlId)
 
       // Абзац мітки: коротке опитування, поки верстка флешне новий текст (зазвичай 1-й тик)
       let paraId: string | undefined
@@ -165,7 +177,6 @@ export function FillPanel({
       // Каретка на мітку (всередину контрола) → inline-зображення на її місці.
       // Якщо комірка вужча за картинку, движок сам пропорційно зменшить вставку.
       const anchored = editor.exec({ type: "setSelection", anchor: { paraId: paraId, search: marker } })
-      console.warn("[sig] setSelection:", JSON.stringify(anchored), "paraId:", paraId)
       if (!anchored.ok) return false
       const result = await editor.executeImageCommand({
         type: "insertImage",
@@ -175,9 +186,22 @@ export function FillPanel({
         heightPoints: SIGNATURE_HEIGHT_PT,
       })
       if (!result.ok) return false
-      console.warn("[sig] inserted, selected:", JSON.stringify(editor.getSelectedImage()?.id ?? null))
 
-      filledTags.current.add(key)
+      // Id вставленого drawing: виділення або DOM-диф (виділення буває скинутим,
+      // якщо перед вставкою щось змінило модель).
+      let drawingId: string | null = editor.getSelectedImage()?.id ?? null
+      for (let attempt = 0; attempt < 20 && !drawingId; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+        drawingId =
+          editor.getSelectedImage()?.id ??
+          [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+            .map((el) => el.getAttribute("data-drawing-node-id"))
+            .find((id) => id && !knownIds.has(id)) ??
+          null
+      }
+      if (!drawingId) return false
+
+      sigMarkers.current.set(key, { marker, drawingId })
       ok = true
       return true
     } finally {
@@ -188,16 +212,12 @@ export function FillPanel({
   }
   function setValueByTag(key: string, value: string): boolean {
     if (!editor) return false
+    // Перезапис вмісту контрола прибирає й картинку підпису — знімаємо маркер
+    sigMarkers.current.delete(key)
     const controls = editor.query({ type: "contentControls", filter: { tag: key } })
     let applied = controls.length > 0
     for (const control of controls) {
       if (!editor.surface?.contentControls.setValue(control.id, value)) applied = false
-    }
-    // Значення-дані переводять поле у стан «заповнене», назва — назад у «порожнє».
-    if (applied) {
-      const label = fields.find((f) => f.key === key)?.label
-      if (value && value !== label) filledTags.current.add(key)
-      else filledTags.current.delete(key)
     }
     return applied
   }
