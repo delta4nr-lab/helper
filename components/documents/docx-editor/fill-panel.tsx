@@ -77,6 +77,39 @@ export function FillPanel({
   const [selected, setSelected] = React.useState<Record<string, string>>({})
   const [simpleValues, setSimpleValues] = React.useState<Record<string, string>>({})
   const [status, setStatus] = React.useState<string | null>(null)
+  // Теги контролів, заповнені даними (текст або підпис-картинка). Слухач change
+  // нижче повертає назву полю, коли заповнений контрол спорожнів.
+  const filledTags = React.useRef<Set<string>>(new Set())
+
+  // Дефолтне значення поля — його назва. Коли користувач видаляє дані з поля
+  // (текст або картинку підпису), полю автоматично повертається назва — поле
+  // знову можна заповнити (хоч скільки разів). DOM перевіряємо після флешу
+  // верстки (подвійний requestAnimationFrame): подія change летить до перекреслення.
+  React.useEffect(() => {
+    if (!editor) return
+    let checkQueued = false
+    const check = () => {
+      checkQueued = false
+      if (bounceSuspend.active) return
+      for (const tag of filledTags.current) {
+        const chrome = document.querySelector(`.docx-content-control-chrome[data-tag="${tag}"]`)
+        const hasImage = chrome?.querySelector("[data-drawing-node-id]:not(.docx-image-selection-overlay)")
+        const hasText = (chrome?.textContent ?? "").replace(/[\u200b\u2060]/g, "").trim() !== ""
+        console.warn("[restore] check", tag, { hasImage: Boolean(hasImage), hasText, chromeText: (chrome?.textContent ?? "").slice(0, 30) })
+        if (hasImage || hasText) continue
+        filledTags.current.delete(tag)
+        const label = fields.find((f) => f.key === tag)?.label
+        const controlId = editor.query({ type: "contentControls", filter: { tag } })[0]?.id
+        if (label && controlId) editor.surface?.contentControls.setValue(controlId, label)
+      }
+    }
+    const onChange = () => {
+      if (bounceSuspend.active || checkQueued) return
+      checkQueued = true
+      requestAnimationFrame(() => requestAnimationFrame(check))
+    }
+    return editor.on("change", onChange)
+  }, [editor, fields])
 
   const pickerItems: PersonPickerItem[] = React.useMemo(
     () =>
@@ -89,28 +122,36 @@ export function FillPanel({
     [personnel]
   )
 
-  // Підпис: зображення з public/ → всередину поля-контролу (content control).
-  // Механізм той самий, що для текстових полів: setValue за id пише в поле
-  // НЕВИДИМУ мітку (нуль-ширина символи, унікальні для кожного контрола) —
-  // користувач не бачить службового тексту. Абзац мітки знаходимо через query
-  // paragraphs (findMatches всередину контролів не заглядає) без фіксованої
-  // затримки — коротке опитування. Далі: каретка на мітку → зображення →
-  // каретка на мітку знову → посимвольне стирання мітки.
-  async function fillSignature(controlId: string, person: EditorPersonnel): Promise<boolean> {
+  // Підпис: зображення з картки персоналії → всередину поля-контрола (inline).
+  // Контрол сам ховає назву, коли має вміст, а семантика поля зберігається у DOCX:
+  // SDT з тегом залишається в документі разом із картинкою. Повторне заповнення
+  // перезаписує вміст контрола, видалення картинки користувачем відстежує слухач
+  // change (назва повертається автоматично).
+  async function fillSignature(key: string, person: EditorPersonnel): Promise<boolean> {
     const surface = editor?.surface
     if (!surface || !person.signaturePath) return false
-    bounceSuspend.begin()
-    try {
-      const response = await fetch(person.signaturePath)
-      if (!response.ok) return false
-      const normalized = normalizeImageBytes(new Uint8Array(await response.arrayBuffer()))
-      if (!normalized.ok) return false
+    const controlId = editor.query({ type: "contentControls", filter: { tag: key } })[0]?.id
+    if (!controlId) return false
+    const label = fields.find((f) => f.key === key)?.label ?? ""
 
-      // Невидима мітка: 12 нуль-ширина символів (U+2060/U+200B), біти хешу controlId —
-      // унікальна послідовність для кожного поля, у параграфі зустрічається рівно один раз
+    const response = await fetch(person.signaturePath)
+    if (!response.ok) return false
+    const normalized = normalizeImageBytes(new Uint8Array(await response.arrayBuffer()))
+    if (!normalized.ok) return false
+
+    bounceSuspend.begin()
+    let ok = false
+    try {
+      // Скидаємо попередній вміст контрола (стара картка зникає разом із міткою)
+      // і ставимо невидиму мітку: 12 нуль-шириних символів (U+2060/U+200B), біти
+      // хешу controlId — унікальна послідовність, у абзаці зустрічається рівно
+      // один раз. Мітка адресує каретку всередині контрола й лишається в документі
+      // (невидима в прев'ю і в Word).
+      filledTags.current.delete(key)
       const idNum = [...controlId].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 4096, 7)
       const marker = Array.from({ length: 12 }, (_, i) => ((idNum >> i) & 1 ? "\u200b" : "\u2060")).join("")
       if (!surface.contentControls.setValue(controlId, marker)) return false
+      console.warn("[sig] marker set, controlId:", controlId)
 
       // Абзац мітки: коротке опитування, поки верстка флешне новий текст (зазвичай 1-й тик)
       let paraId: string | undefined
@@ -121,86 +162,28 @@ export function FillPanel({
       }
       if (!paraId) return false
 
-      // Каретка на мітку → зображення на її місці
+      // Каретка на мітку (всередину контрола) → inline-зображення на її місці.
+      // Якщо комірка вужча за картинку, движок сам пропорційно зменшить вставку.
       const anchored = editor.exec({ type: "setSelection", anchor: { paraId: paraId, search: marker } })
+      console.warn("[sig] setSelection:", JSON.stringify(anchored), "paraId:", paraId)
       if (!anchored.ok) return false
-      const ratio = normalized.heightPoints > 0 ? normalized.widthPoints / normalized.heightPoints : 2.4
       const result = await editor.executeImageCommand({
         type: "insertImage",
         data: normalized.bytes,
         mime: normalized.mime,
-        widthPoints: Math.max(24, Math.round(ratio * SIGNATURE_HEIGHT_PT)),
+        widthPoints: Math.max(24, Math.round((normalized.widthPoints / normalized.heightPoints) * SIGNATURE_HEIGHT_PT)),
         heightPoints: SIGNATURE_HEIGHT_PT,
       })
       if (!result.ok) return false
+      console.warn("[sig] inserted, selected:", JSON.stringify(editor.getSelectedImage()?.id ?? null))
 
-      // Підпис не має рухати текст: робимо зображення плаваючим «перед текстом».
-      // Всередині контрола зміна wrap заборонена двигуном, тому спершу розгортаємо
-      // контрол (remove зберігає вміст — зображення виходить на рівень документа).
-      const unwrapped = surface.contentControls.remove(controlId)
-      if (!unwrapped) return false
-      // Зображення виводимо з рядка: плаваючий режим «перед текстом» (не рухає текст).
-      // Фасадна зміна wrap для inline заблокована, тому застосовуємо дерево-опу напряму.
-      const selected = editor.getSelectedImage()
-      if (selected) {
-        surface.applyDrawingOps([{ op: "setDrawingWrap", drawingNodeId: selected.id, wrap: "inFront" } as never])
-
-        const old = editor.getSelectedImage()
-        const paragraphs = editor.query({ type: "paragraphs" })
-        const last = [...paragraphs].reverse().find((p) => p.paraId)
-        const drawingEl = document.querySelector(`[data-drawing-node-id="${old?.id ?? selected.id}"]`)
-        const pageEl = drawingEl?.closest(".docx-editor-page") ?? drawingEl?.closest("[class*='docx-page']")
-        if (old && drawingEl && pageEl && last?.paraId) {
-          const dRect = drawingEl.getBoundingClientRect()
-          const pRect = pageEl.getBoundingClientRect()
-          const extentEmu = { cx: old.widthEmu, cy: old.heightEmu }
-          const imgHeightPx = extentEmu.cy / 9525
-          const tableEl = drawingEl.closest("table")
-          let pageYpx = dRect.top - pRect.top
-          if (tableEl) {
-            pageYpx = tableEl.getBoundingClientRect().top - pRect.top - imgHeightPx - 4
-          }
-          const pageXEmu = Math.round((dRect.left - pRect.left) * 9525)
-          const pageYEmu = Math.round(Math.max(0, pageYpx) * 9525)
-          // Старe inline-зображення видаляємо командою фасада (surface-метод мовчки
-          // відмовляв, і старе «ховалось» за таблицею)
-          const deleted = editor.exec({ type: "deleteImage", drawingNodeId: old.id })
-          if (!deleted.ok) return false
-          if (editor.exec({ type: "setSelection", anchor: { paraId: last.paraId } }).ok) {
-            const reinserted = await editor.executeImageCommand({
-              type: "insertImage",
-              data: normalized.bytes,
-              mime: normalized.mime,
-              widthPoints: Math.max(24, Math.round(ratio * SIGNATURE_HEIGHT_PT)),
-              heightPoints: SIGNATURE_HEIGHT_PT,
-            })
-            const fresh = reinserted.ok ? editor.getSelectedImage() : null
-            if (fresh) {
-              // Розмір — як у попередньої версії (в пустому абзаці вставка бере
-              // натуральний розмір), потім wrap і сторінково-абсолютна позиція
-              surface.applyDrawingOps([
-                { op: "resizeDrawing", drawingNodeId: fresh.id, extentEmu },
-                { op: "setDrawingWrap", drawingNodeId: fresh.id, wrap: "inFront" } as never,
-              ])
-              editor.exec({
-                type: "setImagePosition",
-                drawingNodeId: fresh.id,
-                horizontalEmu: pageXEmu,
-                relativeToH: "page",
-                verticalEmu: pageYEmu,
-                relativeToV: "page",
-              })
-            }
-          }
-        }
-      }
-      // Мітку (нуль-ширина символи) не стираємо: вони невидимі в прев'ю і в Word,
-      // а кареткове стирання після wrap/position може зачепити саме зображення.
+      filledTags.current.add(key)
+      ok = true
       return true
-    } catch {
-      return false
     } finally {
       bounceSuspend.end()
+      // Невдала вставка не має лишати контрол з невидимою міткою — повертаємо назву
+      if (!ok) surface.contentControls.setValue(controlId, label)
     }
   }
   function setValueByTag(key: string, value: string): boolean {
@@ -209,6 +192,12 @@ export function FillPanel({
     let applied = controls.length > 0
     for (const control of controls) {
       if (!editor.surface?.contentControls.setValue(control.id, value)) applied = false
+    }
+    // Значення-дані переводять поле у стан «заповнене», назва — назад у «порожнє».
+    if (applied) {
+      const label = fields.find((f) => f.key === key)?.label
+      if (value && value !== label) filledTags.current.add(key)
+      else filledTags.current.delete(key)
     }
     return applied
   }
@@ -237,10 +226,7 @@ export function FillPanel({
           signatureMissing = true
           continue
         }
-        const sigControls = editor.query({ type: "contentControls", filter: { tag: field.key } })
-        for (const control of sigControls) {
-          if (!(await fillSignature(control.id, person))) signatureFailed = true
-        }
+        if (!(await fillSignature(field.key, person))) signatureFailed = true
       }
     }
     if (signatureMissing) setStatus(`У ${fullName(person)} немає підпису в картці персоналії`)
@@ -248,7 +234,8 @@ export function FillPanel({
     else setStatus(null)
   }
 
-  // Скидання групи: поля повертаються до підписів полів, підпис — до напису «Підпис».
+  // Скидання групи: усі поля повертаються до назв — setValue перезаписує вміст
+  // контрола, включно з картинкою підпису всередині нього.
   function clearGroup(group: PersonGroup) {
     setSelected((prev) => {
       const next = { ...prev }
