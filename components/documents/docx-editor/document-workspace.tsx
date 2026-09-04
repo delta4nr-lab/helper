@@ -10,7 +10,12 @@ import "@docx-editor.dev/core/styles/editor.css"
 import { toast } from "sonner"
 
 import { FillPanel } from "@/components/documents/docx-editor/fill-panel"
-import { ImageInsertDialog } from "@/components/documents/docx-editor/image-insert-dialog"
+import {
+  ImageInsertDialog,
+  insertImageIntoDocument,
+  uploadImageFile,
+  validateImageFile,
+} from "@/components/documents/docx-editor/image-insert-dialog"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 import { uk } from "@/lib/docx-editor/uk"
@@ -209,6 +214,70 @@ function InsertImageRow({ onOpen }: { onOpen: () => void }) {
 
 const InsertImageMenuRow = Object.assign(InsertImageRow, { docxSlot: "image.insert" })
 
+// DnD і Ctrl+V зображень на документ: перехоплюємо capture-фазу до обробників
+// пакета — файл спочатку зберігається в бібліотеку користувача (та сама папка
+// uploads/users/{userId}, що й у діалозі), потім вбудовується в DOCX тим самим
+// пайплайном. Усе, що не файл-зображення (текст, внутрішні перенесення),
+// проходить без змін.
+const VIEWPORT_DROP_TOAST_ID = "viewport-image-drop"
+
+function findImageFile(source: DataTransfer | null): File | null {
+  if (!source) return null
+  for (let index = 0; index < source.items.length; index += 1) {
+    const item = source.items[index]
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue
+    const file = item.getAsFile()
+    if (file) return file
+  }
+  return null
+}
+
+function ViewportImageDrop({ className, children }: { className?: string; children: React.ReactNode }) {
+  const editor = useDocxEditor()
+
+  async function processImageFile(file: File) {
+    if (!editor) return
+    const error = validateImageFile(file)
+    if (error) {
+      toast.error(error)
+      return
+    }
+    toast.loading("Обробка зображення...", { id: VIEWPORT_DROP_TOAST_ID })
+    const image = await uploadImageFile(file)
+    toast.dismiss(VIEWPORT_DROP_TOAST_ID)
+    if (!image) return
+    await insertImageIntoDocument(editor, image)
+  }
+
+  function handleDropCapture(event: React.DragEvent<HTMLDivElement>) {
+    const file = findImageFile(event.dataTransfer)
+    if (!file) return
+    event.preventDefault()
+    event.stopPropagation()
+    void processImageFile(file)
+  }
+
+  function handlePasteCapture(event: React.ClipboardEvent<HTMLDivElement>) {
+    // Змішаний/текстовий paste лишаємо пакету — перехоплюємо лише «чисте» зображення
+    if (event.clipboardData.getData("text/plain")) return
+    const file = findImageFile(event.clipboardData)
+    if (!file) return
+    event.preventDefault()
+    event.stopPropagation()
+    void processImageFile(file)
+  }
+
+  return (
+    <div
+      className={className}
+      onDropCapture={handleDropCapture}
+      onPasteCapture={handlePasteCapture}
+    >
+      {children}
+    </div>
+  )
+}
+
 // Експорт: editor.save() → збереження в історії на сервері → завантаження файлу.
 // Хід операції — тостом: «Формування DOCX...» під час роботи, потім success/error.
 function ExportButton({ templateId, title }: { templateId: string; title: string }) {
@@ -350,7 +419,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <DocxEditor.HorizontalRuler />
-          <div className="relative min-h-0 flex-1">
+          <ViewportImageDrop className="relative min-h-0 flex-1">
             <DocxEditor.Viewport className="h-full">
               <DocxEditor.VerticalRuler />
               <DocxEditor.HeaderFooterChrome />
@@ -366,7 +435,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
               <DocxEditor.ContentControl />
             </DocxEditor.Viewport>
             <DocxEditor.Loading overlay />
-          </div>
+          </ViewportImageDrop>
         </div>
         <FillPanel open={fillOpen} fields={fields} personnel={personnel} docVersion={docVersion} />
       </div>

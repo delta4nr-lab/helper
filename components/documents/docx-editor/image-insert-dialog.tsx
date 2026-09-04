@@ -46,6 +46,8 @@ function validateImageFile(file: File): string | null {
   return null
 }
 
+export { validateImageFile }
+
 function insertErrorText(reasonKey: string): string {
   const key = reasonKey.split(".").pop() ?? ""
   return uk.imageInsert.errors[key as keyof typeof uk.imageInsert.errors] ?? "Зображення не вдалося вставити."
@@ -131,7 +133,10 @@ async function reencodeJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
 }
 
 // Спільна вставка: байти зображення → валідація → вбудовування в DOCX у каретку.
-async function insertImageIntoDocument(editor: EditorInstance, image: UserImage): Promise<boolean> {
+export async function insertImageIntoDocument(
+  editor: EditorInstance,
+  image: UserImage
+): Promise<boolean> {
   try {
     const response = await fetch(image.path)
     if (!response.ok) {
@@ -169,7 +174,7 @@ async function insertImageIntoDocument(editor: EditorInstance, image: UserImage)
   }
 }
 
-async function uploadImageFile(file: File): Promise<UserImage | null> {
+export async function uploadImageFile(file: File): Promise<UserImage | null> {
   try {
     const form = new FormData()
     form.set("file", file)
