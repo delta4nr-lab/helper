@@ -130,13 +130,14 @@ export function FillPanel({
         await sleep(80)
       }
       sigMarkers.current.delete(tag)
-      const label = fields.find((f) => f.key === tag)?.label
+      // Підпис видалено з документа: слово «Підпис» ховаємо (порожній контрол),
+      // щоб воно не потрапляло на друк/експорт. Контрол лишається в DOCX —
+      // повторний вибір людини з підписом знову заповнить поле.
       const controlId = editor.query({
         type: "contentControls",
         filter: { tag },
       })[0]?.id
-      if (label && controlId)
-        editor.surface?.contentControls.setValue(controlId, label)
+      if (controlId) editor.surface?.contentControls.setValue(controlId, "")
     }
     const check = () => {
       checkQueued = false
@@ -393,7 +394,6 @@ export function FillPanel({
       filter: { tag: key },
     })[0]?.id
     if (!controlId) return false
-    const label = fields.find((f) => f.key === key)?.label ?? ""
 
     const response = await fetch(person.signaturePath)
     if (!response.ok) return false
@@ -410,6 +410,10 @@ export function FillPanel({
       const previous = sigMarkers.current.get(key)
       sigMarkers.current.delete(key)
       if (previous) surface.deleteImage(previous.drawingId)
+      // Порожній контрол (слово «Підпис» приховано) дає нестабільну геометрію
+      // хрому — тимчасовий пробіл гарантує вимірювання; успішний фінал і шлях
+      // невдачі в будь-якому разі повертають контрол до порожнього стану
+      surface.contentControls.setValue(controlId, " ")
 
       const personKey = key.replace(/^signature/, "person")
       const heightEmu = Math.round(SIGNATURE_HEIGHT_PT * 12700)
@@ -471,8 +475,11 @@ export function FillPanel({
         ].map((el) => el.getAttribute("data-drawing-node-id") ?? "")
       )
 
-      const result = await editor.executeImageCommand({
-        type: "insertImage",
+      // Вставка з повторами: одразу після видалення попереднього підписа рушій
+      // може відмовити першу спробу (незавершений коміт видалення) — коротка
+      // пауза і повтор дають стабільний результат
+      const insertCommand = {
+        type: "insertImage" as const,
         data: normalized.bytes,
         mime: normalized.mime,
         // Повний розмір одразу: a:ext фігури серіалізується з розміру вставки
@@ -484,10 +491,15 @@ export function FillPanel({
           Math.round(
             (normalized.widthPoints / normalized.heightPoints) *
               SIGNATURE_HEIGHT_PT
-          )
+          ),
         ),
         heightPoints: SIGNATURE_HEIGHT_PT,
-      })
+      }
+      let result = await editor.executeImageCommand(insertCommand)
+      for (let attempt = 0; !result.ok && attempt < 2; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        result = await editor.executeImageCommand(insertCommand)
+      }
       if (!result.ok) return false
 
       // Id вставленого drawing: виділення або короткий DOM-диф (виділення
@@ -636,9 +648,10 @@ export function FillPanel({
     } finally {
       bounceSuspend.end()
       if (!ok) {
-        // Невдале заповнення: прибираємо щойно вставлену картинку, назва повертається
+        // Невдале заповнення: прибираємо щойно вставлену картинку; слово «Підпис»
+        // не повертаємо — контрол лишається порожнім (чистий друк/експорт)
         if (drawingId) surface.deleteImage(drawingId)
-        surface.contentControls.setValue(controlId, label)
+        surface.contentControls.setValue(controlId, "")
       }
     }
   }
@@ -700,6 +713,9 @@ export function FillPanel({
       } else if (field.type === "signature") {
         if (!person.signaturePath) {
           signatureMissing = true
+          // Людина без підписа: прибираємо підпис попередньої людини (якщо був)
+          // і ховаємо слово «Підпис», щоб воно не потрапляло на друк
+          setValueByTag(field.key, "")
           continue
         }
         if (!(await fillSignature(field.key, person))) signatureFailed = true
@@ -711,17 +727,18 @@ export function FillPanel({
       toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
   }
 
-  // Скидання групи: усі поля повертаються до назв — setValue перезаписує вміст
-  // контрола, включно з картинкою підпису всередині нього.
+  // Скидання групи: setValue перезаписує вміст контролів, включно з картинкою
+  // підпису всередині них.
   function clearGroup(group: PersonGroup) {
     setSelected((prev) => {
       const next = { ...prev }
       delete next[group.id]
       return next
     })
-    // Скидання: усі поля повертаються до назв
+    // Скидання: текстові поля повертаються до назв, слово «Підпис» ховається —
+    // порожній контрол не потрапляє на друк до вибору людини з підписом
     for (const field of group.fields) {
-      setValueByTag(field.key, field.label)
+      setValueByTag(field.key, field.type === "signature" ? "" : field.label)
     }
   }
 

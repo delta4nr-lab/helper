@@ -26,7 +26,9 @@ type Props = {
 export function DocumentEditor({ templateId, title, fields, personnel }: Props) {
   return (
     <div className="flex h-[calc(100svh-9rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border">
-      <DocumentWorkspace templateId={templateId} title={title} fields={fields} personnel={personnel} />
+      {/* key: зміна шаблона перемонтовує робочу область — редагована назва
+          і всі локальні стани починаються заново */}
+      <DocumentWorkspace key={templateId} templateId={templateId} title={title} fields={fields} personnel={personnel} />
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { CHROME_GROUPS, chromeProbeForSlot } from "@docx-editor.dev/core/editor"
 import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
-import { Download, FileCheck2, Highlighter, Loader2, PanelRight, ScanText } from "lucide-react"
+import { Download, Highlighter, Loader2, PanelRight, ScanText } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
 
@@ -22,6 +22,7 @@ import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -68,13 +69,13 @@ function FormFillToggle() {
     <Button
       type="button"
       variant={formFill ? "secondary" : "ghost"}
-      size="sm"
+      size="icon-sm"
       onClick={handleToggle}
       disabled={controls.length === 0}
       title="Режим заповнення: редагування лише всередині полів"
+      aria-label="Режим заповнення"
     >
       <ScanText className="size-4" />
-      Заповнення
     </Button>
   )
 }
@@ -96,21 +97,12 @@ function HighlightToggle({ docVersion }: { docVersion: number }) {
     <Button
       type="button"
       variant={on ? "secondary" : "ghost"}
-      size="sm"
+      size="icon-sm"
       onClick={() => setOn((value) => !value)}
       title="Підсвітка полів для заповнення"
+      aria-label="Підсвітка полів для заповнення"
     >
       <Highlighter className="size-4" />
-      Підсвітка
-    </Button>
-  )
-}
-
-function PageSetupButton({ onOpen }: { onOpen: () => void }) {
-  return (
-    <Button type="button" variant="ghost" size="sm" onClick={onOpen} title="Розмір сторінки й поля">
-      <FileCheck2 className="size-4" />
-      Сторінка
     </Button>
   )
 }
@@ -125,6 +117,7 @@ function FillPanelToggle({ open, onToggle }: { open: boolean; onToggle: () => vo
       size="icon-sm"
       onClick={onToggle}
       title={open ? "Сховати панель заповнення" : "Показати панель заповнення"}
+      aria-label={open ? "Сховати панель заповнення" : "Показати панель заповнення"}
       aria-pressed={open}
     >
       <PanelRight className="size-4" />
@@ -316,9 +309,16 @@ function ExportButton({ templateId, title }: { templateId: string; title: string
   }
 
   return (
-    <Button type="button" size="sm" onClick={handleExport} disabled={pending}>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      onClick={handleExport}
+      disabled={pending}
+      title="Експорт DOCX"
+      aria-label="Експорт DOCX"
+    >
       {pending ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-      Експорт DOCX
     </Button>
   )
 }
@@ -334,6 +334,10 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
   const [fillOpen, setFillOpen] = React.useState(false)
   const [pageSetupOpen, setPageSetupOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
+  // Назву документа можна змінити/дописати — експорт іде з назвою користувача.
+  // Синхронізація з пропом не потрібна: батько монтує компонент із key=templateId,
+  // тож при зміні шаблона стан назви ініціалізується заново.
+  const [docTitle, setDocTitle] = React.useState(title)
   const { resolvedTheme } = useTheme()
 
   React.useEffect(() => {
@@ -380,20 +384,20 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       <LocaleProvider i18n={uk}>
       <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
-        <span className="mr-auto truncate text-sm font-semibold" title={title}>
-          {title}
-        </span>
-        <FillPanelToggle open={fillOpen} onToggle={() => setFillOpen((v) => !v)} />
-        <HighlightToggle docVersion={docVersion} />
-        <FormFillToggle />
-        <PageSetupButton onOpen={() => setPageSetupOpen(true)} />
-        <ExportButton templateId={templateId} title={title} />
+        <Input
+          value={docTitle}
+          onChange={(event) => setDocTitle(event.target.value)}
+          className="mr-auto h-7 w-72 max-w-full border-transparent bg-transparent px-1.5 font-semibold hover:border-input focus-visible:border-input"
+          placeholder="Назва документа"
+          aria-label="Назва документа"
+        />
       </div>
 
       {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
           Comments/EditingMode приховано: коментарі й правки — Pro, режим змін не використовується.
-          Review/Help приховано: рецензування не використовується, «Повідомити про проблему» — ні до чого */}
-      <DocxEditor.Menu>
+          Review/Help приховано: рецензування не використовується, «Повідомити про проблему» — ні до чого.
+          onPageSetup вмикає пакетний пункт «Параметри сторінки» у меню «Файл» */}
+      <DocxEditor.Menu onPageSetup={() => setPageSetupOpen(true)}>
         <DocxEditor.Menu.Review hidden />
         <DocxEditor.Menu.Help hidden />
         {/* Зображення: діалог із табами «Завантаження» (файл на сервер) і
@@ -410,6 +414,12 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
         <DocxEditor.Toolbar.ImageInsert hidden />
         <DocxEditor.Toolbar.ImageProperties hidden />
         <DocxEditor.Toolbar.ImageAltText hidden />
+        {/* Кастомні кнопки: рендеряться останньою групою тулбара */}
+        <FillPanelToggle open={fillOpen} onToggle={() => setFillOpen((v) => !v)} />
+        <HighlightToggle docVersion={docVersion} />
+        <FormFillToggle />
+        {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона */}
+        <ExportButton templateId={templateId} title={docTitle.trim() || title} />
       </DocxEditor.Toolbar>
 
       {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
