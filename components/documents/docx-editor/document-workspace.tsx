@@ -234,6 +234,10 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       <DocxEditor.Toolbar>
         <DocxEditor.Toolbar.Comments hidden />
         <DocxEditor.Toolbar.EditingMode hidden />
+        {/* Зображення: з панелі заповнення; з тулбара лишається тільки обтікання */}
+        <DocxEditor.Toolbar.ImageInsert hidden />
+        <DocxEditor.Toolbar.ImageProperties hidden />
+        <DocxEditor.Toolbar.ImageAltText hidden />
       </DocxEditor.Toolbar>
       <DocxEditor.HorizontalRuler />
 

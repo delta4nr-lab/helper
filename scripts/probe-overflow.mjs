@@ -1,4 +1,4 @@
-// Скріншот: підпис у редакторі після paragraph-relative позиції
+// Зонд 13: overflow-меню тулбара при активній картинці
 import { chromium } from "playwright"
 
 const BASE = "http://localhost:3000"
@@ -25,17 +25,19 @@ async function main() {
   await page.getByRole("button", { name: /ДАВИДОВИЧ/ }).first().click()
   await page.waitForTimeout(3000)
 
-  // Тулбар при активній картинці: клік по картинці → виділення → тулбар
-  await page.evaluate(() => {
-    const drawing = document.querySelector("[data-drawing-node-id]:not(.docx-image-selection-overlay)")
-    drawing?.scrollIntoView({ block: "center" })
-  })
-  await page.waitForTimeout(400)
   await page.locator("[data-drawing-node-id]:not(.docx-image-selection-overlay)").first().click({ force: true })
   await page.waitForTimeout(800)
-  const toolbar = page.locator(".docx-toolbar").first()
-  if (await toolbar.count()) await toolbar.screenshot({ path: "diag-toolbar.png" })
-  await page.screenshot({ path: "diag-sig-para.png" })
+
+  await page.locator(".docx-toolbar__more").first().click()
+  await page.waitForTimeout(600)
+
+  const items = await page.evaluate(() =>
+    [...document.querySelectorAll("[role=menuitem], [role=menuitemradio], [role=menuitemcheckbox]")]
+      .map((b) => b.textContent?.trim().slice(0, 40))
+      .filter(Boolean),
+  )
+  console.log("menu items:", JSON.stringify(items, null, 1))
+  await page.screenshot({ path: "diag-overflow.png" })
   await browser.close()
 }
 
