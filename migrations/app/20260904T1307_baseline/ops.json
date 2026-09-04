@@ -1,0 +1,1361 @@
+[
+  {
+    "id": "schema.public",
+    "label": "Create schema \"public\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Create schema \"public\"",
+        "sql": "CREATE SCHEMA IF NOT EXISTS \"public\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.Role",
+    "label": "Create enum type \"Role\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "Role"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"Role\"",
+        "sql": "CREATE TYPE \"public\".\"Role\" AS ENUM ('ADMIN', 'USER')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "table.Category",
+    "label": "Create table \"Category\"",
+    "summary": "Creates table \"Category\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "Category"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"Category\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Category\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"Category\"",
+        "sql": "CREATE TABLE \"public\".\"Category\" (\n  \"countLabel\" text DEFAULT 'шаблонів' NOT NULL,\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"description\" text NOT NULL,\n  \"icon\" text,\n  \"id\" text NOT NULL,\n  \"isActive\" bool DEFAULT true NOT NULL,\n  \"longDescription\" text,\n  \"slug\" text NOT NULL,\n  \"sortOrder\" int4 DEFAULT 0 NOT NULL,\n  \"title\" text NOT NULL,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  CONSTRAINT \"Category_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"Category\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Category\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.ExportedFile",
+    "label": "Create table \"ExportedFile\"",
+    "summary": "Creates table \"ExportedFile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "ExportedFile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"ExportedFile\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"ExportedFile\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"ExportedFile\"",
+        "sql": "CREATE TABLE \"public\".\"ExportedFile\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"data\" bytea NOT NULL,\n  \"fileName\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"mimeType\" text NOT NULL,\n  \"size\" int4 NOT NULL,\n  \"templateId\" text NOT NULL,\n  \"title\" text NOT NULL,\n  \"userId\" text NOT NULL,\n  CONSTRAINT \"ExportedFile_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"ExportedFile\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"ExportedFile\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.Image",
+    "label": "Create table \"Image\"",
+    "summary": "Creates table \"Image\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "Image"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"Image\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Image\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"Image\"",
+        "sql": "CREATE TABLE \"public\".\"Image\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"filename\" text NOT NULL,\n  \"height\" int4 NOT NULL,\n  \"id\" text NOT NULL,\n  \"mimeType\" text NOT NULL,\n  \"originalFilename\" text NOT NULL,\n  \"path\" text NOT NULL,\n  \"size\" int4 NOT NULL,\n  \"userId\" text NOT NULL,\n  \"width\" int4 NOT NULL,\n  CONSTRAINT \"Image_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"Image\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Image\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.Personnel",
+    "label": "Create table \"Personnel\"",
+    "summary": "Creates table \"Personnel\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "Personnel"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"Personnel\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"Personnel\"",
+        "sql": "CREATE TABLE \"public\".\"Personnel\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"firstName\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"lastName\" text NOT NULL,\n  \"middleName\" text,\n  \"position\" text NOT NULL,\n  \"rank\" text NOT NULL,\n  \"signaturePath\" text,\n  \"status\" text DEFAULT 'в строю' NOT NULL,\n  \"unit\" text,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  CONSTRAINT \"Personnel_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"Personnel\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.Profile",
+    "label": "Create table \"Profile\"",
+    "summary": "Creates table \"Profile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "Profile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"Profile\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Profile\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"Profile\"",
+        "sql": "CREATE TABLE \"public\".\"Profile\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"firstName\" text,\n  \"id\" text NOT NULL,\n  \"lastName\" text,\n  \"middleName\" text,\n  \"rank\" text,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  \"userId\" text NOT NULL,\n  CONSTRAINT \"Profile_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"Profile\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Profile\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.Template",
+    "label": "Create table \"Template\"",
+    "summary": "Creates table \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"Template\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"Template\"",
+        "sql": "CREATE TABLE \"public\".\"Template\" (\n  \"categoryId\" text,\n  \"categorySlug\" text NOT NULL,\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"createdById\" text,\n  \"description\" text NOT NULL,\n  \"docxData\" bytea,\n  \"fields\" int4 NOT NULL,\n  \"id\" text NOT NULL,\n  \"isActive\" bool DEFAULT true NOT NULL,\n  \"paper\" text DEFAULT 'А4' NOT NULL,\n  \"popular\" bool DEFAULT false NOT NULL,\n  \"tags\" text[] NOT NULL,\n  \"title\" text NOT NULL,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  CONSTRAINT \"Template_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"Template\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.TemplateField",
+    "label": "Create table \"TemplateField\"",
+    "summary": "Creates table \"TemplateField\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "TemplateField"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"TemplateField\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"TemplateField\"",
+        "sql": "CREATE TABLE \"public\".\"TemplateField\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"key\" text NOT NULL,\n  \"label\" text NOT NULL,\n  \"options\" jsonb,\n  \"placeholder\" text,\n  \"required\" bool DEFAULT true NOT NULL,\n  \"sortOrder\" int4 DEFAULT 0 NOT NULL,\n  \"templateId\" text NOT NULL,\n  \"type\" text NOT NULL,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  \"validation\" jsonb,\n  CONSTRAINT \"TemplateField_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"TemplateField\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.User",
+    "label": "Create table \"User\"",
+    "summary": "Creates table \"User\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "User"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"User\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"User\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"User\"",
+        "sql": "CREATE TABLE \"public\".\"User\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"isActive\" bool DEFAULT true NOT NULL,\n  \"password\" text NOT NULL,\n  \"role\" \"Role\" DEFAULT 'USER'::\"Role\" NOT NULL,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  \"username\" text NOT NULL,\n  CONSTRAINT \"User_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"User\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"User\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.Category.Category_slug_key",
+    "label": "Add unique constraint on \"Category\" (slug)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "Category_slug_key",
+        "table": "Category"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"Category_slug_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Category_slug_key",
+          "public",
+          "\"public\".\"Category\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"Category_slug_key\"",
+        "sql": "ALTER TABLE \"public\".\"Category\" ADD CONSTRAINT \"Category_slug_key\" UNIQUE (\"slug\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"Category_slug_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Category_slug_key",
+          "public",
+          "\"public\".\"Category\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.Profile.Profile_userId_key",
+    "label": "Add unique constraint on \"Profile\" (userId)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "Profile_userId_key",
+        "table": "Profile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"Profile_userId_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Profile_userId_key",
+          "public",
+          "\"public\".\"Profile\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"Profile_userId_key\"",
+        "sql": "ALTER TABLE \"public\".\"Profile\" ADD CONSTRAINT \"Profile_userId_key\" UNIQUE (\"userId\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"Profile_userId_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Profile_userId_key",
+          "public",
+          "\"public\".\"Profile\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.TemplateField.TemplateField_templateId_key_key",
+    "label": "Add unique constraint on \"TemplateField\" (templateId, key)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "TemplateField_templateId_key_key",
+        "table": "TemplateField"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"TemplateField_templateId_key_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "TemplateField_templateId_key_key",
+          "public",
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"TemplateField_templateId_key_key\"",
+        "sql": "ALTER TABLE \"public\".\"TemplateField\" ADD CONSTRAINT \"TemplateField_templateId_key_key\" UNIQUE (\"templateId\", \"key\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"TemplateField_templateId_key_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "TemplateField_templateId_key_key",
+          "public",
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.User.User_username_key",
+    "label": "Add unique constraint on \"User\" (username)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "User_username_key",
+        "table": "User"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"User_username_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "User_username_key",
+          "public",
+          "\"public\".\"User\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"User_username_key\"",
+        "sql": "ALTER TABLE \"public\".\"User\" ADD CONSTRAINT \"User_username_key\" UNIQUE (\"username\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"User_username_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "User_username_key",
+          "public",
+          "\"public\".\"User\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Category.Category_isActive_sortOrder_idx",
+    "label": "Create index \"Category_isActive_sortOrder_idx\" on \"Category\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Category_isActive_sortOrder_idx",
+        "table": "Category"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Category_isActive_sortOrder_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Category_isActive_sortOrder_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Category_isActive_sortOrder_idx\"",
+        "sql": "CREATE INDEX \"Category_isActive_sortOrder_idx\" ON \"public\".\"Category\" (\"isActive\", \"sortOrder\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Category_isActive_sortOrder_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Category_isActive_sortOrder_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.ExportedFile.ExportedFile_templateId_idx",
+    "label": "Create index \"ExportedFile_templateId_idx\" on \"ExportedFile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "ExportedFile_templateId_idx",
+        "table": "ExportedFile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"ExportedFile_templateId_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"ExportedFile_templateId_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"ExportedFile_templateId_idx\"",
+        "sql": "CREATE INDEX \"ExportedFile_templateId_idx\" ON \"public\".\"ExportedFile\" (\"templateId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"ExportedFile_templateId_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"ExportedFile_templateId_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.ExportedFile.ExportedFile_userId_createdAt_idx",
+    "label": "Create index \"ExportedFile_userId_createdAt_idx\" on \"ExportedFile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "ExportedFile_userId_createdAt_idx",
+        "table": "ExportedFile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"ExportedFile_userId_createdAt_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"ExportedFile_userId_createdAt_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"ExportedFile_userId_createdAt_idx\"",
+        "sql": "CREATE INDEX \"ExportedFile_userId_createdAt_idx\" ON \"public\".\"ExportedFile\" (\"userId\", \"createdAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"ExportedFile_userId_createdAt_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"ExportedFile_userId_createdAt_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Image.Image_userId_createdAt_idx",
+    "label": "Create index \"Image_userId_createdAt_idx\" on \"Image\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Image_userId_createdAt_idx",
+        "table": "Image"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Image_userId_createdAt_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Image_userId_createdAt_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Image_userId_createdAt_idx\"",
+        "sql": "CREATE INDEX \"Image_userId_createdAt_idx\" ON \"public\".\"Image\" (\"userId\", \"createdAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Image_userId_createdAt_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Image_userId_createdAt_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Personnel.Personnel_lastName_firstName_idx",
+    "label": "Create index \"Personnel_lastName_firstName_idx\" on \"Personnel\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Personnel_lastName_firstName_idx",
+        "table": "Personnel"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Personnel_lastName_firstName_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_lastName_firstName_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Personnel_lastName_firstName_idx\"",
+        "sql": "CREATE INDEX \"Personnel_lastName_firstName_idx\" ON \"public\".\"Personnel\" (\"lastName\", \"firstName\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Personnel_lastName_firstName_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_lastName_firstName_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Personnel.Personnel_rank_idx",
+    "label": "Create index \"Personnel_rank_idx\" on \"Personnel\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Personnel_rank_idx",
+        "table": "Personnel"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Personnel_rank_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_rank_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Personnel_rank_idx\"",
+        "sql": "CREATE INDEX \"Personnel_rank_idx\" ON \"public\".\"Personnel\" (\"rank\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Personnel_rank_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_rank_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Personnel.Personnel_status_idx",
+    "label": "Create index \"Personnel_status_idx\" on \"Personnel\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Personnel_status_idx",
+        "table": "Personnel"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Personnel_status_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_status_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Personnel_status_idx\"",
+        "sql": "CREATE INDEX \"Personnel_status_idx\" ON \"public\".\"Personnel\" (\"status\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Personnel_status_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_status_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Personnel.Personnel_unit_idx",
+    "label": "Create index \"Personnel_unit_idx\" on \"Personnel\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Personnel_unit_idx",
+        "table": "Personnel"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Personnel_unit_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_unit_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Personnel_unit_idx\"",
+        "sql": "CREATE INDEX \"Personnel_unit_idx\" ON \"public\".\"Personnel\" (\"unit\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Personnel_unit_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Personnel_unit_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Template.Template_categoryId_isActive_idx",
+    "label": "Create index \"Template_categoryId_isActive_idx\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Template_categoryId_isActive_idx",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Template_categoryId_isActive_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_categoryId_isActive_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Template_categoryId_isActive_idx\"",
+        "sql": "CREATE INDEX \"Template_categoryId_isActive_idx\" ON \"public\".\"Template\" (\"categoryId\", \"isActive\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Template_categoryId_isActive_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_categoryId_isActive_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Template.Template_categorySlug_idx",
+    "label": "Create index \"Template_categorySlug_idx\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Template_categorySlug_idx",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Template_categorySlug_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_categorySlug_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Template_categorySlug_idx\"",
+        "sql": "CREATE INDEX \"Template_categorySlug_idx\" ON \"public\".\"Template\" (\"categorySlug\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Template_categorySlug_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_categorySlug_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Template.Template_createdById_idx",
+    "label": "Create index \"Template_createdById_idx\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Template_createdById_idx",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Template_createdById_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_createdById_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Template_createdById_idx\"",
+        "sql": "CREATE INDEX \"Template_createdById_idx\" ON \"public\".\"Template\" (\"createdById\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Template_createdById_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_createdById_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Template.Template_popular_idx",
+    "label": "Create index \"Template_popular_idx\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Template_popular_idx",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Template_popular_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_popular_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Template_popular_idx\"",
+        "sql": "CREATE INDEX \"Template_popular_idx\" ON \"public\".\"Template\" (\"popular\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Template_popular_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_popular_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.TemplateField.TemplateField_templateId_sortOrder_idx",
+    "label": "Create index \"TemplateField_templateId_sortOrder_idx\" on \"TemplateField\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "TemplateField_templateId_sortOrder_idx",
+        "table": "TemplateField"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"TemplateField_templateId_sortOrder_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"TemplateField_templateId_sortOrder_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"TemplateField_templateId_sortOrder_idx\"",
+        "sql": "CREATE INDEX \"TemplateField_templateId_sortOrder_idx\" ON \"public\".\"TemplateField\" (\"templateId\", \"sortOrder\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"TemplateField_templateId_sortOrder_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"TemplateField_templateId_sortOrder_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.User.User_role_idx",
+    "label": "Create index \"User_role_idx\" on \"User\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "User_role_idx",
+        "table": "User"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"User_role_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"User_role_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"User_role_idx\"",
+        "sql": "CREATE INDEX \"User_role_idx\" ON \"public\".\"User\" (\"role\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"User_role_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"User_role_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.ExportedFile.ExportedFile_templateId_fkey",
+    "label": "Add foreign key \"ExportedFile_templateId_fkey\" on \"ExportedFile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "ExportedFile_templateId_fkey",
+        "table": "ExportedFile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"ExportedFile_templateId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "ExportedFile_templateId_fkey",
+          "public",
+          "\"public\".\"ExportedFile\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"ExportedFile_templateId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"ExportedFile\"\nADD CONSTRAINT \"ExportedFile_templateId_fkey\"\nFOREIGN KEY (\"templateId\")\nREFERENCES \"public\".\"Template\" (\"id\")\nON DELETE RESTRICT\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"ExportedFile_templateId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "ExportedFile_templateId_fkey",
+          "public",
+          "\"public\".\"ExportedFile\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.ExportedFile.ExportedFile_userId_fkey",
+    "label": "Add foreign key \"ExportedFile_userId_fkey\" on \"ExportedFile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "ExportedFile_userId_fkey",
+        "table": "ExportedFile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"ExportedFile_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "ExportedFile_userId_fkey",
+          "public",
+          "\"public\".\"ExportedFile\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"ExportedFile_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"ExportedFile\"\nADD CONSTRAINT \"ExportedFile_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"User\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"ExportedFile_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "ExportedFile_userId_fkey",
+          "public",
+          "\"public\".\"ExportedFile\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.Image.Image_userId_fkey",
+    "label": "Add foreign key \"Image_userId_fkey\" on \"Image\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "Image_userId_fkey",
+        "table": "Image"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"Image_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Image_userId_fkey",
+          "public",
+          "\"public\".\"Image\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"Image_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"Image\"\nADD CONSTRAINT \"Image_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"User\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"Image_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Image_userId_fkey",
+          "public",
+          "\"public\".\"Image\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.Profile.Profile_userId_fkey",
+    "label": "Add foreign key \"Profile_userId_fkey\" on \"Profile\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "Profile_userId_fkey",
+        "table": "Profile"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"Profile_userId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Profile_userId_fkey",
+          "public",
+          "\"public\".\"Profile\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"Profile_userId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"Profile\"\nADD CONSTRAINT \"Profile_userId_fkey\"\nFOREIGN KEY (\"userId\")\nREFERENCES \"public\".\"User\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"Profile_userId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Profile_userId_fkey",
+          "public",
+          "\"public\".\"Profile\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.Template.Template_categoryId_fkey",
+    "label": "Add foreign key \"Template_categoryId_fkey\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "Template_categoryId_fkey",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"Template_categoryId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Template_categoryId_fkey",
+          "public",
+          "\"public\".\"Template\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"Template_categoryId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"Template\"\nADD CONSTRAINT \"Template_categoryId_fkey\"\nFOREIGN KEY (\"categoryId\")\nREFERENCES \"public\".\"Category\" (\"id\")\nON DELETE SET NULL\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"Template_categoryId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Template_categoryId_fkey",
+          "public",
+          "\"public\".\"Template\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.Template.Template_createdById_fkey",
+    "label": "Add foreign key \"Template_createdById_fkey\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "Template_createdById_fkey",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"Template_createdById_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Template_createdById_fkey",
+          "public",
+          "\"public\".\"Template\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"Template_createdById_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"Template\"\nADD CONSTRAINT \"Template_createdById_fkey\"\nFOREIGN KEY (\"createdById\")\nREFERENCES \"public\".\"User\" (\"id\")\nON DELETE SET NULL\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"Template_createdById_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "Template_createdById_fkey",
+          "public",
+          "\"public\".\"Template\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.TemplateField.TemplateField_templateId_fkey",
+    "label": "Add foreign key \"TemplateField_templateId_fkey\" on \"TemplateField\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "TemplateField_templateId_fkey",
+        "table": "TemplateField"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"TemplateField_templateId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "TemplateField_templateId_fkey",
+          "public",
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"TemplateField_templateId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"TemplateField\"\nADD CONSTRAINT \"TemplateField_templateId_fkey\"\nFOREIGN KEY (\"templateId\")\nREFERENCES \"public\".\"Template\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"TemplateField_templateId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "TemplateField_templateId_fkey",
+          "public",
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ]
+  }
+]

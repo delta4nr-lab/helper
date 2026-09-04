@@ -102,6 +102,69 @@ namespace public {
     @@index([unit], map: "Personnel_unit_idx")
   }
 
+  // Курс курсантів: один активний, імпорт з Excel, записи редагуються в адмінці
+  model Course {
+    @@map("Course")
+    id        String       @id(map: "Course_pkey") @default(nanoid())
+    label     String
+    fileName  String
+    isActive  Boolean      @default(false)
+    createdAt TimestampString(3) @default(now())
+    records   CourseRecord[]
+
+    @@index([isActive], map: "Course_isActive_idx")
+  }
+
+  model CourseRecord {
+    @@map("CourseRecord")
+    id                  String  @id(map: "CourseRecord_pkey") @default(nanoid())
+    courseId            String
+    orderNumber         Int?
+    weaponNumber        String?
+    rank                String?
+    fullName            String?
+    lastName            String?
+    firstName           String?
+    middleName          String?
+    unitNumber          String?
+    platoon             String?
+    position            String?
+    presence            String?
+    sick                String?
+    attentionGroup      String?
+    statusDate          String?
+    birthDate           String?
+    birthPlace          String?
+    conscribedBy        String?
+    taxId               String?
+    phone               String?
+    relativesPhone      String?
+    registrationAddress String?
+    residenceAddress    String?
+    passport            String?
+    education           String?
+    drivingCategories   String?
+    maritalStatus       String?
+    workplace           String?
+    distinctiveFeatures String?
+    debts               String?
+    convictions         String?
+    vlcConclusion       String?
+    serviceExperience   String?
+    combatExperience    String?
+    bloodType           String?
+    healthState         String?
+    healthComplaints    String?
+    allergies           String?
+    injuries            String?
+    militaryTicket      String?
+    ubdNumber           String?
+    course              Course  @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CourseRecord_courseId_fkey", index: false)
+
+    @@index([courseId], map: "CourseRecord_courseId_idx")
+    @@index([lastName, firstName], map: "CourseRecord_lastName_firstName_idx")
+  }
+
   model Profile {
     @@map("Profile")
     id         String       @id(map: "Profile_pkey") @default(nanoid())

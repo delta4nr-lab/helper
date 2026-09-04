@@ -1,0 +1,239 @@
+[
+  {
+    "id": "table.Course",
+    "label": "Create table \"Course\"",
+    "summary": "Creates table \"Course\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "Course"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"Course\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Course\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"Course\"",
+        "sql": "CREATE TABLE \"public\".\"Course\" (\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"fileName\" text NOT NULL,\n  \"id\" text NOT NULL,\n  \"isActive\" bool DEFAULT false NOT NULL,\n  \"label\" text NOT NULL,\n  CONSTRAINT \"Course_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"Course\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Course\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.CourseRecord",
+    "label": "Create table \"CourseRecord\"",
+    "summary": "Creates table \"CourseRecord\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "CourseRecord"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"CourseRecord\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"CourseRecord\"",
+        "sql": "CREATE TABLE \"public\".\"CourseRecord\" (\n  \"allergies\" text,\n  \"attentionGroup\" text,\n  \"birthDate\" text,\n  \"birthPlace\" text,\n  \"bloodType\" text,\n  \"combatExperience\" text,\n  \"conscribedBy\" text,\n  \"convictions\" text,\n  \"courseId\" text NOT NULL,\n  \"debts\" text,\n  \"distinctiveFeatures\" text,\n  \"drivingCategories\" text,\n  \"education\" text,\n  \"firstName\" text,\n  \"fullName\" text,\n  \"healthComplaints\" text,\n  \"healthState\" text,\n  \"id\" text NOT NULL,\n  \"injuries\" text,\n  \"lastName\" text,\n  \"maritalStatus\" text,\n  \"middleName\" text,\n  \"militaryTicket\" text,\n  \"orderNumber\" int4,\n  \"passport\" text,\n  \"phone\" text,\n  \"platoon\" text,\n  \"position\" text,\n  \"presence\" text,\n  \"rank\" text,\n  \"registrationAddress\" text,\n  \"relativesPhone\" text,\n  \"residenceAddress\" text,\n  \"serviceExperience\" text,\n  \"sick\" text,\n  \"statusDate\" text,\n  \"taxId\" text,\n  \"ubdNumber\" text,\n  \"unitNumber\" text,\n  \"vlcConclusion\" text,\n  \"weaponNumber\" text,\n  \"workplace\" text,\n  CONSTRAINT \"CourseRecord_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"CourseRecord\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Course.Course_isActive_idx",
+    "label": "Create index \"Course_isActive_idx\" on \"Course\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Course_isActive_idx",
+        "table": "Course"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Course_isActive_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Course_isActive_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Course_isActive_idx\"",
+        "sql": "CREATE INDEX \"Course_isActive_idx\" ON \"public\".\"Course\" (\"isActive\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Course_isActive_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Course_isActive_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.CourseRecord.CourseRecord_courseId_idx",
+    "label": "Create index \"CourseRecord_courseId_idx\" on \"CourseRecord\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "CourseRecord_courseId_idx",
+        "table": "CourseRecord"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"CourseRecord_courseId_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord_courseId_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"CourseRecord_courseId_idx\"",
+        "sql": "CREATE INDEX \"CourseRecord_courseId_idx\" ON \"public\".\"CourseRecord\" (\"courseId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"CourseRecord_courseId_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord_courseId_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.CourseRecord.CourseRecord_lastName_firstName_idx",
+    "label": "Create index \"CourseRecord_lastName_firstName_idx\" on \"CourseRecord\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "CourseRecord_lastName_firstName_idx",
+        "table": "CourseRecord"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"CourseRecord_lastName_firstName_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord_lastName_firstName_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"CourseRecord_lastName_firstName_idx\"",
+        "sql": "CREATE INDEX \"CourseRecord_lastName_firstName_idx\" ON \"public\".\"CourseRecord\" (\"lastName\", \"firstName\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"CourseRecord_lastName_firstName_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord_lastName_firstName_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.CourseRecord.CourseRecord_courseId_fkey",
+    "label": "Add foreign key \"CourseRecord_courseId_fkey\" on \"CourseRecord\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "CourseRecord_courseId_fkey",
+        "table": "CourseRecord"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"CourseRecord_courseId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "CourseRecord_courseId_fkey",
+          "public",
+          "\"public\".\"CourseRecord\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"CourseRecord_courseId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"CourseRecord\"\nADD CONSTRAINT \"CourseRecord_courseId_fkey\"\nFOREIGN KEY (\"courseId\")\nREFERENCES \"public\".\"Course\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"CourseRecord_courseId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "CourseRecord_courseId_fkey",
+          "public",
+          "\"public\".\"CourseRecord\""
+        ]
+      }
+    ]
+  }
+]
