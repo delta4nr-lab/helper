@@ -144,10 +144,43 @@
   border-radius: 0;
 }
 
+/* Меню-бар (Файл/Формат/Вставити): відступ ліворуч 5px і запас знизу 5px —
+   пункти меню зсунуті вище відносно тулбара. */
+.docx-editor .docx-menubar {
+  padding-left: 5px;
+  padding-bottom: 5px;
+}
+
 /* Підсвітка полів (boundary-хром) малюється поверх вмісту контрола непрозорим
    фоном і перекриває текст — робимо фон напівпрозорим, щоб вміст було видно. */
 .docx-editor .docx-content-control-boundary {
   background: color-mix(in srgb, var(--doc-primary) 7%, transparent);
+}
+
+/* Підказки колонтитулів і маркер розриву розділу зашиті в editor.css англійською
+   через content (i18n-каталог їх не покриває) — перекладаємо українською.
+   Специфічність 0,3,1 / 0,2,1 — вища за бібліотечні 0,2,1 / 0,1,1. */
+.docx-editor .docx-pages .docx-hf--placeholder:hover:after {
+  content: "Подвійний клік, щоб додати верхній колонтитул";
+}
+.docx-editor .docx-pages .docx-hf--placeholder[data-docx-hf="footer"]:hover:after {
+  content: "Подвійний клік, щоб додати нижній колонтитул";
+}
+.docx-editor .docx-pages .docx-hf-edit-hint:after {
+  content: "Подвійний клік, щоб редагувати верхній колонтитул";
+}
+.docx-editor .docx-pages .docx-hf-edit-hint[data-docx-hf-hint="footer"]:after {
+  content: "Подвійний клік, щоб редагувати нижній колонтитул";
+}
+.docx-editor .docx-section-break:after {
+  content: "Розрив розділу (" attr(data-section-break) ")";
+}
+
+/* Утримувати приховування підказок колонтитулів бібліотекою
+   (під час редагування колонтитулів і в режимі перегляду). */
+.docx-editor .docx-pages.docx-pages--hf-editing .docx-hf--placeholder:hover:after,
+.docx-editor .docx-paginated-surface--viewing .docx-pages .docx-hf--placeholder:hover:after {
+  content: none;
 }
 
 

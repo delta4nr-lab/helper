@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { DocxEditor, useContentControl, useDocxEditor } from "@docx-editor.dev/react"
+import { CHROME_GROUPS, chromeProbeForSlot } from "@docx-editor.dev/core/editor"
+import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
 import { Download, FileCheck2, Highlighter, Loader2, PanelRight, ScanText } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
@@ -11,6 +12,7 @@ import { toast } from "sonner"
 import { FillPanel } from "@/components/documents/docx-editor/fill-panel"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
+import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
 
 import { Button } from "@/components/ui/button"
@@ -124,6 +126,46 @@ function FillPanelToggle({ open, onToggle }: { open: boolean; onToggle: () => vo
   )
 }
 
+// Іконка «посилання» з публічного реєстру chrome (Material Symbols path-дані).
+const LINK_ICON_PATHS =
+  CHROME_GROUPS.find((group) => group.id === "text")?.controls.find((control) => control.id === "link")
+    ?.paths ?? null
+
+// Дефолтний рядок «Вставити посилання» у контекстному меню мертвий: Slot виконує
+// команду з commandForSlot, а для text.link її в реєстрі немає (тулбар відкриває
+// попап, а не команду). Кастомний рядок зі статиком docxRow заміняє дефолтний
+// на місці та відкриває той самий попап, що кнопка тулбара й Ctrl+K.
+function InsertLinkRow() {
+  const editor = useDocxEditor()
+  const popup = useHyperlinkPopup()
+  const probe = chromeProbeForSlot("text.link")
+  const canResult = editor && probe ? editor.can(probe) : null
+  const disabledReason =
+    canResult && !canResult.ok
+      ? (uk.disabledReason[canResult.reason as keyof typeof uk.disabledReason] ?? undefined)
+      : undefined
+  return (
+    <DocxEditor.ContextMenu.Item
+      label="Вставити посилання"
+      shortcut="Ctrl+K"
+      disabled={canResult !== null && !canResult.ok}
+      disabledReason={disabledReason}
+      icon={
+        LINK_ICON_PATHS ? (
+          <svg viewBox="0 -960 960 960" width={16} height={16} aria-hidden="true" focusable="false">
+            {LINK_ICON_PATHS.map((d, i) => (
+              <path key={i} d={d} fill="currentColor" />
+            ))}
+          </svg>
+        ) : undefined
+      }
+      onSelect={() => popup.openAtCaret()}
+    />
+  )
+}
+
+const InsertLinkMenuRow = Object.assign(InsertLinkRow, { docxRow: "text.link" })
+
 // Експорт: editor.save() → збереження в історії на сервері → завантаження файлу.
 // Хід операції — тостом: «Формування DOCX...» під час роботи, потім success/error.
 function ExportButton({ templateId, title }: { templateId: string; title: string }) {
@@ -221,6 +263,8 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
 
   return (
     <DocxEditor.Root document={bytes} mode="edit" onChange={() => setDocVersion((v) => v + 1)}>
+      {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
+      <LocaleProvider i18n={uk}>
       <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
         <span className="mr-auto truncate text-sm font-semibold" title={title}>
@@ -234,8 +278,12 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       </div>
 
       {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
-          Comments/EditingMode приховано: коментарі й правки — Pro, режим змін не використовується */}
-      <DocxEditor.Menu />
+          Comments/EditingMode приховано: коментарі й правки — Pro, режим змін не використовується.
+          Review/Help приховано: рецензування не використовується, «Повідомити про проблему» — ні до чого */}
+      <DocxEditor.Menu>
+        <DocxEditor.Menu.Review hidden />
+        <DocxEditor.Menu.Help hidden />
+      </DocxEditor.Menu>
 
       <DocxEditor.Toolbar>
         <DocxEditor.Toolbar.Comments hidden />
@@ -260,7 +308,12 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
               <DocxEditor.NotesChrome />
               <DocxEditor.Content />
               <DocxEditor.HyperLink />
-              <DocxEditor.ContextMenu />
+              <DocxEditor.ContextMenu>
+                {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
+                    «Вставити посилання»: дефолтний рядок мертвий — замінюємо робочим */}
+                <DocxEditor.ContextMenu.Slot slot="review.comments" hidden />
+                <InsertLinkMenuRow />
+              </DocxEditor.ContextMenu>
               <DocxEditor.ContentControl />
             </DocxEditor.Viewport>
             <DocxEditor.Loading overlay />
@@ -271,6 +324,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       </div>
 
       <DocxEditor.PageSetupDialog open={pageSetupOpen} onClose={() => setPageSetupOpen(false)} />
+      </LocaleProvider>
     </DocxEditor.Root>
   )
 }
