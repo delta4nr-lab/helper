@@ -81,9 +81,9 @@ export function FillPanel({
   // назву полю, коли картинка підпису зникла.
   const sigMarkers = React.useRef<Map<string, { drawingId: string }>>(new Map())
 
-  // Дефолтне значення поля — його назва. Коли користувач видаляє картинку підпису,
-  // полю автоматично повертається назва — поле знову можна заповнити (хоч скільки
-  // разів). Ознака живого підписа — drawing за id у DOM. Він може з'явитись із
+  // Картинка підпису живе поза контролом (якір у останньому абзаці), контрол поля
+  // тримає назву, поки картинка на місці, і звільняється при її видаленні.
+  // Ознака живого підписа — drawing за id у DOM. Він може з'явитись із
   // запізненням на кілька кадрів після вставки, тому перед «смертю» підписа
   // коротко перепитуємо верстку.
   React.useEffect(() => {
@@ -117,6 +117,90 @@ export function FillPanel({
     }
     return editor.on("change", onChange)
   }, [editor, fields])
+
+  // Плейсхолдерна поведінка текстових полів без читання вмісту: поле
+  // «недоторкане», поки його вміст — лейбл із шаблона. Стан ведемо самі:
+  // сіється один раз при завантаженні документа, знімається першим
+  // редагуванням (change з активним полем) та панельним заповненням,
+  // повертається reset/clear.
+  const untouchedTags = React.useRef<Set<string>>(new Set())
+  const seeded = React.useRef(false)
+  const activeTagRef = React.useRef<string | null>(null)
+
+  React.useEffect(() => {
+    seeded.current = false
+    untouchedTags.current.clear()
+  }, [editor])
+
+  React.useEffect(() => {
+    if (!editor || seeded.current) return
+    const tags = [...presentTags].filter((tag) => {
+      const field = fields.find((f) => f.key === tag)
+      return field && field.type !== "signature"
+    })
+    if (tags.length === 0) return
+    for (const tag of tags) untouchedTags.current.add(tag)
+    seeded.current = true
+  }, [editor, presentTags, fields])
+
+  // Клік у «недоторкане» поле прибирає лейбл і ставить каретку всередину контрола
+  // — перший друк одразу дані. Каретку адресує невидима мітка: 12 нуль-шириних
+  // символів (U+2060/U+200B), біти хешу controlId — унікальна послідовність,
+  // у абзаці зустрічається рівно один раз; невидима в прев'ю і в Word, стирається
+  // панельним записом. Механіка з ери інлайн-вставок: search-анкор дає каретку
+  // саме всередині SDT (DOM-виділення цим не володіє — движок трансує його на
+  // рівень абзацу). Застосування після подвійного rAF: движок після кліку мовчки
+  // повертає DOM-каретку; перед застосуванням стан перевіряється знову.
+  React.useEffect(() => {
+    if (!editor) return
+    let scheduled = false
+    const apply = async () => {
+      scheduled = false
+      if (bounceSuspend.active) return
+      const snap = editor.snapshot()
+      if (!snap.selectionCollapsed) return
+      const tag = activeTagRef.current
+      if (!tag || !untouchedTags.current.has(tag)) return
+      const control = editor.query({ type: "contentControls", filter: { tag } })[0]
+      if (!control) return
+      const idNum = [...control.id].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 4096, 7)
+      const marker = Array.from({ length: 12 }, (_, i) => ((idNum >> i) & 1 ? "\u200b" : "\u2060")).join("")
+      if (!editor.surface?.contentControls.setValue(control.id, marker)) return
+      let paraId: string | undefined
+      for (let attempt = 0; attempt < 20 && !paraId; attempt++) {
+        const found = editor.query({ type: "paragraphs" }).find((p) => p.paraId && p.text.includes(marker))
+        paraId = found?.paraId
+        if (!paraId) await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+      if (!paraId) return
+      editor.exec({ type: "setSelection", anchor: { paraId: paraId, search: marker } })
+    }
+    const onSelect = (snapshot: Parameters<Parameters<typeof editor.on<"selectionChange">>[1]>[0]) => {
+      if (bounceSuspend.active) return
+      const control = editor.query({ type: "contentControlAt" })
+      activeTagRef.current = control?.tag ?? null
+      if (!snapshot.selectionCollapsed || scheduled) return
+      const tag = control?.tag
+      if (!tag || !untouchedTags.current.has(tag)) return
+      const field = fields.find((f) => f.key === tag)
+      if (!field || field.type === "signature") return
+      scheduled = true
+      requestAnimationFrame(() => requestAnimationFrame(() => void apply()))
+    }
+    return editor.on("selectionChange", onSelect)
+  }, [editor, fields])
+
+  // Перше редагування активного поля знімає «недоторканість». Панельні записи
+  // йдуть під bounceSuspend і цей слухач ігнорує, щоб не знімати стан помилково.
+  React.useEffect(() => {
+    if (!editor) return
+    const onChange = () => {
+      if (bounceSuspend.active) return
+      const tag = activeTagRef.current
+      if (tag && untouchedTags.current.has(tag)) untouchedTags.current.delete(tag)
+    }
+    return editor.on("change", onChange)
+  }, [editor])
 
   const pickerItems: PersonPickerItem[] = React.useMemo(
     () =>
@@ -197,10 +281,12 @@ export function FillPanel({
         type: "insertImage",
         data: normalized.bytes,
         mime: normalized.mime,
-        // Мікро-розмір: проміжний inline-кадр, якщо він відрендериться, —
-        // невидима крапка, а не картинка на новому рядку
-        widthPoints: 2,
-        heightPoints: 2,
+        // Повний розмір одразу: a:ext фігури серіалізується з розміру вставки
+        // (resizeDrawing оновлює тільки wp:extent — Word рендерить за a:ext і
+        // виходив вдвічі менший підпис). Каретка в останньому абзаці — комірка
+        // не стискає вставку.
+        widthPoints: Math.max(24, Math.round((normalized.widthPoints / normalized.heightPoints) * SIGNATURE_HEIGHT_PT)),
+        heightPoints: SIGNATURE_HEIGHT_PT,
       })
       if (!result.ok) return false
 
@@ -217,37 +303,96 @@ export function FillPanel({
           null
       }
       if (!drawingId) return false
+      // Актуальний id (wrap-конвертація може його змінити); зовнішній drawingId
+      // лишається для прибирання у finally
+      let currentId: string = drawingId
 
-      // Один комміт: фіксований розмір + «перед текстом» + позиція «зліва від
-      // ПІБ» — картинка з'являється одразу на місці. Конвертація inline →
-      // anchored рідко змінює id вузла: тоді позиція відмовить, перезнайдемо
-      // id і ретраїмо.
+      // «Перед текстом» — окремий комміт ДО resize: конвертація inline → anchored
+      // перезаписує внутрішній a:ext картинки, і resize в тому ж комміті втрачається
+      // (в експорті Word рендерить за a:ext — виходив удвічі менший підпис).
+      const wrapped = surface.applyDrawingOps([{ op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" }])
+      if (!wrapped.committed) return false
+      // Конвертація може змінити id вузла — перезнаходимо після wrap
+      const freshId = [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+        .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
+        .find((id) => !knownIds.has(id))
+      if (freshId) {
+        drawingId = freshId
+        currentId = freshId
+      }
+
+      // Позиція «зліва від ПІБ». Горизонталь — сторінково (поля сторінки від
+      // шрифтів не залежать, дрейфу немає). Вертикаль — від якірного абзацу
+      // (останній абзац одразу під таблицею): відстань до рядка підпису залежить
+      // лише від нижньої частини таблиці, а не від усього вмісту вище — дрейф
+      // між рендерерами (шрифти редактора ≠ Times New Roman у Word) падає з
+      // 5-10 мм до часток міліметра. Рендер може відсіяти від'ємний
+      // paragraph-офсет — тоді fallback на сторінкову позицію (статус-кво).
       const pageXEmu = Math.max(0, Math.round((Math.min(...personLefts) - 4 - widthPx - pageRect.left) * 9525))
-      const pageYEmu = Math.max(0, Math.round((sigRect.top + sigRect.height / 2 - heightPx / 2 - pageRect.top) * 9525))
-      let positioned = false
-      for (let attempt = 0; attempt < 6 && !positioned; attempt++) {
-        const applied = surface.applyDrawingOps([
-          { op: "resizeDrawing", drawingNodeId: drawingId, extentEmu: { cx: widthEmu, cy: heightEmu } },
-          { op: "setDrawingWrap", drawingNodeId: drawingId, wrap: "inFront" },
+      const imageTopPx = sigRect.top + sigRect.height / 2 - heightPx / 2
+      const pageYEmu = Math.max(0, Math.round((imageTopPx - pageRect.top) * 9525))
+
+      // Верх якірного абзацу: останній [data-paragraph-id] у документі (порядок
+      // DOM = порядок документа); абзац може мати кілька фрагментів — верх
+      // берём мінімальний.
+      let paragraphYEmu: number | null = null
+      const paraEls = [...document.querySelectorAll<HTMLElement>("[data-paragraph-id]")]
+      const lastParaEl = paraEls[paraEls.length - 1]
+      if (lastParaEl) {
+        const lastParaDomId = lastParaEl.getAttribute("data-paragraph-id")
+        const anchorTop = Math.min(
+          ...paraEls
+            .filter((el) => el.getAttribute("data-paragraph-id") === lastParaDomId)
+            .map((el) => el.getBoundingClientRect().top),
+        )
+        paragraphYEmu = Math.round((imageTopPx - anchorTop) * 9525)
+      }
+
+      const positionOnce = (verticalEmu: number, relativeToV: "page" | "paragraph") =>
+        surface.applyDrawingOps([
           {
             op: "positionDrawing",
-            drawingNodeId: drawingId,
-            position: { horizontalEmu: pageXEmu, relativeToH: "page", verticalEmu: pageYEmu, relativeToV: "page" },
+            drawingNodeId: currentId,
+            position: { horizontalEmu: pageXEmu, relativeToH: "page", verticalEmu, relativeToV },
           },
         ])
-        positioned = applied.committed
-        if (positioned) break
+      const refreshId = () => {
         const fresh = [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
           .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
           .find((id) => !knownIds.has(id))
-        if (fresh) drawingId = fresh
-        await new Promise((resolve) => setTimeout(resolve, 120))
+        if (fresh) {
+          drawingId = fresh
+          currentId = fresh
+        }
       }
+      const confirmRendered = async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (document.querySelector(`[data-drawing-node-id="${currentId}"]:not(.docx-image-selection-overlay)`)) return true
+          await new Promise((resolve) => setTimeout(resolve, 60))
+        }
+        return false
+      }
+      const tryPosition = async (verticalEmu: number, relativeToV: "page" | "paragraph", attempts: number) => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          const applied = positionOnce(verticalEmu, relativeToV)
+          refreshId()
+          if (!applied.committed) {
+            await new Promise((resolve) => setTimeout(resolve, 120))
+            continue
+          }
+          // Закомітилось, але рендер відсіяв (кулювання) — міняємо базу одразу
+          return await confirmRendered()
+        }
+        return false
+      }
+
+      let positioned = paragraphYEmu !== null ? await tryPosition(paragraphYEmu, "paragraph", 4) : false
+      if (!positioned) positioned = await tryPosition(pageYEmu, "page", 6)
       if (!positioned) return false
 
       // Ховаємо назву поля («Підпис») — картинка її замінила
       surface.contentControls.setValue(controlId, "")
-      sigMarkers.current.set(key, { drawingId })
+      sigMarkers.current.set(key, { drawingId: currentId })
       ok = true
       return true
     } finally {
@@ -270,8 +415,23 @@ export function FillPanel({
     }
     const controls = editor.query({ type: "contentControls", filter: { tag: key } })
     let applied = controls.length > 0
-    for (const control of controls) {
-      if (!editor.surface?.contentControls.setValue(control.id, value)) applied = false
+    if (applied) {
+      // Панельний запис не рахується редагуванням юзера: зміни під suspend,
+      // щоб change-слухач не знімав «недоторканість» активного поля
+      bounceSuspend.begin()
+      try {
+        for (const control of controls) {
+          if (!editor.surface?.contentControls.setValue(control.id, value)) applied = false
+        }
+      } finally {
+        bounceSuspend.end()
+      }
+    }
+    // Плейсхолдерний стан: дані роблять поле «заповненим», лейбл/очистка — «недоторканим»
+    const field = fields.find((f) => f.key === key)
+    if (field && field.type !== "signature") {
+      if (value && value !== field.label) untouchedTags.current.delete(key)
+      else untouchedTags.current.add(key)
     }
     return applied
   }
@@ -316,6 +476,7 @@ export function FillPanel({
       delete next[group.id]
       return next
     })
+    // Скидання: усі поля повертаються до назв
     for (const field of group.fields) {
       setValueByTag(field.key, field.label)
     }

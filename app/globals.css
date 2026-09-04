@@ -144,5 +144,11 @@
   border-radius: 0;
 }
 
+/* Підсвітка полів (boundary-хром) малюється поверх вмісту контрола непрозорим
+   фоном і перекриває текст — робимо фон напівпрозорим, щоб вміст було видно. */
+.docx-editor .docx-content-control-boundary {
+  background: color-mix(in srgb, var(--doc-primary) 7%, transparent);
+}
+
 
 

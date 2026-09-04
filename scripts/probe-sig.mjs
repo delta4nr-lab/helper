@@ -1,4 +1,4 @@
-// Зонд 5: XML експорту — плаваючий підпис на рівні документа (поза SDT).
+// Верифікація підписа: розміри (wp:extent == a:ext) і позиція в експорті
 import { chromium } from "playwright"
 import JSZip from "jszip"
 
@@ -8,6 +8,9 @@ async function main() {
   const browser = await chromium.launch()
   const context = await browser.newContext()
   const page = await context.newPage()
+  page.on("console", (msg) => {
+    if (msg.type() === "error") console.log(`[console.error]`, msg.text().slice(0, 160))
+  })
 
   const csrfRes = await page.request.get(`${BASE}/api/auth/csrf`)
   const { csrfToken } = await csrfRes.json()
@@ -21,10 +24,11 @@ async function main() {
   await page.waitForSelector("aside", { timeout: 30000 })
   await page.waitForTimeout(5000)
 
+  // Заповнення підписа (група зі штату → ПІБ)
   await page.locator("aside button").first().click()
   await page.getByRole("button", { name: /ДАВИДОВИЧ/ }).first().waitFor({ state: "visible", timeout: 10000 })
   await page.getByRole("button", { name: /ДАВИДОВИЧ/ }).first().click()
-  await page.waitForTimeout(2500)
+  await page.waitForTimeout(3000)
 
   const exportPromise = page
     .waitForResponse((res) => res.url().includes("/api/exports") && res.request().method() === "POST", { timeout: 30000 })
@@ -36,20 +40,23 @@ async function main() {
 
   const zip = await JSZip.loadAsync(bytes)
   const xml = await zip.file("word/document.xml").async("string")
-  console.log("document.xml has w:drawing:", xml.includes("<w:drawing"))
-  console.log("has wp:anchor:", xml.includes("<wp:anchor"))
   const anchor = xml.slice(xml.indexOf("<wp:anchor"), xml.indexOf("</wp:anchor>") + 12)
-  console.log("positionH:", anchor.match(/<wp:positionH[^>]*>[\s\S]*?<\/wp:positionH>/)?.[0])
-  console.log("positionV:", anchor.match(/<wp:positionV[^>]*>[\s\S]*?<\/wp:positionV>/)?.[0])
-  console.log("extent:", anchor.match(/<wp:extent[^>]*>/)?.[0])
-  console.log("behindDoc (0 = перед текстом):", anchor.match(/behindDoc="(\d)"/)?.[1])
-
-  // SDT signature_1: тег і назва на місці, тексту «Підпис» нема (сховано)
-  const idx = xml.indexOf('w:val="signature_1"')
-  const start = xml.lastIndexOf("<w:sdt>", idx)
-  const end = xml.indexOf("</w:sdt>", idx) + "</w:sdt>".length
-  const sdt = xml.slice(start, end)
-  console.log("SDT signature_1 exists:", idx > -1, "| alias:", sdt.includes("Підпис"), "| drawing inside:", sdt.includes("<w:drawing"))
+  if (!anchor.includes("<wp:anchor")) {
+    console.log("NO anchor in export")
+    process.exit(1)
+  }
+  const wpExtent = anchor.match(/<wp:extent[^>]*>/)?.[0]
+  const aExt = anchor.match(/<a:ext[^>]*>/)?.[0]
+  const posH = anchor.match(/<wp:positionH[^>]*>[\s\S]*?<\/wp:positionH>/)?.[0]
+  const posV = anchor.match(/<wp:positionV[^>]*>[\s\S]*?<\/wp:positionV>/)?.[0]
+  console.log("wp:extent:", wpExtent)
+  console.log("a:ext:    ", aExt)
+  const extMatch = wpExtent?.match(/cx="(\d+)" cy="(\d+)"/)
+  const aMatch = aExt?.match(/cx="(\d+)" cy="(\d+)"/)
+  console.log("SIZES MATCH:", extMatch?.[1] === aMatch?.[1] && extMatch?.[2] === aMatch?.[2])
+  console.log("positionH:", posH)
+  console.log("positionV:", posV)
+  console.log("behindDoc:", anchor.match(/behindDoc="(\d)"/)?.[1], "(0 = перед текстом)")
   await browser.close()
 }
 

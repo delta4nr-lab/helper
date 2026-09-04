@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { DocxEditor, useContentControl, useDocxEditor } from "@docx-editor.dev/react"
-import { Download, FileCheck2, Loader2, ScanText } from "lucide-react"
+import { Download, FileCheck2, Highlighter, Loader2, ScanText } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
 
@@ -63,6 +63,33 @@ function FormFillToggle() {
     >
       <ScanText className="size-4" />
       Заповнення
+    </Button>
+  )
+}
+
+// Підсвітка полів: boundary-хром на всіх контролах — видно, що треба заповнювати.
+// Увімкнена за замовчуванням; кнопка перемикає. Стан повторно застосовується при
+// кожній версії документа: surface з'являється після завантаження файлу, а
+// setShowAll — idempotentний стан хрому (без reflow).
+function HighlightToggle({ docVersion }: { docVersion: number }) {
+  const editor = useDocxEditor()
+  const [on, setOn] = React.useState(true)
+
+  React.useEffect(() => {
+    if (!editor?.surface) return
+    editor.surface.contentControls.setShowAll(on)
+  }, [editor, editor?.surface, on, docVersion])
+
+  return (
+    <Button
+      type="button"
+      variant={on ? "secondary" : "ghost"}
+      size="sm"
+      onClick={() => setOn((value) => !value)}
+      title="Підсвітка полів для заповнення"
+    >
+      <Highlighter className="size-4" />
+      Підсвітка
     </Button>
   )
 }
@@ -185,6 +212,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
         <span className="mr-auto truncate text-sm font-semibold" title={title}>
           {title}
         </span>
+        <HighlightToggle docVersion={docVersion} />
         <FormFillToggle />
         <PageSetupButton onOpen={() => setPageSetupOpen(true)} />
         <ExportButton templateId={templateId} title={title} onMessage={setMessage} />

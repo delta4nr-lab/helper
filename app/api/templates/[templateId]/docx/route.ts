@@ -6,9 +6,15 @@ import { orm } from "@/lib/db"
 
 type Params = { templateId: string }
 
-// Поля-плейсхолдери: SDT з тегом отримує <w:showingPlcHdr/> — двигун поводиться
-// з ними як із плейсхолдерами Word (клік → друк замінює назву поля).
-// Ін'єкція на роздачі: шаблон у БД лишається без змін.
+// Поля-плейсхолдери: SDT з тегом отримує <w:showingPlcHdr/> — Word поводиться
+// з ними як із плейсхолдерами (клік → друк замінює назву поля). Ін'єкція на
+// роздачі: шаблон у БД лишається без змін.
+//
+// УВАГА: ін'єкція вмикається лише параметром ?word=1 (завантаження пустого
+// шаблона у Word). Редактор завантажує сирий шаблон: движок парсить
+// showingPlcHdr у флаг placeholder контрола, і form-fill навігація перестає
+// впізнавати такі поля — каретка «відскакує» в перше поле, редагувати можна
+// тільки його.
 function withPlaceholderFields(xml: string): string {
   return xml.replace(/<w:sdtPr>(?:(?!<\/w:sdtPr>)[\s\S])*?<\/w:sdtPr>/g, (sdtPr) => {
     if (sdtPr.includes("showingPlcHdr") || !sdtPr.includes("<w:tag")) return sdtPr
@@ -16,7 +22,7 @@ function withPlaceholderFields(xml: string): string {
   })
 }
 
-export async function GET(_request: Request, { params }: { params: Promise<Params> }) {
+export async function GET(request: Request, { params }: { params: Promise<Params> }) {
   const session = await (auth as unknown as () => Promise<{ user?: { id?: string } } | null>)()
   if (!session?.user?.id) {
     return NextResponse.json({ message: "Не авторизовано. Увійдіть у систему." }, { status: 401 })
@@ -28,10 +34,13 @@ export async function GET(_request: Request, { params }: { params: Promise<Param
     return NextResponse.json({ message: "Шаблон не знайдено або для нього немає DOCX-файлу." }, { status: 404 })
   }
 
+  // ?word=1 — роздача шаблона для Word з плейсхолдерами; редактор отримує сирий файл
+  const forWord = new URL(request.url).searchParams.get("word") === "1"
+
   try {
     const zip = await JSZip.loadAsync(Buffer.from(template.docxData))
     const docFile = zip.file("word/document.xml")
-    if (docFile) {
+    if (docFile && forWord) {
       const xml = await docFile.async("string")
       zip.file("word/document.xml", withPlaceholderFields(xml))
     }
