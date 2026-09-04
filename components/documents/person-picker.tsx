@@ -26,6 +26,8 @@ type PersonPickerProps = {
   onClear?: () => void
   onClearSignature?: () => void
   showClearSignature?: boolean
+  /** Компактний тригер: кругла кнопка-іконка без тексту і шеврона. */
+  compact?: boolean
 }
 
 // Внутрішній контент попапа: монтується разом із Popup,
@@ -177,6 +179,7 @@ export function PersonPicker({
   onClear,
   onClearSignature,
   showClearSignature,
+  compact = false,
 }: PersonPickerProps) {
   return (
     <Popover.Root open={open} onOpenChange={(next) => onOpenChange(next)} modal={false}>
@@ -184,11 +187,20 @@ export function PersonPicker({
         type="button"
         title={title}
         aria-label={title}
-        className="inline-flex h-9 max-w-56 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-sm font-medium text-foreground shadow-xs outline-none transition-colors cursor-pointer hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-popup-open:bg-accent data-popup-open:text-accent-foreground"
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-md border border-input bg-background text-sm font-medium text-foreground shadow-xs outline-none transition-colors cursor-pointer hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-popup-open:bg-accent data-popup-open:text-accent-foreground",
+          compact
+            ? "size-7 justify-center rounded-md bg-background text-muted-foreground shadow-sm border-border hover:bg-accent hover:text-foreground active:scale-95 data-popup-open:bg-accent data-popup-open:text-foreground animate-in fade-in-0 zoom-in-95 duration-150"
+            : "h-9 max-w-56 px-2.5",
+        )}
       >
         {icon}
-        <span className="max-w-36 truncate">{triggerLabel}</span>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform data-popup-open:rotate-180" />
+        {!compact && (
+          <>
+            <span className="max-w-36 truncate">{triggerLabel}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform data-popup-open:rotate-180" />
+          </>
+        )}
       </Popover.Trigger>
 
       <Popover.Portal>

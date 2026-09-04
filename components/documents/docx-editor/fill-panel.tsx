@@ -2,14 +2,25 @@
 
 import * as React from "react"
 import { normalizeImageBytes, useDocxEditor } from "@docx-editor.dev/react"
-import { ArrowLeftRight, Eraser, UserRound } from "lucide-react"
+import { toast } from "sonner"
+import {
+  ArrowLeftRight,
+  Eraser,
+  UserRound,
+  UserRoundSearch,
+} from "lucide-react"
 
-import { PersonPicker, type PersonPickerItem } from "@/components/documents/person-picker"
+import {
+  PersonPicker,
+  type PersonPickerItem,
+} from "@/components/documents/person-picker"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+
+import { cn } from "@/lib/utils"
 
 // Спеціальні типи полів, що заповнюються з картки персоналії.
 const PERSON_FIELD_TYPES = new Set(["person", "position", "rank", "signature"])
@@ -18,7 +29,9 @@ const PERSON_FIELD_TYPES = new Set(["person", "position", "rank", "signature"])
 const SIGNATURE_HEIGHT_PT = 54
 
 function fullName(person: EditorPersonnel): string {
-  return [person.lastName, person.firstName, person.middleName].filter(Boolean).join(" ")
+  return [person.lastName, person.firstName, person.middleName]
+    .filter(Boolean)
+    .join(" ")
 }
 
 // Група спеціальних полів: спільний числовий суфікс (напр. position_1 / rank_1 /
@@ -29,7 +42,10 @@ type PersonGroup = {
   fields: EditorField[]
 }
 
-function groupFields(fields: EditorField[]): { groups: PersonGroup[]; simple: EditorField[] } {
+function groupFields(fields: EditorField[]): {
+  groups: PersonGroup[]
+  simple: EditorField[]
+} {
   const byId = new Map<string, PersonGroup>()
   const simple: EditorField[] = []
   for (const field of fields) {
@@ -52,14 +68,18 @@ function groupFields(fields: EditorField[]): { groups: PersonGroup[]; simple: Ed
 // Панель заповнення: групи полів зі штату + окремі текстові поля.
 // Працює всередині DocxEditor.Root (використовує контекст редактора).
 // docVersion зростає при кожній зміні документа — тригер переогляду контролів.
+// Панель завжди змонтована: прихована лише візуально (open=false → hidden),
+// бо refs (untouchedTags, sigMarkers) мусять жити між показами панелі.
 export function FillPanel({
   fields,
   personnel,
   docVersion,
+  open,
 }: {
   fields: EditorField[]
   personnel: EditorPersonnel[]
   docVersion: number
+  open: boolean
 }) {
   const editor = useDocxEditor()
 
@@ -69,14 +89,20 @@ export function FillPanel({
   // docVersion — свідомий тригер перерахунку при кожній зміні документа.
   const presentTags = React.useMemo(() => {
     if (!editor) return new Set<string>()
-    return new Set(editor.query({ type: "contentControls" }).map((c) => c.tag ?? "").filter(Boolean))
+    return new Set(
+      editor
+        .query({ type: "contentControls" })
+        .map((c) => c.tag ?? "")
+        .filter(Boolean)
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docVersion])
 
   const [openPickerId, setOpenPickerId] = React.useState<string | null>(null)
   const [selected, setSelected] = React.useState<Record<string, string>>({})
-  const [simpleValues, setSimpleValues] = React.useState<Record<string, string>>({})
-  const [status, setStatus] = React.useState<string | null>(null)
+  const [simpleValues, setSimpleValues] = React.useState<
+    Record<string, string>
+  >({})
   // Активні підписи: tag → id плаваючого drawing. Слухач change нижче повертає
   // назву полю, коли картинка підпису зникла.
   const sigMarkers = React.useRef<Map<string, { drawingId: string }>>(new Map())
@@ -89,9 +115,14 @@ export function FillPanel({
   React.useEffect(() => {
     if (!editor) return
     let checkQueued = false
-    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    const sleep = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms))
     const drawingAlive = (drawingId: string) =>
-      Boolean(document.querySelector(`[data-drawing-node-id="${drawingId}"]:not(.docx-image-selection-overlay)`))
+      Boolean(
+        document.querySelector(
+          `[data-drawing-node-id="${drawingId}"]:not(.docx-image-selection-overlay)`
+        )
+      )
     const verify = async (tag: string, info: { drawingId: string }) => {
       for (let attempt = 0; attempt < 6; attempt++) {
         if (bounceSuspend.active || sigMarkers.current.get(tag) !== info) return
@@ -100,8 +131,12 @@ export function FillPanel({
       }
       sigMarkers.current.delete(tag)
       const label = fields.find((f) => f.key === tag)?.label
-      const controlId = editor.query({ type: "contentControls", filter: { tag } })[0]?.id
-      if (label && controlId) editor.surface?.contentControls.setValue(controlId, label)
+      const controlId = editor.query({
+        type: "contentControls",
+        filter: { tag },
+      })[0]?.id
+      if (label && controlId)
+        editor.surface?.contentControls.setValue(controlId, label)
     }
     const check = () => {
       checkQueued = false
@@ -161,21 +196,38 @@ export function FillPanel({
       if (!snap.selectionCollapsed) return
       const tag = activeTagRef.current
       if (!tag || !untouchedTags.current.has(tag)) return
-      const control = editor.query({ type: "contentControls", filter: { tag } })[0]
+      const control = editor.query({
+        type: "contentControls",
+        filter: { tag },
+      })[0]
       if (!control) return
-      const idNum = [...control.id].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 4096, 7)
-      const marker = Array.from({ length: 12 }, (_, i) => ((idNum >> i) & 1 ? "\u200b" : "\u2060")).join("")
+      const idNum = [...control.id].reduce(
+        (acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 4096,
+        7
+      )
+      const marker = Array.from({ length: 12 }, (_, i) =>
+        (idNum >> i) & 1 ? "\u200b" : "\u2060"
+      ).join("")
       if (!editor.surface?.contentControls.setValue(control.id, marker)) return
       let paraId: string | undefined
       for (let attempt = 0; attempt < 20 && !paraId; attempt++) {
-        const found = editor.query({ type: "paragraphs" }).find((p) => p.paraId && p.text.includes(marker))
+        const found = editor
+          .query({ type: "paragraphs" })
+          .find((p) => p.paraId && p.text.includes(marker))
         paraId = found?.paraId
         if (!paraId) await new Promise((resolve) => setTimeout(resolve, 25))
       }
       if (!paraId) return
-      editor.exec({ type: "setSelection", anchor: { paraId: paraId, search: marker } })
+      editor.exec({
+        type: "setSelection",
+        anchor: { paraId: paraId, search: marker },
+      })
     }
-    const onSelect = (snapshot: Parameters<Parameters<typeof editor.on<"selectionChange">>[1]>[0]) => {
+    const onSelect = (
+      snapshot: Parameters<
+        Parameters<typeof editor.on<"selectionChange">>[1]
+      >[0]
+    ) => {
       if (bounceSuspend.active) return
       const control = editor.query({ type: "contentControlAt" })
       activeTagRef.current = control?.tag ?? null
@@ -197,7 +249,8 @@ export function FillPanel({
     const onChange = () => {
       if (bounceSuspend.active) return
       const tag = activeTagRef.current
-      if (tag && untouchedTags.current.has(tag)) untouchedTags.current.delete(tag)
+      if (tag && untouchedTags.current.has(tag))
+        untouchedTags.current.delete(tag)
     }
     return editor.on("change", onChange)
   }, [editor])
@@ -213,22 +266,140 @@ export function FillPanel({
     [personnel]
   )
 
+  // Швидкий вибір особи: ховер над полем ПІБ у документі → компактна кругла
+  // кнопка праворуч від рамки → список зі штату → applyPerson заповнює всю
+  // групу (ПІБ, посада, звання, підпис). Клік у поле лишається звичайним
+  // редагуванням. Приховування з затримкою 200 мс — курсор встигає дійти до
+  // кнопки; відкритий список тримає кнопку.
+  const [quickPick, setQuickPick] = React.useState<{
+    group: PersonGroup
+    left: number
+    top: number
+  } | null>(null)
+  const [quickPickOpen, setQuickPickOpen] = React.useState(false)
+  const hideTimer = React.useRef<number | null>(null)
+
+  const clearHideTimer = React.useCallback(() => {
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+  }, [])
+  const scheduleHide = React.useCallback(() => {
+    clearHideTimer()
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = null
+      setQuickPick((prev) => (prev && !quickPickOpen ? null : prev))
+    }, 200)
+  }, [quickPickOpen, clearHideTimer])
+
+  React.useEffect(() => {
+    if (!editor) return
+    // Хром поля — оверлей (рани йому не належать), тому детекція геометрична:
+    // курсор усередині boundary-ректу поля.
+    const personGroupAt = (x: number, y: number) => {
+      for (const field of fields) {
+        if (field.type !== "person") continue
+        const boundary = document.querySelector<HTMLElement>(
+          `.docx-content-control-chrome[data-tag="${field.key}"] .docx-content-control-boundary`
+        )
+        const rect = boundary?.getBoundingClientRect()
+        if (!rect || rect.width === 0) continue
+        if (
+          x >= rect.left &&
+          x <= rect.right &&
+          y >= rect.top &&
+          y <= rect.bottom
+        ) {
+          return {
+            group:
+              groups.find((g) => g.fields.some((f) => f.key === field.key)) ??
+              null,
+            tag: field.key,
+          }
+        }
+      }
+      return null
+    }
+    const onPointerOver = (event: PointerEvent) => {
+      if (bounceSuspend.active) return
+      const found = personGroupAt(event.clientX, event.clientY)
+      if (!found?.group || !found.tag) return
+      clearHideTimer()
+      const rect = document
+        .querySelector<HTMLElement>(
+          `.docx-content-control-chrome[data-tag="${found.tag}"] .docx-content-control-boundary`
+        )
+        ?.getBoundingClientRect()
+      if (!rect || rect.width === 0) return
+      setQuickPick((prev) =>
+        prev?.group.id === found.group!.id
+          ? prev
+          : { group: found.group!, left: rect.right + 6, top: rect.top }
+      )
+    }
+    const onPointerOut = (event: PointerEvent) => {
+      if (!personGroupAt(event.clientX, event.clientY)) return
+      scheduleHide()
+    }
+    document.addEventListener("pointerover", onPointerOver, true)
+    document.addEventListener("pointerout", onPointerOut, true)
+    return () => {
+      document.removeEventListener("pointerover", onPointerOver, true)
+      document.removeEventListener("pointerout", onPointerOut, true)
+      clearHideTimer()
+    }
+  }, [editor, fields, groups, quickPickOpen, scheduleHide, clearHideTimer])
+
+  React.useEffect(() => {
+    if (!quickPick) return
+    const viewport = document.querySelector<HTMLElement>(
+      ".docx-editor-one-surface__viewport"
+    )
+    const reposition = () => {
+      const tag = quickPick.group.fields.find((f) => f.type === "person")?.key
+      if (!tag) return
+      const rect = document
+        .querySelector<HTMLElement>(
+          `.docx-content-control-chrome[data-tag="${tag}"] .docx-content-control-boundary`
+        )
+        ?.getBoundingClientRect()
+      if (!rect) {
+        setQuickPick(null)
+        return
+      }
+      setQuickPick((prev) =>
+        prev ? { ...prev, left: rect.right + 6, top: rect.top } : null
+      )
+    }
+    viewport?.addEventListener("scroll", reposition, { passive: true })
+    return () => viewport?.removeEventListener("scroll", reposition)
+  }, [quickPick])
+
   // Підпис: зображення з картки персоналії → плаваючий шар «перед текстом»
   // (фіксований розмір, не ростить рядок) зі сторінковою позицією «зліва від
   // ПІБ». Якір — останній абзац документа поза таблицею: рендер не малює
   // anchored-картинки, що виходять за межі комірки якоря. Контрол поля при цьому
   // НЕ чіпаємо структурно (тег/назва лишаються в DOCX): назва ховається на час
   // заповненості і повертається, коли картинку видалили (слухач change).
-  async function fillSignature(key: string, person: EditorPersonnel): Promise<boolean> {
+  async function fillSignature(
+    key: string,
+    person: EditorPersonnel
+  ): Promise<boolean> {
     const surface = editor?.surface
     if (!surface || !person.signaturePath) return false
-    const controlId = editor.query({ type: "contentControls", filter: { tag: key } })[0]?.id
+    const controlId = editor.query({
+      type: "contentControls",
+      filter: { tag: key },
+    })[0]?.id
     if (!controlId) return false
     const label = fields.find((f) => f.key === key)?.label ?? ""
 
     const response = await fetch(person.signaturePath)
     if (!response.ok) return false
-    const normalized = normalizeImageBytes(new Uint8Array(await response.arrayBuffer()))
+    const normalized = normalizeImageBytes(
+      new Uint8Array(await response.arrayBuffer())
+    )
     if (!normalized.ok) return false
 
     bounceSuspend.begin()
@@ -242,7 +413,9 @@ export function FillPanel({
 
       const personKey = key.replace(/^signature/, "person")
       const heightEmu = Math.round(SIGNATURE_HEIGHT_PT * 12700)
-      const widthEmu = Math.round((normalized.widthPoints / normalized.heightPoints) * heightEmu)
+      const widthEmu = Math.round(
+        (normalized.widthPoints / normalized.heightPoints) * heightEmu
+      )
       const widthPx = widthEmu / 9525
       const heightPx = heightEmu / 9525
 
@@ -252,13 +425,26 @@ export function FillPanel({
       let sigRect: DOMRect | null = null
       let personLefts: number[] = []
       for (let attempt = 0; attempt < 20 && !pageRect; attempt++) {
-        const sigChrome = document.querySelector<HTMLElement>(`.docx-content-control-chrome[data-tag="${key}"]`)
-        const personChrome = document.querySelector<HTMLElement>(`.docx-content-control-chrome[data-tag="${personKey}"]`)
-        sigRect = sigChrome?.querySelector<HTMLElement>(".docx-content-control-boundary")?.getBoundingClientRect() ?? null
-        personLefts = [...(personChrome?.querySelectorAll<HTMLElement>(".docx-content-control-boundary") ?? [])].map(
-          (b) => b.getBoundingClientRect().left,
+        const sigChrome = document.querySelector<HTMLElement>(
+          `.docx-content-control-chrome[data-tag="${key}"]`
         )
-        pageRect = (sigChrome?.closest(".docx-editor-page") ?? sigChrome?.closest("[class*='docx-page']"))?.getBoundingClientRect() ?? null
+        const personChrome = document.querySelector<HTMLElement>(
+          `.docx-content-control-chrome[data-tag="${personKey}"]`
+        )
+        sigRect =
+          sigChrome
+            ?.querySelector<HTMLElement>(".docx-content-control-boundary")
+            ?.getBoundingClientRect() ?? null
+        personLefts = [
+          ...(personChrome?.querySelectorAll<HTMLElement>(
+            ".docx-content-control-boundary"
+          ) ?? []),
+        ].map((b) => b.getBoundingClientRect().left)
+        pageRect =
+          (
+            sigChrome?.closest(".docx-editor-page") ??
+            sigChrome?.closest("[class*='docx-page']")
+          )?.getBoundingClientRect() ?? null
         if (!pageRect || !sigRect || personLefts.length === 0) {
           pageRect = null
           await new Promise((resolve) => setTimeout(resolve, 25))
@@ -267,14 +453,22 @@ export function FillPanel({
       if (!pageRect || !sigRect || personLefts.length === 0) return false
 
       // Якір: останній абзац документа з w14:paraId (адресований; поза таблицею)
-      const anchorParaId = [...editor.query({ type: "paragraphs" })].filter((p) => p.paraId).at(-1)?.paraId
+      const anchorParaId = [...editor.query({ type: "paragraphs" })]
+        .filter((p) => p.paraId)
+        .at(-1)?.paraId
       if (!anchorParaId) return false
-      if (!editor.exec({ type: "setSelection", anchor: { paraId: anchorParaId } }).ok) return false
+      if (
+        !editor.exec({ type: "setSelection", anchor: { paraId: anchorParaId } })
+          .ok
+      )
+        return false
 
       // Знімок id наявних drawing — ДО мутацій: нова картинка може відрендеритись
       // синхронно, і пізніший знімок включив би її в «старі».
       const knownIds = new Set(
-        [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")].map((el) => el.getAttribute("data-drawing-node-id") ?? ""),
+        [
+          ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
+        ].map((el) => el.getAttribute("data-drawing-node-id") ?? "")
       )
 
       const result = await editor.executeImageCommand({
@@ -285,7 +479,13 @@ export function FillPanel({
         // (resizeDrawing оновлює тільки wp:extent — Word рендерить за a:ext і
         // виходив вдвічі менший підпис). Каретка в останньому абзаці — комірка
         // не стискає вставку.
-        widthPoints: Math.max(24, Math.round((normalized.widthPoints / normalized.heightPoints) * SIGNATURE_HEIGHT_PT)),
+        widthPoints: Math.max(
+          24,
+          Math.round(
+            (normalized.widthPoints / normalized.heightPoints) *
+              SIGNATURE_HEIGHT_PT
+          )
+        ),
         heightPoints: SIGNATURE_HEIGHT_PT,
       })
       if (!result.ok) return false
@@ -310,10 +510,14 @@ export function FillPanel({
       // «Перед текстом» — окремий комміт ДО resize: конвертація inline → anchored
       // перезаписує внутрішній a:ext картинки, і resize в тому ж комміті втрачається
       // (в експорті Word рендерить за a:ext — виходив удвічі менший підпис).
-      const wrapped = surface.applyDrawingOps([{ op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" }])
+      const wrapped = surface.applyDrawingOps([
+        { op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" },
+      ])
       if (!wrapped.committed) return false
       // Конвертація може змінити id вузла — перезнаходимо після wrap
-      const freshId = [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+      const freshId = [
+        ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
+      ]
         .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
         .find((id) => !knownIds.has(id))
       if (freshId) {
@@ -328,36 +532,58 @@ export function FillPanel({
       // між рендерерами (шрифти редактора ≠ Times New Roman у Word) падає з
       // 5-10 мм до часток міліметра. Рендер може відсіяти від'ємний
       // paragraph-офсет — тоді fallback на сторінкову позицію (статус-кво).
-      const pageXEmu = Math.max(0, Math.round((Math.min(...personLefts) - 4 - widthPx - pageRect.left) * 9525))
+      const pageXEmu = Math.max(
+        0,
+        Math.round(
+          (Math.min(...personLefts) - 4 - widthPx - pageRect.left) * 9525
+        )
+      )
       const imageTopPx = sigRect.top + sigRect.height / 2 - heightPx / 2
-      const pageYEmu = Math.max(0, Math.round((imageTopPx - pageRect.top) * 9525))
+      const pageYEmu = Math.max(
+        0,
+        Math.round((imageTopPx - pageRect.top) * 9525)
+      )
 
       // Верх якірного абзацу: останній [data-paragraph-id] у документі (порядок
       // DOM = порядок документа); абзац може мати кілька фрагментів — верх
       // берём мінімальний.
       let paragraphYEmu: number | null = null
-      const paraEls = [...document.querySelectorAll<HTMLElement>("[data-paragraph-id]")]
+      const paraEls = [
+        ...document.querySelectorAll<HTMLElement>("[data-paragraph-id]"),
+      ]
       const lastParaEl = paraEls[paraEls.length - 1]
       if (lastParaEl) {
         const lastParaDomId = lastParaEl.getAttribute("data-paragraph-id")
         const anchorTop = Math.min(
           ...paraEls
-            .filter((el) => el.getAttribute("data-paragraph-id") === lastParaDomId)
-            .map((el) => el.getBoundingClientRect().top),
+            .filter(
+              (el) => el.getAttribute("data-paragraph-id") === lastParaDomId
+            )
+            .map((el) => el.getBoundingClientRect().top)
         )
         paragraphYEmu = Math.round((imageTopPx - anchorTop) * 9525)
       }
 
-      const positionOnce = (verticalEmu: number, relativeToV: "page" | "paragraph") =>
+      const positionOnce = (
+        verticalEmu: number,
+        relativeToV: "page" | "paragraph"
+      ) =>
         surface.applyDrawingOps([
           {
             op: "positionDrawing",
             drawingNodeId: currentId,
-            position: { horizontalEmu: pageXEmu, relativeToH: "page", verticalEmu, relativeToV },
+            position: {
+              horizontalEmu: pageXEmu,
+              relativeToH: "page",
+              verticalEmu,
+              relativeToV,
+            },
           },
         ])
       const refreshId = () => {
-        const fresh = [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+        const fresh = [
+          ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
+        ]
           .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
           .find((id) => !knownIds.has(id))
         if (fresh) {
@@ -367,12 +593,21 @@ export function FillPanel({
       }
       const confirmRendered = async () => {
         for (let attempt = 0; attempt < 5; attempt++) {
-          if (document.querySelector(`[data-drawing-node-id="${currentId}"]:not(.docx-image-selection-overlay)`)) return true
+          if (
+            document.querySelector(
+              `[data-drawing-node-id="${currentId}"]:not(.docx-image-selection-overlay)`
+            )
+          )
+            return true
           await new Promise((resolve) => setTimeout(resolve, 60))
         }
         return false
       }
-      const tryPosition = async (verticalEmu: number, relativeToV: "page" | "paragraph", attempts: number) => {
+      const tryPosition = async (
+        verticalEmu: number,
+        relativeToV: "page" | "paragraph",
+        attempts: number
+      ) => {
         for (let attempt = 0; attempt < attempts; attempt++) {
           const applied = positionOnce(verticalEmu, relativeToV)
           refreshId()
@@ -386,7 +621,10 @@ export function FillPanel({
         return false
       }
 
-      let positioned = paragraphYEmu !== null ? await tryPosition(paragraphYEmu, "paragraph", 4) : false
+      let positioned =
+        paragraphYEmu !== null
+          ? await tryPosition(paragraphYEmu, "paragraph", 4)
+          : false
       if (!positioned) positioned = await tryPosition(pageYEmu, "page", 6)
       if (!positioned) return false
 
@@ -413,7 +651,10 @@ export function FillPanel({
       editor.surface?.deleteImage(previous.drawingId)
       sigMarkers.current.delete(key)
     }
-    const controls = editor.query({ type: "contentControls", filter: { tag: key } })
+    const controls = editor.query({
+      type: "contentControls",
+      filter: { tag: key },
+    })
     let applied = controls.length > 0
     if (applied) {
       // Панельний запис не рахується редагуванням юзера: зміни під suspend,
@@ -421,7 +662,8 @@ export function FillPanel({
       bounceSuspend.begin()
       try {
         for (const control of controls) {
-          if (!editor.surface?.contentControls.setValue(control.id, value)) applied = false
+          if (!editor.surface?.contentControls.setValue(control.id, value))
+            applied = false
         }
       } finally {
         bounceSuspend.end()
@@ -463,9 +705,10 @@ export function FillPanel({
         if (!(await fillSignature(field.key, person))) signatureFailed = true
       }
     }
-    if (signatureMissing) setStatus(`У ${fullName(person)} немає підпису в картці персоналії`)
-    else if (signatureFailed) setStatus(`Не вдалося вставити підпис ${fullName(person)}`)
-    else setStatus(null)
+    if (signatureMissing)
+      toast.warning(`У ${fullName(person)} немає підпису в картці персоналії`)
+    else if (signatureFailed)
+      toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
   }
 
   // Скидання групи: усі поля повертаються до назв — setValue перезаписує вміст
@@ -493,107 +736,174 @@ export function FillPanel({
   }
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-border/50 bg-background">
-      <div className="border-b border-border/50 px-3 py-2 text-sm font-semibold">Заповнення</div>
+    <>
+      {quickPick && (
+        <div
+          className="fixed z-50"
+          style={{
+            left: quickPick.left,
+            top: quickPick.top,
+            transform: "translateY(-50%)",
+          }}
+          onPointerEnter={clearHideTimer}
+          onPointerLeave={scheduleHide}
+        >
+          <PersonPicker
+            compact
+            open={quickPickOpen}
+            onOpenChange={setQuickPickOpen}
+            title="Обрати особу зі штату"
+            icon={<UserRoundSearch className="size-4" />}
+            triggerLabel="Зі штату"
+            items={pickerItems}
+            selectedId={selected[quickPick.group.id] ?? null}
+            onSelect={(personId) => {
+              void applyPerson(quickPick.group, personId)
+              setQuickPickOpen(false)
+              clearHideTimer()
+              setQuickPick(null)
+            }}
+          />
+        </div>
+      )}
+      <aside
+        className={cn(
+          "flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l border-border/50 bg-background",
+          !open && "hidden"
+        )}
+      >
+        <div className="border-b border-border/50 px-3 py-2 text-sm font-semibold">
+          Заповнення
+        </div>
 
-      {groups.length > 0 && (
-        <section className="border-b border-border/50 p-3">
-          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <UserRound className="size-3.5" />
-            Зі штату
-          </h3>
-          <div className="space-y-2">
-            {groups.map((group) => {
-              const missing = group.fields.every((f) => !presentTags.has(f.key))
-              const selectedId = selected[group.id] ?? null
-              return (
-                <div key={group.id} className={missing ? "opacity-50" : undefined}>
-                  <div className="flex items-center gap-1">
-                    <PersonPicker
-                      open={openPickerId === group.id}
-                      onOpenChange={(open) => setOpenPickerId(open ? group.id : null)}
-                      title={group.label}
-                      triggerLabel={group.label}
-                      items={pickerItems}
-                      selectedId={selectedId}
-                      onSelect={(personId) => void applyPerson(group, personId)}
-                    />
-                    {selectedId && (
+        {groups.length > 0 && (
+          <section className="border-b border-border/50 p-3">
+            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <UserRound className="size-3.5" />
+              Зі штату
+            </h3>
+            <div className="space-y-2">
+              {groups.map((group) => {
+                const missing = group.fields.every(
+                  (f) => !presentTags.has(f.key)
+                )
+                const selectedId = selected[group.id] ?? null
+                return (
+                  <div
+                    key={group.id}
+                    className={missing ? "opacity-50" : undefined}
+                  >
+                    <div className="flex items-center gap-1">
+                      <PersonPicker
+                        open={openPickerId === group.id}
+                        onOpenChange={(open) =>
+                          setOpenPickerId(open ? group.id : null)
+                        }
+                        title={group.label}
+                        triggerLabel={group.label}
+                        items={pickerItems}
+                        selectedId={selectedId}
+                        onSelect={(personId) =>
+                          void applyPerson(group, personId)
+                        }
+                      />
+                      {selectedId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          title="Очистити групу"
+                          onClick={() => clearGroup(group)}
+                        >
+                          <Eraser className="size-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {missing && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Полів немає в документі
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {simple.length > 0 && (
+          <section className="p-3">
+            <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+              Поля документа
+            </h3>
+            <div className="space-y-2">
+              {simple.map((field) => {
+                const missing = !presentTags.has(field.key)
+                return (
+                  <div
+                    key={field.key}
+                    className={missing ? "opacity-50" : undefined}
+                  >
+                    <label
+                      className="mb-1 block truncate text-sm"
+                      title={field.label}
+                    >
+                      {field.label}
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={simpleValues[field.key] ?? ""}
+                        onChange={(event) =>
+                          setSimpleValues((prev) => ({
+                            ...prev,
+                            [field.key]: event.target.value,
+                          }))
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault()
+                            fillSimple(field)
+                          }
+                        }}
+                        placeholder={field.label}
+                        className="h-8"
+                      />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        title="Очистити групу"
-                        onClick={() => clearGroup(group)}
+                        title="Заповнити"
+                        disabled={
+                          !(simpleValues[field.key] ?? "").trim() || missing
+                        }
+                        onClick={() => fillSimple(field)}
+                      >
+                        <ArrowLeftRight className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        title="Скинути"
+                        disabled={missing}
+                        onClick={() => resetSimple(field)}
                       >
                         <Eraser className="size-4" />
                       </Button>
-                    )}
+                    </div>
                   </div>
-                  {missing && <p className="mt-1 text-xs text-muted-foreground">Полів немає в документі</p>}
-                </div>
-              )
-            })}
-          </div>
-          {status && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{status}</p>}
-        </section>
-      )}
+                )
+              })}
+            </div>
+          </section>
+        )}
 
-      {simple.length > 0 && (
-        <section className="p-3">
-          <h3 className="mb-2 text-xs font-medium text-muted-foreground">Поля документа</h3>
-          <div className="space-y-2">
-            {simple.map((field) => {
-              const missing = !presentTags.has(field.key)
-              return (
-                <div key={field.key} className={missing ? "opacity-50" : undefined}>
-                  <label className="mb-1 block truncate text-sm" title={field.label}>
-                    {field.label}
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      value={simpleValues[field.key] ?? ""}
-                      onChange={(event) => setSimpleValues((prev) => ({ ...prev, [field.key]: event.target.value }))}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault()
-                          fillSimple(field)
-                        }
-                      }}
-                      placeholder={field.label}
-                      className="h-8"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      title="Заповнити"
-                      disabled={!(simpleValues[field.key] ?? "").trim() || missing}
-                      onClick={() => fillSimple(field)}
-                    >
-                      <ArrowLeftRight className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      title="Скинути"
-                      disabled={missing}
-                      onClick={() => resetSimple(field)}
-                    >
-                      <Eraser className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-      )}
-
-      {groups.length === 0 && simple.length === 0 && (
-        <p className="p-3 text-sm text-muted-foreground">У шаблона немає полів заповнення.</p>
-      )}
-    </aside>
+        {groups.length === 0 && simple.length === 0 && (
+          <p className="p-3 text-sm text-muted-foreground">
+            У шаблона немає полів заповнення.
+          </p>
+        )}
+      </aside>
+    </>
   )
 }

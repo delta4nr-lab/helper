@@ -2,9 +2,11 @@
 
 import * as React from "react"
 import { DocxEditor, useContentControl, useDocxEditor } from "@docx-editor.dev/react"
-import { Download, FileCheck2, Highlighter, Loader2, ScanText } from "lucide-react"
+import { Download, FileCheck2, Highlighter, Loader2, PanelRight, ScanText } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
+
+import { toast } from "sonner"
 
 import { FillPanel } from "@/components/documents/docx-editor/fill-panel"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
@@ -23,7 +25,9 @@ type WorkspaceProps = {
   personnel: EditorPersonnel[]
 }
 
-type ExportMessage = { ok: boolean; text: string }
+// Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
+// loading-тост замінюється success/error без накопичення повідомлень.
+const EXPORT_TOAST_ID = "docx-export"
 
 // Режим «лише заповнення»: каретка мусить жити лише всередині полів (content controls).
 // Рушій обмежує тільки Tab-навігацію, тому доповнюємо синхронною підпискою:
@@ -103,23 +107,33 @@ function PageSetupButton({ onOpen }: { onOpen: () => void }) {
   )
 }
 
+// Перемикач панелі заповнення: панель завжди змонтована, кнопка лише ховає/показує її.
+// За замовчуванням панель скрита — кнопка слугує точкою входу для заповнення полів.
+function FillPanelToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant={open ? "secondary" : "ghost"}
+      size="icon-sm"
+      onClick={onToggle}
+      title={open ? "Сховати панель заповнення" : "Показати панель заповнення"}
+      aria-pressed={open}
+    >
+      <PanelRight className="size-4" />
+    </Button>
+  )
+}
+
 // Експорт: editor.save() → збереження в історії на сервері → завантаження файлу.
-function ExportButton({
-  templateId,
-  title,
-  onMessage,
-}: {
-  templateId: string
-  title: string
-  onMessage: (message: ExportMessage) => void
-}) {
+// Хід операції — тостом: «Формування DOCX...» під час роботи, потім success/error.
+function ExportButton({ templateId, title }: { templateId: string; title: string }) {
   const editor = useDocxEditor()
   const [pending, setPending] = React.useState(false)
 
   async function handleExport() {
     if (!editor || pending) return
     setPending(true)
-    onMessage({ ok: true, text: "Формування DOCX..." })
+    toast.loading("Формування DOCX...", { id: EXPORT_TOAST_ID })
     try {
       const buffer = await editor.save()
       const form = new FormData()
@@ -130,10 +144,10 @@ function ExportButton({
       const response = await fetch("/api/exports", { method: "POST", body: form })
       const result = (await response.json()) as { message?: string; downloadUrl?: string }
       if (!response.ok) {
-        onMessage({ ok: false, text: result.message ?? "Не вдалося зберегти документ." })
+        toast.error(result.message ?? "Не вдалося зберегти документ.", { id: EXPORT_TOAST_ID })
         return
       }
-      onMessage({ ok: true, text: "DOCX збережено у вашому профілі. Завантаження розпочато." })
+      toast.success("DOCX збережено у вашому профілі. Завантаження розпочато.", { id: EXPORT_TOAST_ID })
       if (result.downloadUrl) {
         const link = window.document.createElement("a")
         link.href = result.downloadUrl
@@ -141,7 +155,7 @@ function ExportButton({
         link.click()
       }
     } catch {
-      onMessage({ ok: false, text: "Не вдалося підключитися до сервера. Спробуйте ще раз." })
+      toast.error("Не вдалося підключитися до сервера. Спробуйте ще раз.", { id: EXPORT_TOAST_ID })
     } finally {
       setPending(false)
     }
@@ -163,8 +177,8 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [docVersion, setDocVersion] = React.useState(0)
+  const [fillOpen, setFillOpen] = React.useState(false)
   const [pageSetupOpen, setPageSetupOpen] = React.useState(false)
-  const [message, setMessage] = React.useState<ExportMessage | null>(null)
   const { resolvedTheme } = useTheme()
 
   React.useEffect(() => {
@@ -212,20 +226,12 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
         <span className="mr-auto truncate text-sm font-semibold" title={title}>
           {title}
         </span>
+        <FillPanelToggle open={fillOpen} onToggle={() => setFillOpen((v) => !v)} />
         <HighlightToggle docVersion={docVersion} />
         <FormFillToggle />
         <PageSetupButton onOpen={() => setPageSetupOpen(true)} />
-        <ExportButton templateId={templateId} title={title} onMessage={setMessage} />
+        <ExportButton templateId={templateId} title={title} />
       </div>
-
-      {message && (
-        <div
-          className={`px-3 py-1.5 text-sm ${message.ok ? "text-muted-foreground" : "text-destructive"}`}
-          role="status"
-        >
-          {message.text}
-        </div>
-      )}
 
       {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
           Comments/EditingMode приховано: коментарі й правки — Pro, режим змін не використовується */}
@@ -239,10 +245,15 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
         <DocxEditor.Toolbar.ImageProperties hidden />
         <DocxEditor.Toolbar.ImageAltText hidden />
       </DocxEditor.Toolbar>
-      <DocxEditor.HorizontalRuler />
 
-        <div className="flex min-h-0 flex-1">
-          <div className="relative min-w-0 flex-1">
+      {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
+          батька, а відступи центрування бібліотека рахує від ширини viewport.
+          Якщо лишити її над рядком viewport+панель, при відкритій панелі
+          центри лінійки й сторінки роз'їжджаються на половину ширини панелі. */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <DocxEditor.HorizontalRuler />
+          <div className="relative min-h-0 flex-1">
             <DocxEditor.Viewport className="h-full">
               <DocxEditor.VerticalRuler />
               <DocxEditor.HeaderFooterChrome />
@@ -254,8 +265,9 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
             </DocxEditor.Viewport>
             <DocxEditor.Loading overlay />
           </div>
-          <FillPanel fields={fields} personnel={personnel} docVersion={docVersion} />
         </div>
+        <FillPanel open={fillOpen} fields={fields} personnel={personnel} docVersion={docVersion} />
+      </div>
       </div>
 
       <DocxEditor.PageSetupDialog open={pageSetupOpen} onClose={() => setPageSetupOpen(false)} />

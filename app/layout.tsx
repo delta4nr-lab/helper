@@ -4,6 +4,7 @@ import { Geist_Mono, Roboto } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/components/auth/auth-provider"
+import { Toaster } from "@/components/ui/sonner"
 import { cn } from "@/lib/utils"
 
 const roboto = Roboto({
@@ -60,7 +61,10 @@ export default function RootLayout({
     >
       <body>
         <AuthProvider>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            {children}
+            <Toaster />
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>
