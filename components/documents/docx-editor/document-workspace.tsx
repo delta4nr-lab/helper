@@ -10,6 +10,7 @@ import "@docx-editor.dev/core/styles/editor.css"
 import { toast } from "sonner"
 
 import { FillPanel } from "@/components/documents/docx-editor/fill-panel"
+import { ImageInsertDialog } from "@/components/documents/docx-editor/image-insert-dialog"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 import { uk } from "@/lib/docx-editor/uk"
@@ -166,6 +167,48 @@ function InsertLinkRow() {
 
 const InsertLinkMenuRow = Object.assign(InsertLinkRow, { docxRow: "text.link" })
 
+// Іконка «зображення» з публічного реєстру chrome (Material Symbols path-дані).
+const IMAGE_ICON_PATHS =
+  CHROME_GROUPS.find((group) => group.id === "image")?.controls.find((control) => control.id === "insert")
+    ?.paths ?? null
+
+// Закрити відкриту панель меню-бара: синтетичний Escape — панель бібліотеки
+// сама обробляє його (закриття + повернення фокуса на тригер).
+function closeOpenMenubarMenu() {
+  document
+    .querySelector(".docx-menubar__menu")
+    ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+}
+
+// Рядок «Зображення» в меню «Вставити»: пакетний відкриває локальний file picker
+// і вбудовує файл безпосередньо. Наш замінює його (статик docxSlot — ключ
+// заміни в preset) на діалог із табами «Завантаження» (файл на сервер,
+// у бібліотеку користувача) і «Бібліотека» (вибір раніше завантажених).
+function InsertImageRow({ onOpen }: { onOpen: () => void }) {
+  return (
+    <DocxEditor.Menu.Row
+      slot="image.insert"
+      icon={
+        IMAGE_ICON_PATHS ? (
+          <svg viewBox="0 -960 960 960" width={16} height={16} aria-hidden="true" focusable="false">
+            {IMAGE_ICON_PATHS.map((d, i) => (
+              <path key={i} d={d} fill="currentColor" />
+            ))}
+          </svg>
+        ) : undefined
+      }
+      onSelect={() => {
+        closeOpenMenubarMenu()
+        onOpen()
+      }}
+    >
+      Зображення
+    </DocxEditor.Menu.Row>
+  )
+}
+
+const InsertImageMenuRow = Object.assign(InsertImageRow, { docxSlot: "image.insert" })
+
 // Експорт: editor.save() → збереження в історії на сервері → завантаження файлу.
 // Хід операції — тостом: «Формування DOCX...» під час роботи, потім success/error.
 function ExportButton({ templateId, title }: { templateId: string; title: string }) {
@@ -221,6 +264,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
   const [docVersion, setDocVersion] = React.useState(0)
   const [fillOpen, setFillOpen] = React.useState(false)
   const [pageSetupOpen, setPageSetupOpen] = React.useState(false)
+  const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
   const { resolvedTheme } = useTheme()
 
   React.useEffect(() => {
@@ -283,6 +327,11 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       <DocxEditor.Menu>
         <DocxEditor.Menu.Review hidden />
         <DocxEditor.Menu.Help hidden />
+        {/* Зображення: діалог із табами «Завантаження» (файл на сервер) і
+            «Бібліотека» (вибір раніше завантажених), замість пакетного file picker */}
+        <DocxEditor.Menu.Insert>
+          <InsertImageMenuRow onOpen={() => setImageDialogOpen(true)} />
+        </DocxEditor.Menu.Insert>
       </DocxEditor.Menu>
 
       <DocxEditor.Toolbar>
@@ -324,6 +373,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
       </div>
 
       <DocxEditor.PageSetupDialog open={pageSetupOpen} onClose={() => setPageSetupOpen(false)} />
+      <ImageInsertDialog open={imageDialogOpen} onOpenChange={setImageDialogOpen} />
       </LocaleProvider>
     </DocxEditor.Root>
   )

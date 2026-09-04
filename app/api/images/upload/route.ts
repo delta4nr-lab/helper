@@ -6,7 +6,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { orm, nowTimestamp } from "@/lib/db"
 
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"])
+const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
 const MAX_SIZE = 10 * 1024 * 1024 // 10 МБ
 
 // Визначення розмірів зображення (px) без завантаження сторонніх бібліотек.
@@ -64,14 +64,14 @@ export async function POST(request: Request) {
   if (!(file instanceof File)) return NextResponse.json({ message: "Файл не отримано" }, { status: 400 })
 
   if (!ALLOWED_MIME.has(file.type)) {
-    return NextResponse.json({ message: "Дозволені лише JPG, PNG, WEBP." }, { status: 400 })
+    return NextResponse.json({ message: "Дозволені лише JPG, PNG, GIF, WEBP." }, { status: 400 })
   }
   if (file.size > MAX_SIZE) {
     return NextResponse.json({ message: "Файл завеликий (максимум 10 МБ)." }, { status: 400 })
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const ext = file.type === "image/jpeg" ? "jpg" : file.type === "image/png" ? "png" : "webp"
+  const ext = file.type === "image/jpeg" ? "jpg" : file.type === "image/png" ? "png" : file.type === "image/gif" ? "gif" : "webp"
   const filename = `${randomUUID()}.${ext}`
   const dir = path.join(process.cwd(), "public", "uploads", "users", userId, "images")
   await mkdir(dir, { recursive: true })
