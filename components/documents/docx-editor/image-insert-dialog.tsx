@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { normalizeImageBytes, useDocxEditor } from "@docx-editor.dev/react"
-import { ImagePlus, Loader2, Search } from "lucide-react"
+import { Loader2, RefreshCw, Search, Upload } from "lucide-react"
 import { toast } from "sonner"
 
 import { uk } from "@/lib/docx-editor/uk"
@@ -31,7 +31,20 @@ type UserImage = {
 const PAGE_SIZE = 24
 // Формати, які редактор гарантовано вбудовує в DOCX (як і пакетний file picker)
 const ACCEPT = "image/png,image/jpeg,image/gif"
+const ACCEPT_TYPES = new Set(ACCEPT.split(","))
+const MAX_SIZE = 10 * 1024 * 1024 // 10 МБ — узгоджено з лімітом /api/images/upload
 const LIST_ERROR = "Не вдалося завантажити бібліотеку зображень."
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
+  return `${Math.max(1, Math.round(bytes / 1024))} КБ`
+}
+
+function validateImageFile(file: File): string | null {
+  if (!ACCEPT_TYPES.has(file.type)) return "Підтримуються лише зображення PNG, JPEG або GIF."
+  if (file.size > MAX_SIZE) return "Файл завеликий — максимум 10 МБ."
+  return null
+}
 
 function insertErrorText(reasonKey: string): string {
   const key = reasonKey.split(".").pop() ?? ""
@@ -39,6 +52,7 @@ function insertErrorText(reasonKey: string): string {
 }
 
 type EditorInstance = NonNullable<ReturnType<typeof useDocxEditor>>
+type UploadedImage = UserImage & { size: number }
 
 // Рушій звіряє розміри заголовка JPEG з декодованими пікселями: знімки з
 // EXIF-орієнтацією 5-8 (телефонні фото) декодуються браузером повернутими —
@@ -193,8 +207,11 @@ export function ImageInsertDialog({
 }) {
   const editor = useDocxEditor()
   const [activeTab, setActiveTab] = React.useState<"upload" | "library">("upload")
-  const [uploaded, setUploaded] = React.useState<UserImage | null>(null)
+  const [uploaded, setUploaded] = React.useState<UploadedImage | null>(null)
   const [uploading, setUploading] = React.useState(false)
+  // DnD: лічильник dragenter/dragleave — вкладені елементи зони не ламають стан
+  const [isDragging, setIsDragging] = React.useState(false)
+  const dragCounter = React.useRef(0)
   const [images, setImages] = React.useState<UserImage[]>([])
   const [total, setTotal] = React.useState(0)
   const [page, setPage] = React.useState(1)
@@ -242,6 +259,8 @@ export function ImageInsertDialog({
     if (next) return
     setActiveTab("upload")
     setUploaded(null)
+    setIsDragging(false)
+    dragCounter.current = 0
     setImages([])
     setTotal(0)
     setPage(1)
@@ -250,6 +269,53 @@ export function ImageInsertDialog({
     setSelectedId(null)
     setBrokenIds(new Set())
     setLoadedKey(null)
+  }
+
+  // Вибір файлу (клац по зоні, кнопка «Змінити файл» або drop): валідація типу
+  // й розміру до відправлення на сервер, некоректний файл не приймається
+  async function handleFile(file: File | undefined) {
+    if (!file || uploading) return
+    const error = validateImageFile(file)
+    if (error) {
+      toast.error(error)
+      return
+    }
+    setUploading(true)
+    const image = await uploadImageFile(file)
+    setUploading(false)
+    if (image) {
+      setUploaded({ ...image, size: file.size })
+      toast.success("Зображення завантажено в бібліотеку.")
+    }
+  }
+
+  function handleDragEnter(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    dragCounter.current += 1
+    setIsDragging(true)
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    // Без preventDefault браузер не дозволить drop
+    event.preventDefault()
+    event.stopPropagation()
+    setIsDragging(true)
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    dragCounter.current = Math.max(0, dragCounter.current - 1)
+    if (dragCounter.current === 0) setIsDragging(false)
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    dragCounter.current = 0
+    setIsDragging(false)
+    void handleFile(event.dataTransfer.files?.[0])
   }
 
   async function handleInsert() {
@@ -271,7 +337,12 @@ export function ImageInsertDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent
+        className="sm:max-w-xl"
+        // Випадковий drop поза зоною не має відкривати файл у браузері
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Вставити зображення</DialogTitle>
           <DialogDescription>
@@ -283,9 +354,13 @@ export function ImageInsertDialog({
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as "upload" | "library")}
         >
-          <TabsList className="w-full">
-            <TabsTrigger value="upload">Завантаження</TabsTrigger>
-            <TabsTrigger value="library">Бібліотека</TabsTrigger>
+          <TabsList variant="line" className="w-full">
+            <TabsTrigger value="upload" className="flex-1">
+              Завантаження
+            </TabsTrigger>
+            <TabsTrigger value="library" className="flex-1">
+              Бібліотека
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="upload">
@@ -297,24 +372,69 @@ export function ImageInsertDialog({
                   alt={uploaded.originalFilename}
                   className="mx-auto max-h-48 rounded bg-muted object-contain"
                 />
-                <div className="mt-2 truncate text-sm" title={uploaded.originalFilename}>
-                  {uploaded.originalFilename}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {uploaded.width}×{uploaded.height} px
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm" title={uploaded.originalFilename}>
+                      {uploaded.originalFilename}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatFileSize(uploaded.size)} · {uploaded.width}×{uploaded.height} px
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                  >
+                    <RefreshCw className="size-4" />
+                    Змінити файл
+                  </Button>
                 </div>
               </div>
             ) : (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex min-h-44 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted/50"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    fileInputRef.current?.click()
+                  }
+                }}
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={cn(
+                  "flex min-h-44 w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed text-muted-foreground transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  isDragging
+                    ? "border-primary bg-primary/5 text-foreground"
+                    : "border-border hover:border-primary/50 hover:bg-muted/50",
+                  uploading && "pointer-events-none opacity-60"
+                )}
               >
-                {uploading ? <Loader2 className="size-6 animate-spin" /> : <ImagePlus className="size-6" />}
-                <span className="text-sm">{uploading ? "Завантаження..." : "Обрати файл"}</span>
-                <span className="text-xs">PNG, JPEG або GIF, до 10 МБ</span>
-              </button>
+                {uploading ? (
+                  <Loader2 className="size-6 animate-spin" />
+                ) : (
+                  <Upload
+                    className={cn(
+                      "size-6 transition-transform",
+                      isDragging && "scale-110 text-primary"
+                    )}
+                  />
+                )}
+                <span className="text-sm font-medium">
+                  {uploading
+                    ? "Завантаження..."
+                    : isDragging
+                      ? "Відпустіть файл тут"
+                      : "Перетягніть зображення сюди"}
+                </span>
+                <span className="text-xs">або клацніть, щоб обрати файл · PNG, JPEG, GIF, до 10 МБ</span>
+              </div>
             )}
           </TabsContent>
 
@@ -348,29 +468,29 @@ export function ImageInsertDialog({
                       type="button"
                       onClick={() => setSelectedId(image.id)}
                       onDoubleClick={() => void handleInsert()}
-                  className={cn(
-                    "rounded-lg border p-1.5 text-left transition-colors",
-                    selectedId === image.id
-                      ? "border-primary ring-1 ring-primary"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
-                  {brokenIds.has(image.id) ? (
-                    <div className="flex h-20 w-full items-center justify-center rounded bg-muted px-1 text-center text-[10px] text-muted-foreground">
-                      Файл відсутній
-                    </div>
-                  ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img
-                      src={image.path}
-                      alt={image.originalFilename}
-                      className="h-20 w-full rounded bg-muted object-contain"
-                      loading="lazy"
-                      onError={() =>
-                        setBrokenIds((prev) => new Set(prev).add(image.id))
-                      }
-                    />
-                  )}
+                      className={cn(
+                        "rounded-lg border p-1.5 text-left transition-colors",
+                        selectedId === image.id
+                          ? "border-primary ring-1 ring-primary"
+                          : "border-border hover:border-primary/50"
+                      )}
+                    >
+                      {brokenIds.has(image.id) ? (
+                        <div className="flex h-20 w-full items-center justify-center rounded bg-muted px-1 text-center text-[10px] text-muted-foreground">
+                          Файл відсутній
+                        </div>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={image.path}
+                          alt={image.originalFilename}
+                          className="h-20 w-full rounded bg-muted object-contain"
+                          loading="lazy"
+                          onError={() =>
+                            setBrokenIds((prev) => new Set(prev).add(image.id))
+                          }
+                        />
+                      )}
                       <span
                         className="mt-1 block truncate text-xs text-muted-foreground"
                         title={image.originalFilename}
@@ -417,14 +537,7 @@ export function ImageInsertDialog({
           accept={ACCEPT}
           className="hidden"
           onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file) {
-              setUploading(true)
-              void uploadImageFile(file).then((image) => {
-                if (image) setUploaded(image)
-                setUploading(false)
-              })
-            }
+            void handleFile(event.target.files?.[0])
             event.target.value = ""
           }}
         />
