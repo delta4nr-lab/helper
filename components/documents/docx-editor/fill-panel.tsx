@@ -160,9 +160,13 @@ export function FillPanel({
   const [simpleValues, setSimpleValues] = React.useState<
     Record<string, string>
   >({})
-  // Активні підписи: tag → id плаваючого drawing. Слухач change нижче повертає
-  // назву полю, коли картинка підпису зникла.
-  const sigMarkers = React.useRef<Map<string, { drawingId: string }>>(new Map())
+  // Активні підписи: tag → { drawingId, anchorParaId } — абзац-якір потрібен,
+  // щоб наступні підписи не вставлялись у той самий абзац (каретка там
+  // резолвиться у ран drawing, і рушій відмовляє другу вставку). Слухач change
+  // нижче повертає назву полю, коли картинка підпису зникла.
+  const sigMarkers = React.useRef<
+    Map<string, { drawingId: string; anchorParaId: string }>
+  >(new Map())
   // Останній етап відмови вставки підписа (тимчасова діагностика для тоста)
   const sigStageRef = React.useRef<string | null>(null)
 
@@ -525,17 +529,19 @@ export function FillPanel({
 
   // Підпис: зображення з картки персоналії → плаваючий шар «перед текстом»
   // (фіксований розмір, не ростить рядок) зі сторінковою позицією «зліва від
-  // ПІБ». Якір — найпізніший абзац документа, каретка якого НЕ всередині
-  // контрола: рендер не малює anchored-картинки з якорем усередині SDT
-  // (табличного комірки тим більше). Контрол поля при цьому НЕ чіпаємо
-  // структурно (тег/назва лишаються в DOCX): назва ховається на час
-  // заповненості і повертається, коли картинку видалили (слухач change).
+  // ПІБ». Якор — абзац САМОГО поля підпису (chrome → closest абзац: гарантовано
+  // матеріалізований у paint-шарі), вставка через surface-lane з явним
+  // paragraphId/offset — у кінець абзаца, ПОСЛЕ SDT (поза контролем). Для
+  // полів усередині таблиці — старий caret-шлях (якор поза таблицею). Контрол
+  // поля структурно НЕ чіпаємо (тег/назва лишаються в DOCX): назва ховається
+  // на час заповненості і повертається, коли картинку видалили (слухач change).
   async function fillSignature(
     key: string,
     person: EditorPersonnel
   ): Promise<boolean> {
-    const surface = editor?.surface
-    if (!surface || !person.signaturePath) return failStage("no-path")
+    if (!editor) return failStage("no-editor")
+    const surface = editor.surface
+    if (!person.signaturePath || !surface) return failStage("no-path")
     // Тимчасова діагностика етапів (знімається після підтвердження фіксу)
     sigStageRef.current = null
     function failStage(stage: string): false {
@@ -549,6 +555,38 @@ export function FillPanel({
     })[0]?.id
     if (!controlId) return failStage("no-control")
 
+    // Абзац-якор: лише МАТЕРІАЛІЗОВАНІ абзаци. Paint-віртуалізація малює
+    // сторінки біля viewport'а — anchored-картинка з якорем на
+    // невітертуалізованій сторінці не малюється взагалі (drawingAny: false).
+    // Сторінка поля підпису гарантовано матеріалізована (хром там), тож
+    // кандидати — абзаци САМОЇ СТОРІНКИ поля: painted-DOM сторінки → текст
+    // → модельний paraId. Порядок DOM = порядок документа.
+    const paragraphs = [...editor.query({ type: "paragraphs" })]
+    const sigChrome = document.querySelector<HTMLElement>(
+      `.docx-content-control-chrome[data-tag="${key}"]`
+    )
+    const pageEl =
+      sigChrome?.closest<HTMLElement>(".docx-editor-page") ??
+      sigChrome?.closest<HTMLElement>("[class*='docx-page']")
+    const byText = new Map<string, string[]>()
+    for (const p of paragraphs) {
+      if (!p.paraId) continue
+      const normalizedText = p.text.trim()
+      if (!normalizedText) continue
+      const list = byText.get(normalizedText) ?? []
+      list.push(p.paraId)
+      byText.set(normalizedText, list)
+    }
+    const pageCandidates: string[] = []
+    if (pageEl) {
+      for (const el of pageEl.querySelectorAll<HTMLElement>("[data-paragraph-id]")) {
+        const text = (el.textContent ?? "").trim()
+        if (!text) continue
+        for (const paraId of byText.get(text) ?? []) pageCandidates.push(paraId)
+      }
+    }
+    let anchorParaId: string | null = null
+
     const response = await fetch(person.signaturePath)
     if (!response.ok) return failStage(`fetch-failed:${response.status}`)
     const normalized = normalizeImageBytes(
@@ -559,6 +597,7 @@ export function FillPanel({
     bounceSuspend.begin()
     let ok = false
     let drawingId: string | null = null
+    let currentId = ""
     try {
       // Попередній плаваючий підпис поля прибираємо за id (без виділення)
       const previous = sigMarkers.current.get(key)
@@ -620,17 +659,15 @@ export function FillPanel({
         return failStage(`no-geometry:${missing}`)
       }
 
-      // Якір: найпізніший абзац, каретка якого після setSelection НЕ всередині
-      // контрола (рендер не малює anchored-картинки з якорем усередині SDT —
-      // підпис останнім контентом документа раніше вкладався у власний контрол
-      // і не малювався). Кандидати з кінця документа: статус-кво (останній
-      // абзац) — перший, табличний випадок працює як раніше.
-      const paragraphs = [...editor.query({ type: "paragraphs" })].filter(
-        (p): p is typeof p & { paraId: string } => Boolean(p.paraId)
+      // Якор: матеріалізовані абзаци сторінки поля підпису (з кінця назад,
+      // скіпаючи вже зайняті підписами — каретка в них резолвиться у ран
+      // drawing і рушій відмовляє вставку). Тест — каретка поза контролем.
+      const takenAnchors = new Set(
+        [...sigMarkers.current.values()].map((info) => info.anchorParaId)
       )
-      let anchorParaId: string | null = null
-      for (let i = paragraphs.length - 1; i >= 0; i--) {
-        const candidate = paragraphs[i].paraId
+      for (let i = pageCandidates.length - 1; i >= 0; i--) {
+        const candidate = pageCandidates[i]
+        if (takenAnchors.has(candidate)) continue
         if (!editor.exec({ type: "setSelection", anchor: { paraId: candidate } }).ok)
           continue
         if (!editor.query({ type: "contentControlAt" })) {
@@ -639,24 +676,27 @@ export function FillPanel({
         }
       }
       if (!anchorParaId) {
-        // Чистих абзаців нема — статус-кво: останній абзац документа
-        anchorParaId = paragraphs.at(-1)?.paraId ?? null
-        if (!anchorParaId) return failStage("no-anchor")
-        if (
-          !editor.exec({ type: "setSelection", anchor: { paraId: anchorParaId } })
-            .ok
-        )
-          return failStage("no-anchor")
+        // Фолбек: глобальний walk по всіх модельних абзацах (табличний
+        // випадок: на сторінці поля чистих абзаців може не бути)
+        for (let i = paragraphs.length - 1; i >= 0; i--) {
+          const candidate = paragraphs[i].paraId
+          if (!candidate || takenAnchors.has(candidate)) continue
+          if (!editor.exec({ type: "setSelection", anchor: { paraId: candidate } }).ok)
+            continue
+          if (!editor.query({ type: "contentControlAt" })) {
+            anchorParaId = candidate
+            break
+          }
+        }
       }
+      if (!anchorParaId) return failStage("no-anchor")
 
-      // Знімок id наявних drawing — ДО мутацій: нова картинка може відрендеритись
-      // синхронно, і пізніший знімок включив би її в «старі».
-      const knownIds = new Set(
+      // Знімок id наявних drawing — ДО вставки (для пошуку нової у DOM-дифі)
+      const knownIdsPre = new Set(
         [
           ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
         ].map((el) => el.getAttribute("data-drawing-node-id") ?? "")
       )
-
       // Вставка з повторами: одразу після видалення попереднього підписа рушій
       // може відмовити першу спробу (незавершений коміт видалення) — коротка
       // пауза і повтор дають стабільний результат
@@ -666,8 +706,7 @@ export function FillPanel({
         mime: normalized.mime,
         // Повний розмір одразу: a:ext фігури серіалізується з розміру вставки
         // (resizeDrawing оновлює тільки wp:extent — Word рендерить за a:ext і
-        // виходив вдвічі менший підпис). Каретка в останньому абзаці — комірка
-        // не стискає вставку.
+        // виходив вдвічі менший підпис).
         widthPoints: Math.max(
           24,
           Math.round(
@@ -682,7 +721,10 @@ export function FillPanel({
         await new Promise((resolve) => setTimeout(resolve, 120))
         result = await editor.executeImageCommand(insertCommand)
       }
-      if (!result.ok) return failStage("insert-failed")
+      if (!result.ok) {
+        console.warn("[Signature] insert refused:", result.code, result.reason)
+        return failStage("insert-failed")
+      }
 
       // Id вставленого drawing: виділення або короткий DOM-диф (виділення
       // буває скинутим, якщо перед вставкою щось змінило модель)
@@ -693,13 +735,20 @@ export function FillPanel({
           editor.getSelectedImage()?.id ??
           [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
             .map((el) => el.getAttribute("data-drawing-node-id"))
-            .find((id) => id && !knownIds.has(id)) ??
+            .find((id) => id && !knownIdsPre.has(id)) ??
           null
       }
       if (!drawingId) return failStage("no-drawing-id")
-      // Актуальний id (wrap-конвертація може його змінити); зовнішній drawingId
-      // лишається для прибирання у finally
-      let currentId: string = drawingId
+      currentId = drawingId
+
+      if (!currentId || !anchorParaId) return failStage("insert-failed")
+      // id наявних drawing КРІМ нашої: після wrap конвертація може змінити
+      // id вузла — новий id шукаємо серед «не відомих»
+      const knownIds = new Set(
+        [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+          .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
+          .filter((id) => id !== currentId)
+      )
 
       // «Перед текстом» — окремий комміт ДО resize: конвертація inline → anchored
       // перезаписує внутрішній a:ext картинки, і resize в тому ж комміті втрачається
@@ -707,7 +756,10 @@ export function FillPanel({
       const wrapped = surface.applyDrawingOps([
         { op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" },
       ])
-      if (!wrapped.committed) return failStage("wrap-failed")
+      if (!wrapped.committed || wrapped.rejected) {
+        console.warn("[Signature] wrap refused:", wrapped.rejected, wrapped.reason, { opCount: wrapped.opCount })
+        return failStage("wrap-failed")
+      }
       // Конвертація може змінити id вузла — перезнаходимо після wrap
       const freshId = [
         ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
@@ -719,13 +771,10 @@ export function FillPanel({
         currentId = freshId
       }
 
-      // Позиція «зліва від ПІБ». Горизонталь — сторінково (поля сторінки від
-      // шрифтів не залежать, дрейфу немає). Вертикаль — від якірного абзацу
-      // (останній абзац одразу під таблицею): відстань до рядка підпису залежить
-      // лише від нижньої частини таблиці, а не від усього вмісту вище — дрейф
-      // між рендерерами (шрифти редактора ≠ Times New Roman у Word) падає з
-      // 5-10 мм до часток міліметра. Рендер може відсіяти від'ємний
-      // paragraph-офсет — тоді fallback на сторінкову позицію (статус-кво).
+      // Позиція «зліва від ПІБ». Горизонталь — завжди сторінково (поля сторінки
+      // від шрифтів не залежать). Вертикаль: сторінкова база — ОСНОВНА
+      // (однозначна система координат, не залежить від відстані до якоря),
+      // paragraph-фолбек другим (точніша вертикаль в експорті Word).
       const pageXEmu = Math.max(
         0,
         Math.round(
@@ -754,6 +803,29 @@ export function FillPanel({
         const anchorTop = Math.min(...anchorTops)
         paragraphYEmu = Math.round((imageTopPx - anchorTop) * 9525)
       }
+
+      // Тимчасова діагностика: прямокутники живих підписів і ціль №N
+      // (перевірка перекриття плаваючих картинок)
+      for (const [markerTag, markerInfo] of sigMarkers.current) {
+        const markerEl = document.querySelector<HTMLElement>(
+          `[data-drawing-node-id="${markerInfo.drawingId}"]`
+        )
+        const rect = markerEl?.getBoundingClientRect()
+        console.warn("[Signature] existing:", markerTag, {
+          drawingId: markerInfo.drawingId,
+          top: rect?.top ?? null,
+          bottom: rect?.bottom ?? null,
+          left: rect?.left ?? null,
+          inDom: Boolean(markerEl),
+        })
+      }
+      console.warn("[Signature] target:", {
+        currentId,
+        pageXEmu,
+        pageYEmu,
+        paragraphYEmu,
+        anchorParaId,
+      })
 
       const positionOnce = (
         verticalEmu: number,
@@ -792,6 +864,19 @@ export function FillPanel({
             return true
           await new Promise((resolve) => setTimeout(resolve, 60))
         }
+        // Тимчасова діагностика: чому рендер не малює — віртуалізація якоря?
+        const anchorInDom = Boolean(
+          document.querySelector(`[data-paragraph-id="${anchorParaId}"]`)
+        )
+        const drawingAny = Boolean(
+          document.querySelector(`[data-drawing-node-id="${currentId}"]`)
+        )
+        console.warn("[Signature] not rendered:", {
+          currentId,
+          anchorParaId,
+          anchorInDom,
+          drawingAny,
+        })
         return false
       }
       const tryPosition = async (
@@ -802,26 +887,40 @@ export function FillPanel({
         for (let attempt = 0; attempt < attempts; attempt++) {
           const applied = positionOnce(verticalEmu, relativeToV)
           refreshId()
-          if (!applied.committed) {
-            await new Promise((resolve) => setTimeout(resolve, 120))
+          if (!applied.committed || applied.rejected) {
+            // Тимчасова діагностика: рушій сам каже причину відмови
+            console.warn("[Signature] position refused:", {
+              reason: applied.reason ?? null,
+              committed: applied.committed,
+              rejected: applied.rejected,
+              opCount: applied.opCount,
+              relativeToV,
+              verticalEmu,
+              currentId,
+            })
+            await new Promise((resolve) => setTimeout(resolve, 250))
             continue
           }
-          // Закомітилось, але рендер відсіяв (кулювання) — міняємо базу одразу
-          return await confirmRendered()
+          if (await confirmRendered()) return true
+          // Закомітилось, але рендер відсіяв (кулювання)
+          console.warn("[Signature] committed but not rendered:", {
+            currentId,
+            relativeToV,
+            verticalEmu,
+          })
         }
         return false
       }
 
-      let positioned =
-        paragraphYEmu !== null
-          ? await tryPosition(paragraphYEmu, "paragraph", 4)
-          : false
-      if (!positioned) positioned = await tryPosition(pageYEmu, "page", 6)
+      let positioned = await tryPosition(pageYEmu, "page", 6)
+      if (!positioned && paragraphYEmu !== null) {
+        positioned = await tryPosition(paragraphYEmu, "paragraph", 4)
+      }
       if (!positioned) return failStage("not-positioned")
 
       // Ховаємо назву поля («Підпис») — картинка її замінила
       surface.contentControls.setValue(controlId, "")
-      sigMarkers.current.set(key, { drawingId: currentId })
+      sigMarkers.current.set(key, { drawingId: currentId, anchorParaId })
       ok = true
       return true
     } finally {
