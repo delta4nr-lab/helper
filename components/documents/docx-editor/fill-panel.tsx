@@ -15,6 +15,12 @@ import {
   type PersonPickerItem,
 } from "@/components/documents/person-picker"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
+import {
+  FIELD_CATALOGS,
+  getNumberedFieldTitle,
+  getStaffTag,
+  parseStaffTag,
+} from "@/components/documents/docx-editor/field-catalogs"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 import type { CourseRecordData } from "@/lib/courses/types"
 
@@ -28,6 +34,15 @@ const PERSON_FIELD_TYPES = new Set(["person", "position", "rank", "signature"])
 
 // Висота підпису в документі, pt (≈ 4em при 14pt шрифті).
 const SIGNATURE_HEIGHT_PT = 54
+
+// Поля персоналу нової схеми тегів staff.{index}.{field}: назви — з довідника
+// (без дублювання), перелік — для циклів заповнення/скидання групи.
+const STAFF_FIELD_LABELS: Record<string, string> = Object.fromEntries(
+  (FIELD_CATALOGS.find((catalog) => catalog.id === "personnel")?.fields ?? []).map(
+    (field) => [field.id, field.label]
+  )
+)
+const STAFF_FIELDS = ["fullName", "position", "rank", "signature"] as const
 
 function fullName(person: EditorPersonnel): string {
   return [person.lastName, person.firstName, person.middleName]
@@ -101,6 +116,26 @@ export function FillPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docVersion])
 
+  // Групи полів персоналу нової схеми (tag = staff.{index}.{field}): розбір
+  // тегів контролів документа → групування за індексом людини. Відсутні в
+  // документі поля просто не потрапляють у групу.
+  const staffGroups = React.useMemo(() => {
+    const byIndex = new Map<number, Record<string, string>>()
+    for (const tag of presentTags) {
+      const parsed = parseStaffTag(tag)
+      if (!parsed) continue
+      let tags = byIndex.get(parsed.index)
+      if (!tags) {
+        tags = {}
+        byIndex.set(parsed.index, tags)
+      }
+      tags[parsed.field] = tag
+    }
+    return [...byIndex.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([index, tags]) => ({ index, tags }))
+  }, [presentTags])
+
   // Віртуальні групи для hover-quickPick нових чіпів (course:*/staff:*):
   // у aside НЕ рендеряться, живуть тільки для personGroupAt + quickPick.
   const hasKursantChips = React.useMemo(
@@ -120,6 +155,8 @@ export function FillPanel({
 
   const [openPickerId, setOpenPickerId] = React.useState<string | null>(null)
   const [selected, setSelected] = React.useState<Record<string, string>>({})
+  // Обрані особи для груп staff.{index}.* (ключ — індекс людини)
+  const [staffSelected, setStaffSelected] = React.useState<Record<number, string>>({})
   const [simpleValues, setSimpleValues] = React.useState<
     Record<string, string>
   >({})
@@ -306,7 +343,8 @@ export function FillPanel({
   // редагуванням. Приховування з затримкою 200 мс — курсор встигає дійти до
   // кнопки; відкритий список тримає кнопку.
   const [quickPick, setQuickPick] = React.useState<{
-    group: PersonGroup
+    group: PersonGroup | null
+    staffIndex: number | null
     tag: string
     left: number
     top: number
@@ -350,6 +388,7 @@ export function FillPanel({
             group:
               groups.find((g) => g.fields.some((f) => f.key === field.key)) ??
               null,
+            staffIndex: null,
             tag: field.key,
           }
         }
@@ -368,7 +407,7 @@ export function FillPanel({
           y <= rect.bottom
         ) {
           const courseGroup = groups.find((g) => g.id === "course-fill")
-          if (courseGroup) return { group: courseGroup, tag: "course:" }
+          if (courseGroup) return { group: courseGroup, staffIndex: null, tag: "course:" }
         }
       }
       // Персональні чіпи (tag = staff:<роль>)
@@ -385,7 +424,26 @@ export function FillPanel({
           y <= rect.bottom
         ) {
           const staffGroup = groups.find((g) => g.id === "staff-fill")
-          if (staffGroup) return { group: staffGroup, tag: "staff:" }
+          if (staffGroup) return { group: staffGroup, staffIndex: null, tag: "staff:" }
+        }
+      }
+      // Поля персоналу нової схеми (tag = staff.{index}.{field}): наведення на
+      // будь-яке поле людини відкриває швидкий вибір для її групи
+      for (const group of staffGroups) {
+        for (const tag of Object.values(group.tags)) {
+          const boundary = document.querySelector<HTMLElement>(
+            `.docx-content-control-chrome[data-tag="${tag}"] .docx-content-control-boundary`
+          )
+          const rect = boundary?.getBoundingClientRect()
+          if (!rect || rect.width === 0) continue
+          if (
+            x >= rect.left &&
+            x <= rect.right &&
+            y >= rect.top &&
+            y <= rect.bottom
+          ) {
+            return { group: null, staffIndex: group.index, tag }
+          }
         }
       }
       return null
@@ -393,7 +451,7 @@ export function FillPanel({
     const onPointerOver = (event: PointerEvent) => {
       if (bounceSuspend.active) return
       const found = personGroupAt(event.clientX, event.clientY)
-      if (!found?.group || !found.tag) return
+      if (!found || !found.tag) return
       clearHideTimer()
       const isPrefixTag = found.tag === "course:" || found.tag === "staff:"
       const rect = document
@@ -404,10 +462,20 @@ export function FillPanel({
         )
         ?.getBoundingClientRect()
       if (!rect || rect.width === 0) return
+      const sameGroup =
+        (prev: typeof quickPick) =>
+        (prev?.staffIndex ?? null) === found.staffIndex &&
+        (prev?.group?.id ?? null) === (found.group?.id ?? null)
       setQuickPick((prev) =>
-        prev?.group.id === found.group!.id
+        sameGroup(prev)
           ? prev
-          : { group: found.group!, tag: found.tag, left: rect.right + 6, top: rect.top }
+          : {
+              group: found.group,
+              staffIndex: found.staffIndex,
+              tag: found.tag,
+              left: rect.right + 6,
+              top: rect.top,
+            }
       )
     }
     const onPointerOut = (event: PointerEvent) => {
@@ -421,7 +489,7 @@ export function FillPanel({
       document.removeEventListener("pointerout", onPointerOut, true)
       clearHideTimer()
     }
-  }, [editor, fields, groups, quickPickOpen, scheduleHide, clearHideTimer])
+  }, [editor, fields, groups, staffGroups, quickPickOpen, scheduleHide, clearHideTimer])
 
   React.useEffect(() => {
     if (!quickPick) return
@@ -431,7 +499,7 @@ export function FillPanel({
     const reposition = () => {
       const tag =
         quickPick.tag ||
-        quickPick.group.fields.find((f) => f.type === "person")?.key
+        quickPick.group?.fields.find((f) => f.type === "person")?.key
       if (!tag) return
       const isPrefixTag = tag === "course:" || tag === "staff:"
       const rect = document
@@ -491,7 +559,12 @@ export function FillPanel({
       // невдачі в будь-якому разі повертають контрол до порожнього стану
       surface.contentControls.setValue(controlId, " ")
 
-      const personKey = key.replace(/^signature/, "person")
+      // Поле ПІБ групи для позиції «зліва від ПІБ»: нова схема
+      // staff.{i}.signature → staff.{i}.fullName; legacy — signature → person.
+      const parsedStaff = parseStaffTag(key)
+      const personKey = parsedStaff
+        ? getStaffTag(parsedStaff.index, "fullName")
+        : key.replace(/^signature/, "person")
       const heightEmu = Math.round(SIGNATURE_HEIGHT_PT * 12700)
       const widthEmu = Math.round(
         (normalized.widthPoints / normalized.heightPoints) * heightEmu
@@ -767,6 +840,70 @@ export function FillPanel({
     return applied
   }
 
+  // Вибір співробітника для групи staff.{index}.*: текстові поля — setValueByTag
+  // (усі контроли тега), підпис — плаваюча картинка «перед текстом» через
+  // fillSignature. Відсутні в документі поля просто пропускаються.
+  async function applyStaffGroup(index: number, personId: string) {
+    const person = personnel.find((p) => p.id === personId)
+    if (!person || !editor) return
+    setStaffSelected((prev) => ({ ...prev, [index]: personId }))
+    setOpenPickerId(null)
+    let signatureMissing = false
+    let signatureFailed = false
+    let filled = 0
+    for (const field of STAFF_FIELDS) {
+      const tag = getStaffTag(index, field)
+      const control = editor.query({
+        type: "contentControls",
+        filter: { tag },
+      })[0]
+      if (!control) continue
+      if (field === "signature") {
+        if (!person.signaturePath) {
+          signatureMissing = true
+          // Людина без підписа: прибираємо підпис попередньої людини (якщо був)
+          // і ховаємо слово «Підпис», щоб воно не потрапляло на друк
+          setValueByTag(tag, "")
+          continue
+        }
+        if (await fillSignature(tag, person)) filled++
+        else signatureFailed = true
+        continue
+      }
+      const value =
+        field === "fullName"
+          ? fullName(person)
+          : field === "position"
+            ? person.position
+            : person.rank
+      if (setValueByTag(tag, value)) filled++
+    }
+    if (signatureMissing)
+      toast.warning(`У ${fullName(person)} немає підпису в картці персоналії`)
+    else if (signatureFailed)
+      toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
+    else if (filled > 0)
+      toast.success(`Заповнено поля людини №${index}: ${fullName(person)}.`)
+  }
+
+  // Скидання групи staff.{index}.*: текстові поля повертаються до назв
+  // («ПІБ (1)»), підпис — картинка видаляється, контрол очищується.
+  function resetStaffGroup(index: number) {
+    setStaffSelected((prev) => {
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
+    for (const field of STAFF_FIELDS) {
+      const tag = getStaffTag(index, field)
+      const value =
+        field === "signature"
+          ? ""
+          : getNumberedFieldTitle(STAFF_FIELD_LABELS[field] ?? field, index)
+      setValueByTag(tag, value)
+    }
+  }
+
   // Вибір особи → заповнює всі поля групи (ПІБ, посада, звання, підпис).
   async function applyPerson(group: PersonGroup, personId: string) {
     const person = personnel.find((p) => p.id === personId)
@@ -893,30 +1030,40 @@ export function FillPanel({
             open={quickPickOpen}
             onOpenChange={setQuickPickOpen}
             title={
-              quickPick.group.id === "course-fill"
-                ? "Курсанти з активного курсу"
-                : "Обрати особу зі штату"
+              quickPick.staffIndex !== null
+                ? `Обрати співробітника для людини №${quickPick.staffIndex}`
+                : quickPick.group?.id === "course-fill"
+                  ? "Курсанти з активного курсу"
+                  : "Обрати особу зі штату"
             }
             icon={<UserRoundSearch className="size-4" />}
             triggerLabel={
-              quickPick.group.id === "course-fill" ? "З курсу" : "Зі штату"
+              quickPick.group?.id === "course-fill" ? "З курсу" : "Зі штату"
             }
             items={
-              quickPick.group.id === "course-fill"
+              quickPick.group?.id === "course-fill"
                 ? kursantPickerItems
                 : pickerItems
             }
-            selectedId={selected[quickPick.group.id] ?? null}
+            selectedId={
+              quickPick.staffIndex !== null
+                ? (staffSelected[quickPick.staffIndex] ?? null)
+                : quickPick.group?.id
+                  ? (selected[quickPick.group.id] ?? null)
+                  : null
+            }
             onSelect={(selectedId) => {
-              if (quickPick.group.id === "course-fill") {
+              if (quickPick.staffIndex !== null) {
+                void applyStaffGroup(quickPick.staffIndex, selectedId)
+              } else if (quickPick.group?.id === "course-fill") {
                 const record = courseRecords.find(
                   (item) => item.id === selectedId
                 )
                 if (record) fillKursantChips(record)
-              } else if (quickPick.group.id === "staff-fill") {
+              } else if (quickPick.group?.id === "staff-fill") {
                 const person = personnel.find((item) => item.id === selectedId)
                 if (person) void fillStaffChips(person)
-              } else {
+              } else if (quickPick.group) {
                 void applyPerson(quickPick.group, selectedId)
               }
               setQuickPickOpen(false)
@@ -935,6 +1082,53 @@ export function FillPanel({
         <div className="border-b border-border/50 px-3 py-2 text-sm font-semibold">
           Заповнення
         </div>
+
+        {staffGroups.length > 0 && (
+          <section className="border-b border-border/50 p-3">
+            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <UserRound className="size-3.5" />
+              Персонал
+            </h3>
+            <div className="space-y-2">
+              {staffGroups.map((group) => {
+                const selectedId = staffSelected[group.index] ?? null
+                const selectedPerson = personnel.find(
+                  (p) => p.id === selectedId
+                )
+                return (
+                  <div key={group.index} className="flex items-center gap-1">
+                    <PersonPicker
+                      open={openPickerId === `staff-${group.index}`}
+                      onOpenChange={(open) =>
+                        setOpenPickerId(open ? `staff-${group.index}` : null)
+                      }
+                      title={`Людина №${group.index}`}
+                      triggerLabel={
+                        selectedPerson ? fullName(selectedPerson) : `Людина №${group.index}`
+                      }
+                      items={pickerItems}
+                      selectedId={selectedId}
+                      onSelect={(personId) =>
+                        void applyStaffGroup(group.index, personId)
+                      }
+                    />
+                    {selectedId && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        title="Очистити групу"
+                        onClick={() => resetStaffGroup(group.index)}
+                      >
+                        <Eraser className="size-4" />
+                      </Button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {groups.length > 0 && (
           <section className="border-b border-border/50 p-3">
@@ -1060,7 +1254,7 @@ export function FillPanel({
           </section>
         )}
 
-        {groups.length === 0 && simple.length === 0 && (
+        {groups.length === 0 && simple.length === 0 && staffGroups.length === 0 && (
           <p className="p-3 text-sm text-muted-foreground">
             У шаблона немає полів заповнення.
           </p>
