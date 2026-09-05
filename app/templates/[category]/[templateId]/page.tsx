@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import { getCategory } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
+import { getActiveCourseRecords } from "@/lib/courses/queries"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
 
 type Params = { category: string; templateId: string }
@@ -58,6 +59,9 @@ export default async function TemplateDetailPage({ params }: { params: Promise<P
     notFound()
   }
 
+  // Активний курс — записи для автозаповнення курсантських нод у fill-редакторі
+  const courseRecords = await getActiveCourseRecords().catch(() => [])
+
   return (
     <div className="flex min-h-svh flex-col bg-background">
       <SiteHeader />
@@ -79,7 +83,13 @@ export default async function TemplateDetailPage({ params }: { params: Promise<P
         </nav>
 
         <div className="mt-4 flex-1">
-          <DocumentEditor templateId={templateId} title={title} fields={fields} personnel={personnel} />
+          <DocumentEditor
+            templateId={templateId}
+            title={title}
+            fields={fields}
+            personnel={personnel}
+            courseRecords={courseRecords}
+          />
         </div>
       </main>
       <SiteFooter />

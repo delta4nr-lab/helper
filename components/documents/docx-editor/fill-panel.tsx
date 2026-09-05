@@ -16,6 +16,7 @@ import {
 } from "@/components/documents/person-picker"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
+import type { CourseRecordData } from "@/lib/courses/types"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -75,15 +76,17 @@ export function FillPanel({
   personnel,
   docVersion,
   open,
+  courseRecords = [],
 }: {
   fields: EditorField[]
   personnel: EditorPersonnel[]
   docVersion: number
   open: boolean
+  courseRecords?: CourseRecordData[]
 }) {
   const editor = useDocxEditor()
 
-  const { groups, simple } = React.useMemo(() => groupFields(fields), [fields])
+  const { groups: legacyGroups, simple } = React.useMemo(() => groupFields(fields), [fields])
 
   // Теги контролів, наявні у документі (для позначки «немає в документі»).
   // docVersion — свідомий тригер перерахунку при кожній зміні документа.
@@ -97,6 +100,23 @@ export function FillPanel({
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docVersion])
+
+  // Віртуальні групи для hover-quickPick нових чіпів (course:*/staff:*):
+  // у aside НЕ рендеряться, живуть тільки для personGroupAt + quickPick.
+  const hasKursantChips = React.useMemo(
+    () => [...presentTags].some((tag) => tag.startsWith("course:")),
+    [presentTags]
+  )
+  const hasStaffChips = React.useMemo(
+    () => [...presentTags].some((tag) => tag.startsWith("staff:")),
+    [presentTags]
+  )
+  const groups = React.useMemo(() => {
+    const list = [...legacyGroups]
+    if (hasKursantChips) list.push({ id: "course-fill", label: "Курсант (чіп)", fields: [] })
+    if (hasStaffChips) list.push({ id: "staff-fill", label: "ПІБ (персонал)", fields: [] })
+    return list
+  }, [legacyGroups, hasKursantChips, hasStaffChips])
 
   const [openPickerId, setOpenPickerId] = React.useState<string | null>(null)
   const [selected, setSelected] = React.useState<Record<string, string>>({})
@@ -267,6 +287,19 @@ export function FillPanel({
     [personnel]
   )
 
+  // Швидкий вибір особи з курсантського реєстру: ті дані з активного курсу —
+  // заповнює всі чіпи course:* у документі за одне підтикування
+  const kursantPickerItems: PersonPickerItem[] = React.useMemo(
+    () =>
+      courseRecords.map((r) => ({
+        id: r.id,
+        name: r.fullName ?? `${r.lastName} ${r.firstName}`.trim(),
+        position: r.position ?? "",
+        rank: r.rank ?? "",
+      })),
+    [courseRecords]
+  )
+
   // Швидкий вибір особи: ховер над полем ПІБ у документі → компактна кругла
   // кнопка праворуч від рамки → список зі штату → applyPerson заповнює всю
   // групу (ПІБ, посада, звання, підпис). Клік у поле лишається звичайним
@@ -274,6 +307,7 @@ export function FillPanel({
   // кнопки; відкритий список тримає кнопку.
   const [quickPick, setQuickPick] = React.useState<{
     group: PersonGroup
+    tag: string
     left: number
     top: number
   } | null>(null)
@@ -320,6 +354,40 @@ export function FillPanel({
           }
         }
       }
+      // Курсантські чіпи (tag = course:<колонка>): boundary з data-tag префіксом
+      const courseBoundary = document.querySelector<HTMLElement>(
+        '.docx-content-control-chrome[data-tag^="course:"] .docx-content-control-boundary'
+      )
+      if (courseBoundary) {
+        const rect = courseBoundary.getBoundingClientRect()
+        if (
+          rect.width > 0 &&
+          x >= rect.left &&
+          x <= rect.right &&
+          y >= rect.top &&
+          y <= rect.bottom
+        ) {
+          const courseGroup = groups.find((g) => g.id === "course-fill")
+          if (courseGroup) return { group: courseGroup, tag: "course:" }
+        }
+      }
+      // Персональні чіпи (tag = staff:<роль>)
+      const staffBoundary = document.querySelector<HTMLElement>(
+        '.docx-content-control-chrome[data-tag^="staff:"] .docx-content-control-boundary'
+      )
+      if (staffBoundary) {
+        const rect = staffBoundary.getBoundingClientRect()
+        if (
+          rect.width > 0 &&
+          x >= rect.left &&
+          x <= rect.right &&
+          y >= rect.top &&
+          y <= rect.bottom
+        ) {
+          const staffGroup = groups.find((g) => g.id === "staff-fill")
+          if (staffGroup) return { group: staffGroup, tag: "staff:" }
+        }
+      }
       return null
     }
     const onPointerOver = (event: PointerEvent) => {
@@ -327,16 +395,19 @@ export function FillPanel({
       const found = personGroupAt(event.clientX, event.clientY)
       if (!found?.group || !found.tag) return
       clearHideTimer()
+      const isPrefixTag = found.tag === "course:" || found.tag === "staff:"
       const rect = document
         .querySelector<HTMLElement>(
-          `.docx-content-control-chrome[data-tag="${found.tag}"] .docx-content-control-boundary`
+          isPrefixTag
+            ? `.docx-content-control-chrome[data-tag^="${found.tag}"] .docx-content-control-boundary`
+            : `.docx-content-control-chrome[data-tag="${found.tag}"] .docx-content-control-boundary`
         )
         ?.getBoundingClientRect()
       if (!rect || rect.width === 0) return
       setQuickPick((prev) =>
         prev?.group.id === found.group!.id
           ? prev
-          : { group: found.group!, left: rect.right + 6, top: rect.top }
+          : { group: found.group!, tag: found.tag, left: rect.right + 6, top: rect.top }
       )
     }
     const onPointerOut = (event: PointerEvent) => {
@@ -358,11 +429,16 @@ export function FillPanel({
       ".docx-editor-one-surface__viewport"
     )
     const reposition = () => {
-      const tag = quickPick.group.fields.find((f) => f.type === "person")?.key
+      const tag =
+        quickPick.tag ||
+        quickPick.group.fields.find((f) => f.type === "person")?.key
       if (!tag) return
+      const isPrefixTag = tag === "course:" || tag === "staff:"
       const rect = document
         .querySelector<HTMLElement>(
-          `.docx-content-control-chrome[data-tag="${tag}"] .docx-content-control-boundary`
+          isPrefixTag
+            ? `.docx-content-control-chrome[data-tag^="${tag}"] .docx-content-control-boundary`
+            : `.docx-content-control-chrome[data-tag="${tag}"] .docx-content-control-boundary`
         )
         ?.getBoundingClientRect()
       if (!rect) {
@@ -727,10 +803,57 @@ export function FillPanel({
       toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
   }
 
+  // Заповнення всіх course:* чіпів даними одного курсанта з активного курсу.
+  // Чіпи розблоковані (без payload) — setValue приймається.
+  function fillKursantChips(record: CourseRecordData) {
+    if (!editor) return
+    const columns = record as unknown as Record<string, string | null>
+    const controls = editor.query({ type: "contentControls" })
+    let filled = 0
+    for (const control of controls) {
+      const tag = control.tag ?? ""
+      if (!tag.startsWith("course:")) continue
+      const column = tag.slice("course:".length)
+      if (!column) continue
+      const value = columns[column] ?? ""
+      if (editor.surface?.contentControls.setValue(control.id, value)) filled++
+    }
+    toast.success(
+      filled > 0 ? `Заповнено ${filled} поле(ів) курсанта.` : "Полів course:* не знайдено."
+    )
+  }
+
+  // Заповнення всіх staff:* чіпів даними однієї людини зі штату.
+  async function fillStaffChips(person: EditorPersonnel) {
+    if (!editor) return
+    const controls = editor.query({ type: "contentControls" })
+    let filled = 0
+    for (const control of controls) {
+      const tag = control.tag ?? ""
+      if (!tag.startsWith("staff:")) continue
+      const role = tag.slice("staff:".length)
+      if (role === "signature") {
+        if (await fillSignature(tag, person)) filled++
+        continue
+      }
+      const value =
+        role === "position"
+          ? person.position
+          : role === "rank"
+            ? person.rank
+            : fullName(person)
+      if (editor.surface?.contentControls.setValue(control.id, value)) filled++
+    }
+    toast.success(
+      filled > 0
+        ? `Заповнено персональні чіпи: ${fullName(person)} (${filled}).`
+        : "Персональних чіпів не знайдено."
+    )
+  }
+
   // Скидання групи: setValue перезаписує вміст контролів, включно з картинкою
   // підпису всередині них.
-  function clearGroup(group: PersonGroup) {
-    setSelected((prev) => {
+  function clearGroup(group: PersonGroup) {    setSelected((prev) => {
       const next = { ...prev }
       delete next[group.id]
       return next
@@ -769,13 +892,33 @@ export function FillPanel({
             compact
             open={quickPickOpen}
             onOpenChange={setQuickPickOpen}
-            title="Обрати особу зі штату"
+            title={
+              quickPick.group.id === "course-fill"
+                ? "Курсанти з активного курсу"
+                : "Обрати особу зі штату"
+            }
             icon={<UserRoundSearch className="size-4" />}
-            triggerLabel="Зі штату"
-            items={pickerItems}
+            triggerLabel={
+              quickPick.group.id === "course-fill" ? "З курсу" : "Зі штату"
+            }
+            items={
+              quickPick.group.id === "course-fill"
+                ? kursantPickerItems
+                : pickerItems
+            }
             selectedId={selected[quickPick.group.id] ?? null}
-            onSelect={(personId) => {
-              void applyPerson(quickPick.group, personId)
+            onSelect={(selectedId) => {
+              if (quickPick.group.id === "course-fill") {
+                const record = courseRecords.find(
+                  (item) => item.id === selectedId
+                )
+                if (record) fillKursantChips(record)
+              } else if (quickPick.group.id === "staff-fill") {
+                const person = personnel.find((item) => item.id === selectedId)
+                if (person) void fillStaffChips(person)
+              } else {
+                void applyPerson(quickPick.group, selectedId)
+              }
               setQuickPickOpen(false)
               clearHideTimer()
               setQuickPick(null)
@@ -800,7 +943,9 @@ export function FillPanel({
               Зі штату
             </h3>
             <div className="space-y-2">
-              {groups.map((group) => {
+              {groups
+                .filter((group) => group.id !== "course-fill" && group.id !== "staff-fill")
+                .map((group) => {
                 const missing = group.fields.every(
                   (f) => !presentTags.has(f.key)
                 )

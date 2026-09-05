@@ -126,3 +126,56 @@ export function splitFullName(fullName: string | null): {
     middleName: parts.length > 2 ? parts.slice(2).join(" ") : null,
   }
 }
+
+// Людські назви полів курсу — для редактора полів шаблонів і майбутнього пікера
+export const COURSE_FIELD_LABELS: Record<CourseRecordTextField | "orderNumber", string> = {
+  orderNumber: "№ п/п",
+  weaponNumber: "№ зброї",
+  rank: "Звання",
+  fullName: "ПРІЗВИЩЕ ТА ІНІЦІАЛИ",
+  unitNumber: "№ частини",
+  platoon: "№ взводу",
+  position: "Посада",
+  presence: "Наявність (у строю)",
+  sick: "Хворі",
+  attentionGroup: "Група посиленої уваги",
+  statusDate: "Дата статусу",
+  birthDate: "Дата народження",
+  birthPlace: "Місце народження",
+  conscribedBy: "Ким призваний ТЦК",
+  taxId: "ІПН",
+  phone: "№ телефону",
+  relativesPhone: "№ телефону близьких",
+  registrationAddress: "Місце прописки",
+  residenceAddress: "Місце проживання",
+  passport: "№ та серія паспорту",
+  education: "Освіта",
+  drivingCategories: "Водійські категорії",
+  maritalStatus: "Сімейний стан",
+  workplace: "Місце роботи",
+  distinctiveFeatures: "Особливі прикмети",
+  debts: "Борги",
+  convictions: "Судимості / адміністративні",
+  vlcConclusion: "Висновок ВЛК",
+  serviceExperience: "Попередній досвід військової служби",
+  combatExperience: "Досвід участі в бойових діях",
+  bloodType: "Група крові",
+  healthState: "Загальний стан здоровʼя",
+  healthComplaints: "Наявні скарги на стан здоровʼя",
+  allergies: "Наявність алергічних реакцій",
+  injuries: "Перенесені травми",
+  militaryTicket: "№ військового квитка",
+  ubdNumber: "№ УБД",
+}
+
+// Типи полів автопідстановки з активного курсу (у TemplateField._type — з префіксом "course:")
+export const COURSE_FIELD_TYPES = [
+  ...COURSE_RECORD_TEXT_FIELDS.map((field) => `course:${field}`),
+  "course:orderNumber",
+] as const
+
+export type CourseFieldType = (typeof COURSE_FIELD_TYPES)[number]
+
+export function courseFieldLabel(type: CourseFieldType): string {
+  return COURSE_FIELD_LABELS[type.slice("course:".length) as CourseRecordTextField | "orderNumber"] ?? type
+}

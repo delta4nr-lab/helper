@@ -3,7 +3,7 @@
 import * as React from "react"
 import { CHROME_GROUPS, chromeProbeForSlot } from "@docx-editor.dev/core/editor"
 import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
-import { Download, Highlighter, Loader2, PanelRight, ScanText } from "lucide-react"
+import { Download, Highlighter, Loader2, PanelRight, Save, ScanText, TextCursorInput } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
 
@@ -16,8 +16,10 @@ import {
   uploadImageFile,
   validateImageFile,
 } from "@/components/documents/docx-editor/image-insert-dialog"
+import { InsertFieldDialog } from "@/components/documents/docx-editor/insert-field-dialog"
 import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
+import type { CourseRecordData } from "@/lib/courses/types"
 import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
 
@@ -32,6 +34,18 @@ type WorkspaceProps = {
   title: string
   fields: EditorField[]
   personnel: EditorPersonnel[]
+  /** Джерело DOCX-байтів; за замовчуванням публічний /api/templates/[id]/docx */
+  docxUrl?: string
+  /** "template": кнопка експорту зберігає шаблон через exportHandler (без завантаження) */
+  mode?: "document" | "template"
+  /** Серверний action збереження шаблона (FormData: file, title) */
+  exportHandler?: (formData: FormData) => Promise<{ ok: boolean; message: string }>
+  /** Додаткові елементи у верхньому рядку (наприклад, кнопка полів заповнення) */
+  titleActions?: React.ReactNode
+  /** Панель праворуч від документа (усередині Root — контекст редактора доступний) */
+  sidePanel?: React.ReactNode
+  /** Записи активного курсу для автозаповнення курсантських нод */
+  courseRecords?: CourseRecordData[]
 }
 
 // Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
@@ -271,23 +285,38 @@ function ViewportImageDrop({ className, children }: { className?: string; childr
   )
 }
 
-// Експорт: editor.save() → збереження в історії на сервері → завантаження файлу.
-// Хід операції — тостом: «Формування DOCX...» під час роботи, потім success/error.
-function ExportButton({ templateId, title }: { templateId: string; title: string }) {
+// Експорт/збереження: editor.save() → сервер → тост.
+// Режим "template": збереження байтів у Template через exportHandler (без завантаження);
+// режим "document" (дефолт): збереження в історію експортів користувача + завантаження.
+function ExportButton({
+  templateId,
+  title,
+  saveHandler,
+}: {
+  templateId: string
+  title: string
+  saveHandler?: (formData: FormData) => Promise<{ ok: boolean; message: string }>
+}) {
   const editor = useDocxEditor()
   const [pending, setPending] = React.useState(false)
 
   async function handleExport() {
     if (!editor || pending) return
     setPending(true)
-    toast.loading("Формування DOCX...", { id: EXPORT_TOAST_ID })
+    toast.loading(saveHandler ? "Збереження шаблону..." : "Формування DOCX...", { id: EXPORT_TOAST_ID })
     try {
       const buffer = await editor.save()
       const form = new FormData()
-      form.set("templateId", templateId)
-      form.set("title", title)
       form.set("file", new Blob([buffer], { type: DOCX_MIME }), "document.docx")
+      form.set("title", title)
 
+      if (saveHandler) {
+        const result = await saveHandler(form)
+        toast[result.ok ? "success" : "error"](result.message, { id: EXPORT_TOAST_ID })
+        return
+      }
+
+      form.set("templateId", templateId)
       const response = await fetch("/api/exports", { method: "POST", body: form })
       const result = (await response.json()) as { message?: string; downloadUrl?: string }
       if (!response.ok) {
@@ -315,10 +344,16 @@ function ExportButton({ templateId, title }: { templateId: string; title: string
       size="icon-sm"
       onClick={handleExport}
       disabled={pending}
-      title="Експорт DOCX"
-      aria-label="Експорт DOCX"
+      title={saveHandler ? "Зберегти шаблон" : "Експорт DOCX"}
+      aria-label={saveHandler ? "Зберегти шаблон" : "Експорт DOCX"}
     >
-      {pending ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+      {pending ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : saveHandler ? (
+        <Save className="size-4" />
+      ) : (
+        <Download className="size-4" />
+      )}
     </Button>
   )
 }
@@ -327,13 +362,26 @@ function ExportButton({ templateId, title }: { templateId: string; title: string
 // Тематизація: бібліотека чекає класи docx-editor (світлі токени) і docx-editor.dark
 // (темні токени --doc-*) на спільному корені хрому, тому обгортаємо хром обгорткою,
 // що слідкує за темою сайту. Папір лишається білим; документ не залишає браузер.
-export default function DocumentWorkspace({ templateId, title, fields, personnel }: WorkspaceProps) {
+export default function DocumentWorkspace({
+  templateId,
+  title,
+  fields,
+  personnel,
+  docxUrl,
+  mode = "document",
+  exportHandler,
+  titleActions,
+  sidePanel,
+  courseRecords,
+}: WorkspaceProps) {
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [docVersion, setDocVersion] = React.useState(0)
   const [fillOpen, setFillOpen] = React.useState(false)
   const [pageSetupOpen, setPageSetupOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
+  // Діалог вставки кастомного поля заповнення (лише адмінський режим шаблона)
+  const [insertFieldOpen, setInsertFieldOpen] = React.useState(false)
   // Назву документа можна змінити/дописати — експорт іде з назвою користувача.
   // Синхронізація з пропом не потрібна: батько монтує компонент із key=templateId,
   // тож при зміні шаблона стан назви ініціалізується заново.
@@ -342,7 +390,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
 
   React.useEffect(() => {
     let cancelled = false
-    fetch(`/api/templates/${templateId}/docx`)
+    fetch(docxUrl ?? `/api/templates/${templateId}/docx`)
       .then(async (response) => {
         if (!response.ok) {
           const result = (await response.json().catch(() => null)) as { message?: string } | null
@@ -359,7 +407,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
     return () => {
       cancelled = true
     }
-  }, [templateId])
+  }, [templateId, docxUrl])
 
   if (loadError) {
     return (
@@ -379,8 +427,11 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
   }
 
   return (
-    <DocxEditor.Root document={bytes} mode="edit" onChange={() => setDocVersion((v) => v + 1)}>
-      {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
+    <DocxEditor.Root
+      document={bytes}
+      mode="edit"
+      onChange={() => setDocVersion((v) => v + 1)}
+    >      {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>
       <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
@@ -391,6 +442,7 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
           placeholder="Назва документа"
           aria-label="Назва документа"
         />
+        {titleActions}
       </div>
 
       {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
@@ -415,11 +467,25 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
         <DocxEditor.Toolbar.ImageProperties hidden />
         <DocxEditor.Toolbar.ImageAltText hidden />
         {/* Кастомні кнопки: рендеряться останньою групою тулбара */}
-        <FillPanelToggle open={fillOpen} onToggle={() => setFillOpen((v) => !v)} />
+        {/* Панель заповнення — лише в режимі документа; у шаблонному режимі її місце займає sidePanel */}
+        {mode === "document" && <FillPanelToggle open={fillOpen} onToggle={() => setFillOpen((v) => !v)} />}
+        {/* «Додати поле» — адмін вставляє кастомний content control у місце курсора/виділення */}
+        {mode === "template" && (
+          <DocxEditor.Toolbar.Action
+            label="Додати поле"
+            icon={<TextCursorInput className="size-4" />}
+            onSelect={() => setInsertFieldOpen(true)}
+          />
+        )}
         <HighlightToggle docVersion={docVersion} />
         <FormFillToggle />
-        {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона */}
-        <ExportButton templateId={templateId} title={docTitle.trim() || title} />
+        {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
+            Режим "template": exportHandler зберігає байти в Template.docxData */}
+        <ExportButton
+          templateId={templateId}
+          title={docTitle.trim() || title}
+          saveHandler={mode === "template" ? exportHandler : undefined}
+        />
       </DocxEditor.Toolbar>
 
       {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
@@ -447,12 +513,16 @@ export default function DocumentWorkspace({ templateId, title, fields, personnel
             <DocxEditor.Loading overlay />
           </ViewportImageDrop>
         </div>
-        <FillPanel open={fillOpen} fields={fields} personnel={personnel} docVersion={docVersion} />
+        {mode === "document" && (
+          <FillPanel open={fillOpen} fields={fields} personnel={personnel} docVersion={docVersion} courseRecords={courseRecords} />
+        )}
+        {sidePanel}
       </div>
       </div>
 
       <DocxEditor.PageSetupDialog open={pageSetupOpen} onClose={() => setPageSetupOpen(false)} />
       <ImageInsertDialog open={imageDialogOpen} onOpenChange={setImageDialogOpen} />
+      <InsertFieldDialog open={insertFieldOpen} onOpenChange={setInsertFieldOpen} />
       </LocaleProvider>
     </DocxEditor.Root>
   )
