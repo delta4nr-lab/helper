@@ -167,8 +167,6 @@ export function FillPanel({
   const sigMarkers = React.useRef<
     Map<string, { drawingId: string; anchorParaId: string }>
   >(new Map())
-  // Останній етап відмови вставки підписа (тимчасова діагностика для тоста)
-  const sigStageRef = React.useRef<string | null>(null)
 
   // Картинка підпису живе поза контролом (якір у останньому абзаці), контрол поля
   // тримає назву, поки картинка на місці, і звільняється при її видаленні.
@@ -456,6 +454,9 @@ export function FillPanel({
     }
     const onPointerOver = (event: PointerEvent) => {
       if (bounceSuspend.active) return
+      // Поки список вибору відкритий — hover по документу ігнорується:
+      // вікно не стрибає на інші поля і не ховається
+      if (quickPickOpen) return
       const found = personGroupAt(event.clientX, event.clientY)
       if (!found || !found.tag) return
       clearHideTimer()
@@ -485,6 +486,7 @@ export function FillPanel({
       )
     }
     const onPointerOut = (event: PointerEvent) => {
+      if (quickPickOpen) return
       if (!personGroupAt(event.clientX, event.clientY)) return
       scheduleHide()
     }
@@ -539,21 +541,14 @@ export function FillPanel({
     key: string,
     person: EditorPersonnel
   ): Promise<boolean> {
-    if (!editor) return failStage("no-editor")
+    if (!editor) return false
     const surface = editor.surface
-    if (!person.signaturePath || !surface) return failStage("no-path")
-    // Тимчасова діагностика етапів (знімається після підтвердження фіксу)
-    sigStageRef.current = null
-    function failStage(stage: string): false {
-      console.warn("[Signature]", stage, { key, signaturePath: person.signaturePath })
-      sigStageRef.current = stage
-      return false
-    }
+    if (!person.signaturePath || !surface) return false
     const controlId = editor.query({
       type: "contentControls",
       filter: { tag: key },
     })[0]?.id
-    if (!controlId) return failStage("no-control")
+    if (!controlId) return false
 
     // Абзац-якор: лише МАТЕРІАЛІЗОВАНІ абзаци. Paint-віртуалізація малює
     // сторінки біля viewport'а — anchored-картинка з якорем на
@@ -588,11 +583,11 @@ export function FillPanel({
     let anchorParaId: string | null = null
 
     const response = await fetch(person.signaturePath)
-    if (!response.ok) return failStage(`fetch-failed:${response.status}`)
+    if (!response.ok) return false
     const normalized = normalizeImageBytes(
       new Uint8Array(await response.arrayBuffer())
     )
-    if (!normalized.ok) return failStage("bad-image")
+    if (!normalized.ok) return false
 
     bounceSuspend.begin()
     let ok = false
@@ -654,10 +649,7 @@ export function FillPanel({
           await new Promise((resolve) => setTimeout(resolve, 25))
         }
       }
-      if (!pageRect || !sigRect || personLefts.length === 0) {
-        const missing = !pageRect ? "page" : !sigRect ? "sig" : "person"
-        return failStage(`no-geometry:${missing}`)
-      }
+      if (!pageRect || !sigRect || personLefts.length === 0) return false
 
       // Якор: матеріалізовані абзаци сторінки поля підпису (з кінця назад,
       // скіпаючи вже зайняті підписами — каретка в них резолвиться у ран
@@ -689,7 +681,7 @@ export function FillPanel({
           }
         }
       }
-      if (!anchorParaId) return failStage("no-anchor")
+      if (!anchorParaId) return false
 
       // Знімок id наявних drawing — ДО вставки (для пошуку нової у DOM-дифі)
       const knownIdsPre = new Set(
@@ -721,10 +713,7 @@ export function FillPanel({
         await new Promise((resolve) => setTimeout(resolve, 120))
         result = await editor.executeImageCommand(insertCommand)
       }
-      if (!result.ok) {
-        console.warn("[Signature] insert refused:", result.code, result.reason)
-        return failStage("insert-failed")
-      }
+      if (!result.ok) return false
 
       // Id вставленого drawing: виділення або короткий DOM-диф (виділення
       // буває скинутим, якщо перед вставкою щось змінило модель)
@@ -738,10 +727,10 @@ export function FillPanel({
             .find((id) => id && !knownIdsPre.has(id)) ??
           null
       }
-      if (!drawingId) return failStage("no-drawing-id")
+      if (!drawingId) return false
       currentId = drawingId
 
-      if (!currentId || !anchorParaId) return failStage("insert-failed")
+      if (!currentId || !anchorParaId) return false
       // id наявних drawing КРІМ нашої: після wrap конвертація може змінити
       // id вузла — новий id шукаємо серед «не відомих»
       const knownIds = new Set(
@@ -756,10 +745,7 @@ export function FillPanel({
       const wrapped = surface.applyDrawingOps([
         { op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" },
       ])
-      if (!wrapped.committed || wrapped.rejected) {
-        console.warn("[Signature] wrap refused:", wrapped.rejected, wrapped.reason, { opCount: wrapped.opCount })
-        return failStage("wrap-failed")
-      }
+      if (!wrapped.committed || wrapped.rejected) return false
       // Конвертація може змінити id вузла — перезнаходимо після wrap
       const freshId = [
         ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
@@ -804,29 +790,6 @@ export function FillPanel({
         paragraphYEmu = Math.round((imageTopPx - anchorTop) * 9525)
       }
 
-      // Тимчасова діагностика: прямокутники живих підписів і ціль №N
-      // (перевірка перекриття плаваючих картинок)
-      for (const [markerTag, markerInfo] of sigMarkers.current) {
-        const markerEl = document.querySelector<HTMLElement>(
-          `[data-drawing-node-id="${markerInfo.drawingId}"]`
-        )
-        const rect = markerEl?.getBoundingClientRect()
-        console.warn("[Signature] existing:", markerTag, {
-          drawingId: markerInfo.drawingId,
-          top: rect?.top ?? null,
-          bottom: rect?.bottom ?? null,
-          left: rect?.left ?? null,
-          inDom: Boolean(markerEl),
-        })
-      }
-      console.warn("[Signature] target:", {
-        currentId,
-        pageXEmu,
-        pageYEmu,
-        paragraphYEmu,
-        anchorParaId,
-      })
-
       const positionOnce = (
         verticalEmu: number,
         relativeToV: "page" | "paragraph"
@@ -864,19 +827,6 @@ export function FillPanel({
             return true
           await new Promise((resolve) => setTimeout(resolve, 60))
         }
-        // Тимчасова діагностика: чому рендер не малює — віртуалізація якоря?
-        const anchorInDom = Boolean(
-          document.querySelector(`[data-paragraph-id="${anchorParaId}"]`)
-        )
-        const drawingAny = Boolean(
-          document.querySelector(`[data-drawing-node-id="${currentId}"]`)
-        )
-        console.warn("[Signature] not rendered:", {
-          currentId,
-          anchorParaId,
-          anchorInDom,
-          drawingAny,
-        })
         return false
       }
       const tryPosition = async (
@@ -888,26 +838,10 @@ export function FillPanel({
           const applied = positionOnce(verticalEmu, relativeToV)
           refreshId()
           if (!applied.committed || applied.rejected) {
-            // Тимчасова діагностика: рушій сам каже причину відмови
-            console.warn("[Signature] position refused:", {
-              reason: applied.reason ?? null,
-              committed: applied.committed,
-              rejected: applied.rejected,
-              opCount: applied.opCount,
-              relativeToV,
-              verticalEmu,
-              currentId,
-            })
             await new Promise((resolve) => setTimeout(resolve, 250))
             continue
           }
           if (await confirmRendered()) return true
-          // Закомітилось, але рендер відсіяв (кулювання)
-          console.warn("[Signature] committed but not rendered:", {
-            currentId,
-            relativeToV,
-            verticalEmu,
-          })
         }
         return false
       }
@@ -916,7 +850,7 @@ export function FillPanel({
       if (!positioned && paragraphYEmu !== null) {
         positioned = await tryPosition(paragraphYEmu, "paragraph", 4)
       }
-      if (!positioned) return failStage("not-positioned")
+      if (!positioned) return false
 
       // Ховаємо назву поля («Підпис») — картинка її замінила
       surface.contentControls.setValue(controlId, "")
@@ -1010,9 +944,7 @@ export function FillPanel({
     if (signatureMissing)
       toast.warning(`У ${fullName(person)} немає підпису в картці персоналії`)
     else if (signatureFailed)
-      toast.warning(
-        `Не вдалося вставити підпис ${fullName(person)}${sigStageRef.current ? ` (${sigStageRef.current})` : ""}`
-      )
+      toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
     else if (filled > 0)
       toast.success(`Заповнено поля людини №${index}: ${fullName(person)}.`)
   }
@@ -1068,9 +1000,7 @@ export function FillPanel({
     if (signatureMissing)
       toast.warning(`У ${fullName(person)} немає підпису в картці персоналії`)
     else if (signatureFailed)
-      toast.warning(
-        `Не вдалося вставити підпис ${fullName(person)}${sigStageRef.current ? ` (${sigStageRef.current})` : ""}`
-      )
+      toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
   }
 
   // Заповнення всіх course:* чіпів даними одного курсанта з активного курсу.
