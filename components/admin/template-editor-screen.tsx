@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
 import { TemplateFieldsDialog, type TemplateFieldRow } from "@/components/admin/template-fields-dialog"
-import { TemplateNodesPanel } from "@/components/admin/template-nodes-panel"
+import { FieldCatalogsPanel } from "@/components/documents/docx-editor/field-catalogs-panel"
 import type { EditorPersonnel } from "@/components/documents/types"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -45,7 +45,7 @@ export function TemplateEditorScreen({
             mode="template"
             exportHandler={saveHandler}
             titleActions={<TemplateFieldsDialog templateId={templateId} fields={fields} />}
-            sidePanel={<TemplateNodesPanel templateId={templateId} />}
+            sidePanel={<FieldCatalogsPanel />}
           />
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useDocxEditor } from "@docx-editor.dev/react"
-import type { DocRange, ExecErrorCode } from "@docx-editor.dev/core/contracts/editor"
+import type { DocRange } from "@docx-editor.dev/core/contracts/editor"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -18,20 +18,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 import { CUSTOM_FIELD_TYPES, type CustomFieldTypeId } from "./field-types"
+import { insertFieldIntoDocument } from "./insert-field"
 
 // Той самий формат ключа, що й у TemplateField (lib/templates/actions.ts).
 const TAG_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/
-
-// Зрозумілі користувачу повідомлення для частих відмов insertContentControl
-// (решта кодів — фолбек до загального повідомлення).
-const EXEC_ERROR_MESSAGES: Partial<Record<ExecErrorCode, string>> = {
-  notFound: "Фрагмент не знайдено в документі.",
-  ambiguous: "Виділення неоднозначне.",
-  locked: "Частина виділення заблокована.",
-  unsupported: "Поле має бути в межах одного абзацу.",
-}
-
-const GENERIC_ERROR = "Не вдалося вставити поле. Спробуйте ще раз."
 
 // Діалог вставки кастомного поля (content control) у місце курсора/виділення.
 // Виділення фіксується при відкритті: модальність його не змінює, а вставка
@@ -87,51 +77,19 @@ export function InsertFieldDialog({
   const canInsert =
     hasSelection && normalizedTag !== "" && normalizedTitle !== "" && !tagError && !duplicateError
 
-  // Записати назву як текст порожнього plainText-поля. Рушій не дає задати
-  // власний промпт у insertContentControl (він зашитий за типом), тому це
-  // окремий op через setContentControlValue: порожня вставка стає двома
-  // undo-кроками. Дата під цей шлях не підходить — рушій приймає в date-поле
-  // лише значення-ISO, тож там промпт лишається штатним, а назва — на alias.
-  function writeTitleIntoField(controlId: string) {
-    const surface = editor?.surface
-    if (!surface) return
-    // Перший коміт може відмовити, поки не завершиться коміт вставки, —
-    // пауза і ретрай дають стабільний результат (патерн fill-panel).
-    const attempt = (tries: number) => {
-      if (surface.contentControls.setValue(controlId, normalizedTitle)) return
-      if (tries <= 0) return
-      window.setTimeout(() => attempt(tries - 1), 120)
-    }
-    attempt(2)
-  }
-
   function handleInsert() {
     if (!editor || !canInsert || !selectionRef.current) return
-    let result
-    try {
-      result = editor.exec({
-        type: "insertContentControl",
-        target: selectionRef.current,
-        subtype: type.subtype,
-        tag: normalizedTag,
-        title: normalizedTitle,
-      })
-    } catch {
-      toast.error(GENERIC_ERROR)
-      return
-    }
+    // Без options: у модалі живе виділення == захопленому, а рушій сам бере
+    // свій selection з точними офсетами (без round-trip через якорі).
+    const result = insertFieldIntoDocument(editor, {
+      subtype: type.subtype,
+      tag: normalizedTag,
+      title: normalizedTitle,
+    })
     if (!result.ok) {
-      toast.error(EXEC_ERROR_MESSAGES[result.code] ?? GENERIC_ERROR)
+      toast.error(result.message)
       return
     }
-
-    // Виділення було порожнім і тип plainText — одразу показати назву як
-    // текст поля (контрол знаходимо за унікальним тегом: дублікати заборонені).
-    if (!selectedText && type.id === "plainText") {
-      const [control] = editor.query({ type: "contentControls", filter: { tag: normalizedTag } })
-      if (control) writeTitleIntoField(control.id)
-    }
-
     toast.success(`Поле «${normalizedTitle}» вставлено.`)
     onOpenChange(false)
   }
