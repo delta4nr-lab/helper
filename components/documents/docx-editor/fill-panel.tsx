@@ -758,9 +758,13 @@ export function FillPanel({
       }
 
       // Позиція «зліва від ПІБ». Горизонталь — завжди сторінково (поля сторінки
-      // від шрифтів не залежать). Вертикаль: сторінкова база — ОСНОВНА
-      // (однозначна система координат, не залежить від відстані до якоря),
-      // paragraph-фолбек другим (точніша вертикаль в експорті Word).
+      // від шрифтів не залежать). Вертикаль: від ЯКІРНОГО АБЗАЦУ — ОСНОВНА:
+      // шрифти редактора ≠ Times New Roman у Word, і повномакетний
+      // сторінковий офсет дає дрейф 5-10 мм (рядок підпису в Word вище) —
+      // відстань «якір → рядок» переноситься між рендерерами без дрейфу.
+      // paragraph-режим безпечний, бо якір обирається materialization-aware —
+      // близько до рядка і на матеріалізованій сторінці. Сторінкова база —
+      // фолбек (DOM-фрагмент якоря відсутній / paragraph не закомітився).
       const pageXEmu = Math.max(
         0,
         Math.round(
@@ -846,9 +850,12 @@ export function FillPanel({
         return false
       }
 
-      let positioned = await tryPosition(pageYEmu, "page", 6)
-      if (!positioned && paragraphYEmu !== null) {
-        positioned = await tryPosition(paragraphYEmu, "paragraph", 4)
+      let positioned =
+        paragraphYEmu !== null
+          ? await tryPosition(paragraphYEmu, "paragraph", 4)
+          : false
+      if (!positioned) {
+        positioned = await tryPosition(pageYEmu, "page", 6)
       }
       if (!positioned) return false
 
