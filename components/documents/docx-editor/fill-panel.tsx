@@ -163,6 +163,8 @@ export function FillPanel({
   // Активні підписи: tag → id плаваючого drawing. Слухач change нижче повертає
   // назву полю, коли картинка підпису зникла.
   const sigMarkers = React.useRef<Map<string, { drawingId: string }>>(new Map())
+  // Останній етап відмови вставки підписа (тимчасова діагностика для тоста)
+  const sigStageRef = React.useRef<string | null>(null)
 
   // Картинка підпису живе поза контролом (якір у останньому абзаці), контрол поля
   // тримає назву, поки картинка на місці, і звільняється при її видаленні.
@@ -523,28 +525,36 @@ export function FillPanel({
 
   // Підпис: зображення з картки персоналії → плаваючий шар «перед текстом»
   // (фіксований розмір, не ростить рядок) зі сторінковою позицією «зліва від
-  // ПІБ». Якір — останній абзац документа поза таблицею: рендер не малює
-  // anchored-картинки, що виходять за межі комірки якоря. Контрол поля при цьому
-  // НЕ чіпаємо структурно (тег/назва лишаються в DOCX): назва ховається на час
+  // ПІБ». Якір — найпізніший абзац документа, каретка якого НЕ всередині
+  // контрола: рендер не малює anchored-картинки з якорем усередині SDT
+  // (табличного комірки тим більше). Контрол поля при цьому НЕ чіпаємо
+  // структурно (тег/назва лишаються в DOCX): назва ховається на час
   // заповненості і повертається, коли картинку видалили (слухач change).
   async function fillSignature(
     key: string,
     person: EditorPersonnel
   ): Promise<boolean> {
     const surface = editor?.surface
-    if (!surface || !person.signaturePath) return false
+    if (!surface || !person.signaturePath) return failStage("no-path")
+    // Тимчасова діагностика етапів (знімається після підтвердження фіксу)
+    sigStageRef.current = null
+    function failStage(stage: string): false {
+      console.warn("[Signature]", stage, { key, signaturePath: person.signaturePath })
+      sigStageRef.current = stage
+      return false
+    }
     const controlId = editor.query({
       type: "contentControls",
       filter: { tag: key },
     })[0]?.id
-    if (!controlId) return false
+    if (!controlId) return failStage("no-control")
 
     const response = await fetch(person.signaturePath)
-    if (!response.ok) return false
+    if (!response.ok) return failStage(`fetch-failed:${response.status}`)
     const normalized = normalizeImageBytes(
       new Uint8Array(await response.arrayBuffer())
     )
-    if (!normalized.ok) return false
+    if (!normalized.ok) return failStage("bad-image")
 
     bounceSuspend.begin()
     let ok = false
@@ -588,11 +598,13 @@ export function FillPanel({
           sigChrome
             ?.querySelector<HTMLElement>(".docx-content-control-boundary")
             ?.getBoundingClientRect() ?? null
-        personLefts = [
+        const personLeftsRaw = [
           ...(personChrome?.querySelectorAll<HTMLElement>(
             ".docx-content-control-boundary"
           ) ?? []),
         ].map((b) => b.getBoundingClientRect().left)
+        // Fallback: без ПІБ-поля групи — позиція зліва від самого поля підпису
+        personLefts = personLeftsRaw.length > 0 ? personLeftsRaw : sigRect ? [sigRect.left] : []
         pageRect =
           (
             sigChrome?.closest(".docx-editor-page") ??
@@ -603,18 +615,39 @@ export function FillPanel({
           await new Promise((resolve) => setTimeout(resolve, 25))
         }
       }
-      if (!pageRect || !sigRect || personLefts.length === 0) return false
+      if (!pageRect || !sigRect || personLefts.length === 0) {
+        const missing = !pageRect ? "page" : !sigRect ? "sig" : "person"
+        return failStage(`no-geometry:${missing}`)
+      }
 
-      // Якір: останній абзац документа з w14:paraId (адресований; поза таблицею)
-      const anchorParaId = [...editor.query({ type: "paragraphs" })]
-        .filter((p) => p.paraId)
-        .at(-1)?.paraId
-      if (!anchorParaId) return false
-      if (
-        !editor.exec({ type: "setSelection", anchor: { paraId: anchorParaId } })
-          .ok
+      // Якір: найпізніший абзац, каретка якого після setSelection НЕ всередині
+      // контрола (рендер не малює anchored-картинки з якорем усередині SDT —
+      // підпис останнім контентом документа раніше вкладався у власний контрол
+      // і не малювався). Кандидати з кінця документа: статус-кво (останній
+      // абзац) — перший, табличний випадок працює як раніше.
+      const paragraphs = [...editor.query({ type: "paragraphs" })].filter(
+        (p): p is typeof p & { paraId: string } => Boolean(p.paraId)
       )
-        return false
+      let anchorParaId: string | null = null
+      for (let i = paragraphs.length - 1; i >= 0; i--) {
+        const candidate = paragraphs[i].paraId
+        if (!editor.exec({ type: "setSelection", anchor: { paraId: candidate } }).ok)
+          continue
+        if (!editor.query({ type: "contentControlAt" })) {
+          anchorParaId = candidate
+          break
+        }
+      }
+      if (!anchorParaId) {
+        // Чистих абзаців нема — статус-кво: останній абзац документа
+        anchorParaId = paragraphs.at(-1)?.paraId ?? null
+        if (!anchorParaId) return failStage("no-anchor")
+        if (
+          !editor.exec({ type: "setSelection", anchor: { paraId: anchorParaId } })
+            .ok
+        )
+          return failStage("no-anchor")
+      }
 
       // Знімок id наявних drawing — ДО мутацій: нова картинка може відрендеритись
       // синхронно, і пізніший знімок включив би її в «старі».
@@ -649,7 +682,7 @@ export function FillPanel({
         await new Promise((resolve) => setTimeout(resolve, 120))
         result = await editor.executeImageCommand(insertCommand)
       }
-      if (!result.ok) return false
+      if (!result.ok) return failStage("insert-failed")
 
       // Id вставленого drawing: виділення або короткий DOM-диф (виділення
       // буває скинутим, якщо перед вставкою щось змінило модель)
@@ -663,7 +696,7 @@ export function FillPanel({
             .find((id) => id && !knownIds.has(id)) ??
           null
       }
-      if (!drawingId) return false
+      if (!drawingId) return failStage("no-drawing-id")
       // Актуальний id (wrap-конвертація може його змінити); зовнішній drawingId
       // лишається для прибирання у finally
       let currentId: string = drawingId
@@ -674,7 +707,7 @@ export function FillPanel({
       const wrapped = surface.applyDrawingOps([
         { op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" },
       ])
-      if (!wrapped.committed) return false
+      if (!wrapped.committed) return failStage("wrap-failed")
       // Конвертація може змінити id вузла — перезнаходимо після wrap
       const freshId = [
         ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
@@ -705,23 +738,20 @@ export function FillPanel({
         Math.round((imageTopPx - pageRect.top) * 9525)
       )
 
-      // Верх якірного абзацу: останній [data-paragraph-id] у документі (порядок
-      // DOM = порядок документа); абзац може мати кілька фрагментів — верх
-      // берём мінімальний.
+      // Верх якірного абзацу: DOM-фрагменти ОБРАНОГО якоря (порядок DOM =
+      // порядок документа); абзац може мати кілька фрагментів — верх берём
+      // мінімальний.
       let paragraphYEmu: number | null = null
       const paraEls = [
         ...document.querySelectorAll<HTMLElement>("[data-paragraph-id]"),
       ]
-      const lastParaEl = paraEls[paraEls.length - 1]
-      if (lastParaEl) {
-        const lastParaDomId = lastParaEl.getAttribute("data-paragraph-id")
-        const anchorTop = Math.min(
-          ...paraEls
-            .filter(
-              (el) => el.getAttribute("data-paragraph-id") === lastParaDomId
-            )
-            .map((el) => el.getBoundingClientRect().top)
+      const anchorTops = paraEls
+        .filter(
+          (el) => el.getAttribute("data-paragraph-id") === anchorParaId
         )
+        .map((el) => el.getBoundingClientRect().top)
+      if (anchorTops.length > 0) {
+        const anchorTop = Math.min(...anchorTops)
         paragraphYEmu = Math.round((imageTopPx - anchorTop) * 9525)
       }
 
@@ -787,7 +817,7 @@ export function FillPanel({
           ? await tryPosition(paragraphYEmu, "paragraph", 4)
           : false
       if (!positioned) positioned = await tryPosition(pageYEmu, "page", 6)
-      if (!positioned) return false
+      if (!positioned) return failStage("not-positioned")
 
       // Ховаємо назву поля («Підпис») — картинка її замінила
       surface.contentControls.setValue(controlId, "")
@@ -881,7 +911,9 @@ export function FillPanel({
     if (signatureMissing)
       toast.warning(`У ${fullName(person)} немає підпису в картці персоналії`)
     else if (signatureFailed)
-      toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
+      toast.warning(
+        `Не вдалося вставити підпис ${fullName(person)}${sigStageRef.current ? ` (${sigStageRef.current})` : ""}`
+      )
     else if (filled > 0)
       toast.success(`Заповнено поля людини №${index}: ${fullName(person)}.`)
   }
@@ -937,7 +969,9 @@ export function FillPanel({
     if (signatureMissing)
       toast.warning(`У ${fullName(person)} немає підпису в картці персоналії`)
     else if (signatureFailed)
-      toast.warning(`Не вдалося вставити підпис ${fullName(person)}`)
+      toast.warning(
+        `Не вдалося вставити підпис ${fullName(person)}${sigStageRef.current ? ` (${sigStageRef.current})` : ""}`
+      )
   }
 
   // Заповнення всіх course:* чіпів даними одного курсанта з активного курсу.
