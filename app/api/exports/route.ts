@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { auth } from "@/auth"
 import { orm } from "@/lib/db"
+import { stripContentControls } from "@/lib/documents/sanitize-docx"
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 const MAX_FILE_SIZE = 25 * 1024 * 1024
@@ -37,7 +38,10 @@ export async function POST(request: Request) {
   const template = await orm.Template.select("id").first({ id: templateId })
   if (!template) return NextResponse.json({ message: "Шаблон не знайдено." }, { status: 404 })
 
-  const data = new Uint8Array(await file.arrayBuffer())
+  // Чистий експорт: розгортаємо content controls — користувач отримує текст
+  // без полів заповнення, а Word — без схемно-некоректних SDT-структур
+  // (попередження «непридатний для читання вміст» зникає)
+  const data = await stripContentControls(new Uint8Array(await file.arrayBuffer()))
   const fileName = safeFileName(title)
 
   const exported = await orm.ExportedFile.select("id").create({
