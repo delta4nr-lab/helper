@@ -25,6 +25,7 @@ import {
   parseCadetTag,
   parseStaffTag,
 } from "@/components/documents/docx-editor/field-catalogs"
+import { applyFieldFont } from "@/components/documents/docx-editor/insert-field"
 import type { EditorField, EditorPersonnel } from "@/components/documents/types"
 import { COURSE_FIELD_LABELS, type CourseRecordData } from "@/lib/courses/types"
 
@@ -950,6 +951,8 @@ export function FillPanel({
       } finally {
         bounceSuspend.end()
       }
+      // Значення на місці — даємо ранам шрифт Times New Roman (paint і DOCX)
+      if (applied && value.trim()) applyFieldFont(editor, value)
     }
     // Плейсхолдерний стан: дані роблять поле «заповненим», лейбл/очистка — «недоторканим»
     const field = fields.find((f) => f.key === key)

@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-import { CUSTOM_FIELD_TYPES, type CustomFieldTypeId } from "./field-types"
+import { CUSTOM_FIELD_TYPES } from "./field-types"
 import { insertFieldIntoDocument } from "./insert-field"
 
 // Той самий формат ключа, що й у TemplateField (lib/templates/actions.ts).
@@ -34,7 +34,6 @@ export function InsertFieldDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const editor = useDocxEditor()
-  const [typeId, setTypeId] = React.useState<CustomFieldTypeId>(CUSTOM_FIELD_TYPES[0].id)
   const [tag, setTag] = React.useState("")
   const [title, setTitle] = React.useState("")
   const [selectedText, setSelectedText] = React.useState<string | null>(null)
@@ -59,12 +58,11 @@ export function InsertFieldDialog({
           .filter((value): value is string => Boolean(value))
       )
     )
-    setTypeId(CUSTOM_FIELD_TYPES[0].id)
     setTag("")
     setTitle("")
   }, [open, editor])
 
-  const type = CUSTOM_FIELD_TYPES.find((item) => item.id === typeId) ?? CUSTOM_FIELD_TYPES[0]
+  const type = CUSTOM_FIELD_TYPES[0]
 
   const normalizedTag = tag.trim()
   const normalizedTitle = title.trim()
@@ -79,13 +77,19 @@ export function InsertFieldDialog({
 
   function handleInsert() {
     if (!editor || !canInsert || !selectionRef.current) return
-    // Без options: у модалі живе виділення == захопленому, а рушій сам бере
+    // Без target: у модалі живе виділення == захопленому, а рушій сам бере
     // свій selection з точними офсетами (без round-trip через якорі).
-    const result = insertFieldIntoDocument(editor, {
-      subtype: type.subtype,
-      tag: normalizedTag,
-      title: normalizedTitle,
-    })
+    // replaceSelection: виділений текст замінюється полем, вміст поля —
+    // «Назва поля» з діалогу.
+    const result = insertFieldIntoDocument(
+      editor,
+      {
+        subtype: type.subtype,
+        tag: normalizedTag,
+        title: normalizedTitle,
+      },
+      { replaceSelection: true }
+    )
     if (!result.ok) {
       toast.error(result.message)
       return
@@ -102,34 +106,13 @@ export function InsertFieldDialog({
           <DialogDescription>
             {hasSelection
               ? selectedText
-                ? `Поле обгортатиме виділений текст: «${selectedText.length > 40 ? `${selectedText.slice(0, 40)}…` : selectedText}».`
-                : typeId === "plainText"
-                  ? "Поле вставиться в місці курсора й одразу показуватиме назву."
-                  : "Поле вставиться в місці курсора."
+                ? `Поле замінить виділений текст: «${selectedText.length > 40 ? `${selectedText.slice(0, 40)}…` : selectedText}».`
+                : "Поле вставиться в місці курсора й одразу показуватиме назву."
               : "Поставте курсор у документ і спробуйте ще раз."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3">
-          <div className="grid gap-1.5">
-            <Label>Тип поля</Label>
-            <div className="flex gap-1">
-              {CUSTOM_FIELD_TYPES.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  variant={item.id === typeId ? "secondary" : "outline"}
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => setTypeId(item.id)}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">{type.hint}</p>
-          </div>
-
           <div className="grid gap-1.5">
             <Label htmlFor="insert-field-tag">Ключ (тег)</Label>
             <Input

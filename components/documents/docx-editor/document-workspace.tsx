@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CHROME_GROUPS, chromeProbeForSlot } from "@docx-editor.dev/core/editor"
+import { CHROME_GROUPS, chromeProbeForSlot, composeFontConfiguration } from "@docx-editor.dev/core/editor"
 import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
 import { Download, Highlighter, Loader2, PanelRight, Save, ScanText, TextCursorInput } from "lucide-react"
 
@@ -28,6 +28,18 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+// Дефолтний шрифт редактора: рани без явного шрифту (весь вміст наших полів)
+// розв'язуються у defaultFont рушія — без конфіга це Calibri 11pt (далі
+// системний фолбек) — вміст полів малювався не Times New Roman. 28
+// half-points = 14pt — дзеркало docDefaults документа. Ран-рівневі шрифти та
+// експорт не змінюються. Стабільне посилання ОБОВ'ЯЗКОВЕ: новий конфіг
+// щорендеру запускав би перезавантаження шрифтів рушія щоразу (change →
+// docVersion → рендер → новий об'єкт → …) — «Maximum update depth exceeded».
+const EDITOR_FONTS = composeFontConfiguration({
+  sources: [],
+  defaultFont: { family: "Times New Roman", sizeHalfPoints: 28 },
+})
 
 type WorkspaceProps = {
   templateId: string
@@ -430,6 +442,7 @@ export default function DocumentWorkspace({
     <DocxEditor.Root
       document={bytes}
       mode="edit"
+      fonts={EDITOR_FONTS}
       onChange={() => setDocVersion((v) => v + 1)}
     >      {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>

@@ -33,6 +33,24 @@ export type InsertFieldInput = {
 
 export type InsertFieldResult = { ok: true } | { ok: false; message: string }
 
+export const TIMES_NEW_ROMAN = "Times New Roman"
+
+// Шрифт полів: paint бере font-family з w:rFonts самих ранів, а рани назв/
+// значень пишуться без шрифту → системний фолбек (Microsoft Sans Serif).
+// findText знаходить діапазон(и) тексту; applyFormatting пише rFonts TNR —
+// і в редакторі, і в DOCX. Дублікати тексту теж формуються — це коректно
+// (будь-який текст «ПІБ (2)» має бути Times New Roman).
+export function applyFieldFont(editor: DocxEditorInstance, text: string): void {
+  if (!text.trim()) return
+  for (const range of editor.query({ type: "findText", text })) {
+    editor.exec({
+      type: "applyFormatting",
+      target: { from: range.from, to: range.to },
+      marks: { fontFamily: TIMES_NEW_ROMAN },
+    })
+  }
+}
+
 export type InsertFieldOptions = {
   /** Клік по заготовленому полю довідника: виділений текст ЗАМІНЮЄТЬСЯ
       полем, а не лишається його вмістом — поле завжди показує назву. */
@@ -120,6 +138,8 @@ function writeTitleIntoField(editor: DocxEditorInstance, controlId: string, titl
   }
   const attempt = (tries: number) => {
     if (surface.contentControls.setValue(controlId, title) || tries <= 0) {
+      // Назва на місці — даємо ранам шрифт Times New Roman (paint і DOCX)
+      applyFieldFont(editor, title)
       bounceSuspend.end()
       return
     }

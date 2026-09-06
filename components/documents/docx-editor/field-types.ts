@@ -1,14 +1,9 @@
-// Реєстр типів кастомних полів заповнення, які адмін може вставити в документ
-// через команду insertContentControl. Точка розширення: новий тип = новий запис.
-//
-// Checkbox у цій ітерації відкладено свідомо: рушій (@docx-editor.dev) вміє
-// створювати лише plainText/date/richText/dropdown/comboBox — нативний Word
-// checkbox (w14:checkbox) він читає та заповнює, але не створює. Додамо його
-// разом із логікою заповнення полів.
+// Кастомне поле (діалог «Додати поле») — лише текстове. Date-поля вилучено
+// як невикористовувані; повернути = додати запис у реєстр.
 
 import type { InsertableContentControlType } from "@docx-editor.dev/core/contracts/editor"
 
-export type CustomFieldTypeId = "plainText" | "date"
+export type CustomFieldTypeId = "plainText"
 
 export type CustomFieldTypeDef = {
   id: CustomFieldTypeId
@@ -26,11 +21,5 @@ export const CUSTOM_FIELD_TYPES: readonly CustomFieldTypeDef[] = [
     label: "Текст",
     hint: "Вільний текст: ПІБ, назва, число тощо.",
     subtype: "plainText",
-  },
-  {
-    id: "date",
-    label: "Дата",
-    hint: "Дата; під час заповнення Word показує вибір дати.",
-    subtype: "date",
   },
 ]
