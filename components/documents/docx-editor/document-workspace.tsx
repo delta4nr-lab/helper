@@ -435,6 +435,9 @@ export default function DocumentWorkspace({
                 <DocxEditor.ContextMenu.Slot slot="review.comments" hidden />
                 <InsertLinkMenuRow />
               </DocxEditor.ContextMenu>
+              {/* Boundary-хром контентів: потрібний для читання офсетів чіпа
+                  (каретка після вставки) і показує межі активного контрола */}
+              <DocxEditor.ContentControl />
             </DocxEditor.Viewport>
             <DocxEditor.Loading overlay />
           </ViewportImageDrop>

@@ -15,6 +15,7 @@ import { useDocxEditor } from "@docx-editor.dev/react"
 import { toast } from "sonner"
 
 import { FIELD_TAG_PREFIX, FieldNode } from "@/lib/docx-editor/field-node"
+import { placeCaretBesideField } from "@/components/documents/docx-editor/field-select"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -38,9 +39,21 @@ export function FieldInsertDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  // Чи була в цьому відкритті успішна вставка: тоді Base UI не має
+  // повертати фокус на тулбар (finalFocus: false — «do not move focus»),
+  // каретку за нодою ставить placeCaretBesideField сам.
+  const insertedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (open) insertedRef.current = false
+  }, [open])
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        finalFocus={() => (insertedRef.current ? false : true)}
+      >
         <DialogHeader>
           <DialogTitle>Додати кастомне поле</DialogTitle>
           <DialogDescription>
@@ -48,13 +61,26 @@ export function FieldInsertDialog({
             правити прямо в тексті.
           </DialogDescription>
         </DialogHeader>
-        {open && <FieldInsertForm onDone={() => onOpenChange(false)} />}
+        {open && (
+          <FieldInsertForm
+            onInserted={() => {
+              insertedRef.current = true
+            }}
+            onDone={() => onOpenChange(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
 }
 
-function FieldInsertForm({ onDone }: { onDone: () => void }) {
+function FieldInsertForm({
+  onInserted,
+  onDone,
+}: {
+  onInserted: () => void
+  onDone: () => void
+}) {
   const editor = useDocxEditor()
   const [key, setKey] = React.useState("")
   const [title, setTitle] = React.useState("")
@@ -96,7 +122,7 @@ function FieldInsertForm({ onDone }: { onDone: () => void }) {
     !duplicateError &&
     !tagOverflowError
 
-  function handleInsert() {
+  async function handleInsert() {
     if (!editor || !canSubmit) return
     // lock: false — без замка вміст чіпа редагується прямо в документі;
     // відмова движка несе reason і code, інвалідний key ловиться вище.
@@ -111,7 +137,13 @@ function FieldInsertForm({ onDone }: { onDone: () => void }) {
       return
     }
     toast.success(`Поле «${normalizedTitle}» вставлено.`)
+    onInserted()
     onDone()
+    // Після закриття діалога: фокус движка (placeCaretBesideField робить
+    // surface.focus() сам) і каретка за щойно вставленою нодою.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => void placeCaretBesideField(editor))
+    )
   }
 
   return (

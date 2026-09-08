@@ -12,7 +12,7 @@
 // preserveOnExport: 'text' — зовнішня копія лишає слова чіпа без службової
 // розмітки (документований патерн для merge-полів).
 
-import { customNodesModule, defineCustomNode } from "@docx-editor.dev/pro"
+import { customNodesModule, defineCustomNode, reviewModule } from "@docx-editor.dev/pro"
 
 export const FIELD_TAG_PREFIX = "acme"
 
@@ -25,4 +25,7 @@ export const FieldNode = defineCustomNode({
 
 // Модулі читаються ОДИН раз при конструюванні редактора («modules are read
 // when the editor is constructed»), тому масив будується поза рендером.
-export const DOCX_MODULES = [customNodesModule({ nodes: [FieldNode] })]
+// reviewModule — джерело editor.getReviewItems(): тільки з ним ноди мають
+// рушійні range-позиції (documentaція «Review items — requires the review
+// module»), якими placeCaretBesideField ставить каретку за нодою.
+export const DOCX_MODULES = [customNodesModule({ nodes: [FieldNode] }), reviewModule()]
