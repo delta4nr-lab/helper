@@ -46,6 +46,26 @@ export async function placeCaretBesideField(editor: DocxEditorInstance): Promise
   }
   console.info(LOG, "caret: активний контрол →", { id: boundary.id, tag: boundary.tag })
 
+  // Режим заповнення: каретку лишаємо в полі, але вміст чіпа виділяємо —
+  // друк одразу заміняє назву (заповнення). Anchor-search — той самий
+  // перевірений шлях, що й у FieldSelect.
+  if (editor.surface?.contentControls.formFill()) {
+    const chipText = customNodesOf(editor).find((candidate) => candidate.tag === boundary.tag)?.text
+    const from = editor.snapshot().selection?.from
+    const paraId = from && "paraId" in from ? from.paraId : null
+    console.info(LOG, "режим заповнення → виділяємо вміст чіпа", { chipText, paraId })
+    if (chipText && paraId) {
+      editor.exec({
+        type: "setSelection",
+        range: {
+          from: { paraId, search: chipText },
+          to: { paraId, search: chipText },
+        },
+      })
+    }
+    return true
+  }
+
   let end: { paragraphId: string; offset: number } | null = null
   for (let attempt = 0; attempt < 10 && !end; attempt++) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
@@ -142,11 +162,7 @@ export function FieldSelect() {
         decoded.prefix === FieldNode.tagPrefix &&
         decoded.name === FieldNode.name
       if (!isField) return
-      if (!entered && !click) {
-        console.info(LOG, "всередині поля без кліку/входу — пропускаємо", { tag, decoded })
-        return
-      }
-      console.info(LOG, "активація поля →", { tag, decoded, click, entered })
+      if (!entered && !click) return
 
       // paraId каретки: DocRange у snapshot несе paraId без офсетів.
       const from = snapshot.selection?.from

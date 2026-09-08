@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { CHROME_GROUPS, chromeProbeForSlot, composeFontConfiguration } from "@docx-editor.dev/core/editor"
-import { DocxEditor, LocaleProvider, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
+import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
 import { CustomNodeChrome } from "@docx-editor.dev/pro/react"
 import { saveForExport } from "@docx-editor.dev/pro"
 import { Braces, Download, Loader2, Save } from "lucide-react"
@@ -57,6 +57,25 @@ type WorkspaceProps = {
 // Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
 // loading-тост замінюється success/error без накопичення повідомлень.
 const EXPORT_TOAST_ID = "docx-export"
+
+// Keeper режиму заповнення (formFill): рушій сам обмежує лише Tab-навігацію
+// між контролами, тому клік поза полем доповнюємо поверненням каретки в
+// найближчий контрол — увесь друк у цьому режимі йде всередину полів.
+function FormFillKeeper() {
+  const editor = useDocxEditor()
+  const { formFill } = useContentControl()
+
+  React.useEffect(() => {
+    if (!formFill || !editor) return
+    return editor.on("selectionChange", (snapshot) => {
+      if (!editor.surface || !snapshot.editable) return
+      if (editor.query({ type: "contentControlAt" })) return
+      editor.surface.contentControls.navigate("next")
+    })
+  }, [editor, formFill])
+
+  return null
+}
 
 // Іконка «посилання» з публічного реєстру chrome (Material Symbols path-дані).
 const LINK_ICON_PATHS =
@@ -363,6 +382,7 @@ export default function DocumentWorkspace({
       {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>
       <FieldSelect />
+      <FormFillKeeper />
       <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
         <Input
@@ -404,6 +424,8 @@ export default function DocumentWorkspace({
             onSelect={() => setFieldInsertOpen(true)}
           />
         )}
+        {/* Режим заповнення (двигунний): каретка живе лише в полях */}
+        <DocxEditor.Toolbar.ContentControlFormFill />
         {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
             Режим "template": exportHandler зберігає байти в Template.docxData */}
         <ExportButton
