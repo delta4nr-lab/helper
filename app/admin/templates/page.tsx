@@ -19,7 +19,6 @@ export default async function AdminTemplatesPage() {
       "popular",
       "updatedAt"
     )
-    .include("templateFields", (field) => field.count())
     .orderBy((template) => template.updatedAt.desc())
     .all()
 
@@ -37,8 +36,6 @@ export default async function AdminTemplatesPage() {
     isActive: template.isActive,
     popular: template.popular,
     updatedAt: String(template.updatedAt),
-    fieldsCount:
-      typeof template.templateFields === "number" ? template.templateFields : 0,
   }))
 
   return (

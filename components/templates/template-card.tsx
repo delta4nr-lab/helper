@@ -19,7 +19,6 @@ export function TemplateCard({ template }: { template: TemplateDefinition }) {
             </span>
             <div>
               <CardTitle className="text-sm">{template.title}</CardTitle>
-              <div className="text-xs text-muted-foreground">{template.fields} полів</div>
             </div>
           </div>
           {template.popular && (

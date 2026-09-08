@@ -7,7 +7,6 @@ import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import { getCategory } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
-import { getActiveCourseRecords } from "@/lib/courses/queries"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
 
 type Params = { category: string; templateId: string }
@@ -35,32 +34,18 @@ export default async function TemplateDetailPage({ params }: { params: Promise<P
 
   let categoryTitle = category
   let title = "Шаблон"
-  let fields: { key: string; label: string; type: string }[] = []
-  let personnel: { id: string; lastName: string; firstName: string; middleName: string | null; rank: string; position: string; signaturePath: string | null }[] = []
 
   try {
     const dbCat = await orm.Category.select("title").first({ slug: category })
     if (dbCat) categoryTitle = dbCat.title
 
-    const dbTpl = await orm.Template.where({ id: templateId, isActive: true })
-      .include("templateFields", (f) => f.orderBy((field) => field.sortOrder.asc()))
-      .first()
+    const dbTpl = await orm.Template.where({ id: templateId, isActive: true }).first()
     if (!dbTpl) notFound()
 
     title = dbTpl.title
-    fields = (dbTpl.templateFields ?? []).map((f) => ({
-      key: String(f.key),
-      label: String(f.label),
-      type: String((f as unknown as { _type?: string })._type ?? "text"),
-    }))
-
-    personnel = await orm.Personnel.orderBy((p) => p.lastName.asc()).limit(500).all()
   } catch {
     notFound()
   }
-
-  // Активний курс — записи для автозаповнення курсантських нод у fill-редакторі
-  const courseRecords = await getActiveCourseRecords().catch(() => [])
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
@@ -83,13 +68,7 @@ export default async function TemplateDetailPage({ params }: { params: Promise<P
         </nav>
 
         <div className="mt-4 flex-1">
-          <DocumentEditor
-            templateId={templateId}
-            title={title}
-            fields={fields}
-            personnel={personnel}
-            courseRecords={courseRecords}
-          />
+          <DocumentEditor templateId={templateId} title={title} />
         </div>
       </main>
       <SiteFooter />

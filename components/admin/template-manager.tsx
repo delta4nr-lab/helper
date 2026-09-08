@@ -32,7 +32,6 @@ export type TemplateRow = {
   isActive: boolean
   popular: boolean
   updatedAt: string
-  fieldsCount: number
 }
 
 type CategoryOption = { slug: string; title: string }
@@ -150,7 +149,6 @@ export function TemplateManager({
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-3 py-2 font-medium">Назва</th>
                 <th className="px-3 py-2 font-medium">Категорія</th>
-                <th className="px-3 py-2 font-medium">Полів</th>
                 <th className="px-3 py-2 font-medium">Статус</th>
                 <th className="px-3 py-2 font-medium">Оновлено</th>
                 <th className="px-3 py-2" />
@@ -166,7 +164,6 @@ export function TemplateManager({
                     {categories.find((category) => category.slug === template.categorySlug)?.title ??
                       template.categorySlug}
                   </td>
-                  <td className="px-3 py-2">{template.fieldsCount}</td>
                   <td className="whitespace-nowrap px-3 py-2">
                     {template.isActive ? (
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">

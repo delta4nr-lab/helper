@@ -40,44 +40,6 @@ async function main() {
   }
   console.log(`Seeded ${seedCategories.length} categories`)
 
-  console.log("Seeding template (raport-vidpustka)...")
-  const adminUser: { id: string } | null = await orm.User.select("id").first({ username: "admin" })
-  const categoryMap = new Map<string, string>()
-  const dbCategories = await orm.Category.select("slug", "id").all()
-  for (const c of dbCategories) categoryMap.set(c.slug, c.id)
-
-  await orm.Template.upsert({
-    create: {
-      id: "raport-vidpustka",
-      categoryId: categoryMap.get("raporty") ?? null,
-      categorySlug: "raporty",
-      title: "Рапорт на відпустку",
-      fields: 6,
-      popular: true,
-      description: "Щорічна, соціальна, за сімейними обставинами. Розрахунок діб, місце проведення.",
-      tags: ["відпустка", "дати", "наказ"],
-      paper: "А4",
-      isActive: true,
-      ...(adminUser ? { createdById: adminUser.id } : {}),
-      updatedAt: nowTimestamp(),
-    },
-    update: {
-      categoryId: categoryMap.get("raporty") ?? null,
-      categorySlug: "raporty",
-      title: "Рапорт на відпустку",
-      fields: 6,
-      popular: true,
-      description: "Щорічна, соціальна, за сімейними обставинами. Розрахунок діб, місце проведення.",
-      tags: ["відпустка", "дати", "наказ"],
-      paper: "А4",
-      isActive: true,
-      ...(adminUser ? { createdById: adminUser.id } : {}),
-      updatedAt: nowTimestamp(),
-    },
-    conflictOn: { id: "raport-vidpustka" },
-  })
-  console.log("Seeded 1 template (raport-vidpustka)")
-
   console.log("Seeding personnel demo...")
   const demo = [
     { lastName: "Петренко", firstName: "Іван", middleName: "Васильович", rank: "капітан", position: "командир роти", unit: "А1234", status: "в строю" },

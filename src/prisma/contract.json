@@ -36,10 +36,6 @@
       "model": "Template",
       "namespace": "public"
     },
-    "TemplateField": {
-      "model": "TemplateField",
-      "namespace": "public"
-    },
     "User": {
       "model": "User",
       "namespace": "public"
@@ -1377,21 +1373,6 @@
                   "model": "ExportedFile",
                   "namespace": "public"
                 }
-              },
-              "templateFields": {
-                "cardinality": "1:N",
-                "on": {
-                  "localFields": [
-                    "id"
-                  ],
-                  "targetFields": [
-                    "templateId"
-                  ]
-                },
-                "to": {
-                  "model": "TemplateField",
-                  "namespace": "public"
-                }
               }
             },
             "storage": {
@@ -1441,159 +1422,6 @@
               },
               "namespaceId": "public",
               "table": "Template"
-            }
-          },
-          "TemplateField": {
-            "fields": {
-              "_type": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "createdAt": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/timestamp-string@1",
-                  "kind": "scalar",
-                  "typeParams": {
-                    "precision": 3
-                  }
-                }
-              },
-              "id": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "key": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "label": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "options": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/jsonb@1",
-                  "kind": "scalar"
-                }
-              },
-              "placeholder": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "required": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/bool@1",
-                  "kind": "scalar"
-                }
-              },
-              "sortOrder": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/int4@1",
-                  "kind": "scalar"
-                }
-              },
-              "templateId": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/text@1",
-                  "kind": "scalar"
-                }
-              },
-              "updatedAt": {
-                "nullable": false,
-                "type": {
-                  "codecId": "pg/timestamp-string@1",
-                  "kind": "scalar",
-                  "typeParams": {
-                    "precision": 3
-                  }
-                }
-              },
-              "validation": {
-                "nullable": true,
-                "type": {
-                  "codecId": "pg/jsonb@1",
-                  "kind": "scalar"
-                }
-              }
-            },
-            "relations": {
-              "template": {
-                "cardinality": "N:1",
-                "on": {
-                  "localFields": [
-                    "templateId"
-                  ],
-                  "targetFields": [
-                    "id"
-                  ]
-                },
-                "to": {
-                  "model": "Template",
-                  "namespace": "public"
-                }
-              }
-            },
-            "storage": {
-              "fields": {
-                "_type": {
-                  "column": "type"
-                },
-                "createdAt": {
-                  "column": "createdAt"
-                },
-                "id": {
-                  "column": "id"
-                },
-                "key": {
-                  "column": "key"
-                },
-                "label": {
-                  "column": "label"
-                },
-                "options": {
-                  "column": "options"
-                },
-                "placeholder": {
-                  "column": "placeholder"
-                },
-                "required": {
-                  "column": "required"
-                },
-                "sortOrder": {
-                  "column": "sortOrder"
-                },
-                "templateId": {
-                  "column": "templateId"
-                },
-                "updatedAt": {
-                  "column": "updatedAt"
-                },
-                "validation": {
-                  "column": "validation"
-                }
-              },
-              "namespaceId": "public",
-              "table": "TemplateField"
             }
           },
           "User": {
@@ -2787,134 +2615,6 @@
               },
               "uniques": []
             },
-            "TemplateField": {
-              "columns": {
-                "createdAt": {
-                  "codecId": "pg/timestamp-string@1",
-                  "default": {
-                    "expression": "now()",
-                    "kind": "function"
-                  },
-                  "nativeType": "timestamp",
-                  "nullable": false,
-                  "typeParams": {
-                    "precision": 3
-                  }
-                },
-                "id": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "key": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "label": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "options": {
-                  "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
-                  "nullable": true
-                },
-                "placeholder": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": true
-                },
-                "required": {
-                  "codecId": "pg/bool@1",
-                  "default": {
-                    "kind": "literal",
-                    "value": true
-                  },
-                  "nativeType": "bool",
-                  "nullable": false
-                },
-                "sortOrder": {
-                  "codecId": "pg/int4@1",
-                  "default": {
-                    "kind": "literal",
-                    "value": 0
-                  },
-                  "nativeType": "int4",
-                  "nullable": false
-                },
-                "templateId": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "type": {
-                  "codecId": "pg/text@1",
-                  "nativeType": "text",
-                  "nullable": false
-                },
-                "updatedAt": {
-                  "codecId": "pg/timestamp-string@1",
-                  "nativeType": "timestamp",
-                  "nullable": false,
-                  "typeParams": {
-                    "precision": 3
-                  }
-                },
-                "validation": {
-                  "codecId": "pg/jsonb@1",
-                  "nativeType": "jsonb",
-                  "nullable": true
-                }
-              },
-              "foreignKeys": [
-                {
-                  "name": "TemplateField_templateId_fkey",
-                  "onDelete": "cascade",
-                  "onUpdate": "cascade",
-                  "source": {
-                    "columns": [
-                      "templateId"
-                    ],
-                    "namespaceId": "public",
-                    "tableName": "TemplateField"
-                  },
-                  "target": {
-                    "columns": [
-                      "id"
-                    ],
-                    "namespaceId": "public",
-                    "tableName": "Template"
-                  }
-                }
-              ],
-              "indexes": [
-                {
-                  "columns": [
-                    "templateId",
-                    "sortOrder"
-                  ],
-                  "name": "TemplateField_templateId_sortOrder_idx",
-                  "unique": false
-                }
-              ],
-              "primaryKey": {
-                "columns": [
-                  "id"
-                ],
-                "name": "TemplateField_pkey"
-              },
-              "uniques": [
-                {
-                  "columns": [
-                    "templateId",
-                    "key"
-                  ],
-                  "name": "TemplateField_templateId_key_key"
-                }
-              ]
-            },
             "User": {
               "columns": {
                 "createdAt": {
@@ -3020,10 +2720,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "01b85d83640786a4235e55e350919f8145144300484a2ceecc6688558091cc99"
+    "storageHash": "1fb06b9b61e2e6474acd8b560cff8a8e8eaaf020d19330babe64bde6b32d1188"
   },
   "execution": {
-    "executionHash": "c0c2f5bbac05f050276ed6434085467b3df8c2eeb85d9868f3a10e0f82690851",
+    "executionHash": "7647c7a6d10e649a917288bdd9bf290047ac63e421f6254152dc132a39fc9057",
     "mutations": {
       "defaults": [
         {
@@ -3112,17 +2812,6 @@
             "column": "id",
             "namespace": "public",
             "table": "Template"
-          }
-        },
-        {
-          "onCreate": {
-            "id": "nanoid",
-            "kind": "generator"
-          },
-          "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "TemplateField"
           }
         },
         {

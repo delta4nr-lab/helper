@@ -2,23 +2,16 @@
 
 import Link from "next/link"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
-import { TemplateFieldsDialog, type TemplateFieldRow } from "@/components/admin/template-fields-dialog"
-import { FieldCatalogsPanel } from "@/components/documents/docx-editor/field-catalogs-panel"
-import type { EditorPersonnel } from "@/components/documents/types"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export function TemplateEditorScreen({
   templateId,
   title,
-  fields,
-  personnel,
   saveHandler,
 }: {
   templateId: string
   title: string
-  fields: TemplateFieldRow[]
-  personnel: EditorPersonnel[]
   saveHandler: (formData: FormData) => Promise<{ ok: boolean; message: string }>
 }) {
   return (
@@ -39,13 +32,9 @@ export function TemplateEditorScreen({
           <DocumentEditor
             templateId={templateId}
             title={title}
-            fields={fields.map((field) => ({ key: field.key, label: field.label, type: field._type }))}
-            personnel={personnel}
             docxUrl={`/api/admin/templates/${templateId}/docx`}
             mode="template"
             exportHandler={saveHandler}
-            titleActions={<TemplateFieldsDialog templateId={templateId} fields={fields} />}
-            sidePanel={<FieldCatalogsPanel />}
           />
         </div>
       </div>

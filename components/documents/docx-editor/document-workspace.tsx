@@ -2,24 +2,24 @@
 
 import * as React from "react"
 import { CHROME_GROUPS, chromeProbeForSlot, composeFontConfiguration } from "@docx-editor.dev/core/editor"
-import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
-import { Download, Highlighter, Loader2, PanelRight, Save, ScanText, TextCursorInput } from "lucide-react"
+import { DocxEditor, LocaleProvider, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
+import { CustomNodeChrome } from "@docx-editor.dev/pro/react"
+import { saveForExport } from "@docx-editor.dev/pro"
+import { Braces, Download, Loader2, Save } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
 
 import { toast } from "sonner"
 
-import { FillPanel } from "@/components/documents/docx-editor/fill-panel"
 import {
   ImageInsertDialog,
   insertImageIntoDocument,
   uploadImageFile,
   validateImageFile,
 } from "@/components/documents/docx-editor/image-insert-dialog"
-import { InsertFieldDialog } from "@/components/documents/docx-editor/insert-field-dialog"
-import { bounceSuspend } from "@/components/documents/docx-editor/bounce-suspend"
-import type { EditorField, EditorPersonnel } from "@/components/documents/types"
-import type { CourseRecordData } from "@/lib/courses/types"
+import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
+import { FieldSelect } from "@/components/documents/docx-editor/field-select"
+import { DOCX_MODULES } from "@/lib/docx-editor/field-node"
 import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
 
@@ -29,13 +29,11 @@ import { cn } from "@/lib/utils"
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-// Дефолтний шрифт редактора: рани без явного шрифту (весь вміст наших полів)
-// розв'язуються у defaultFont рушія — без конфіга це Calibri 11pt (далі
-// системний фолбек) — вміст полів малювався не Times New Roman. 28
-// half-points = 14pt — дзеркало docDefaults документа. Ран-рівневі шрифти та
-// експорт не змінюються. Стабільне посилання ОБОВ'ЯЗКОВЕ: новий конфіг
-// щорендеру запускав би перезавантаження шрифтів рушія щоразу (change →
-// docVersion → рендер → новий об'єкт → …) — «Maximum update depth exceeded».
+// Дефолтний шрифт редактора: рани без явного шрифту розв'язуються у defaultFont
+// рушія — без конфіга це Calibri 11pt (далі системний фолбек). 28 half-points
+// = 14pt — дзеркало docDefaults документа. Стабільне посилання ОБОВ'ЯЗКОВЕ:
+// новий конфіг щорендеру запускав би перезавантаження шрифтів рушія щоразу —
+// «Maximum update depth exceeded».
 const EDITOR_FONTS = composeFontConfiguration({
   sources: [],
   defaultFont: { family: "Times New Roman", sizeHalfPoints: 28 },
@@ -44,112 +42,21 @@ const EDITOR_FONTS = composeFontConfiguration({
 type WorkspaceProps = {
   templateId: string
   title: string
-  fields: EditorField[]
-  personnel: EditorPersonnel[]
   /** Джерело DOCX-байтів; за замовчуванням публічний /api/templates/[id]/docx */
   docxUrl?: string
   /** "template": кнопка експорту зберігає шаблон через exportHandler (без завантаження) */
   mode?: "document" | "template"
   /** Серверний action збереження шаблона (FormData: file, title) */
   exportHandler?: (formData: FormData) => Promise<{ ok: boolean; message: string }>
-  /** Додаткові елементи у верхньому рядку (наприклад, кнопка полів заповнення) */
+  /** Додаткові елементи у верхньому рядку редактора */
   titleActions?: React.ReactNode
   /** Панель праворуч від документа (усередині Root — контекст редактора доступний) */
   sidePanel?: React.ReactNode
-  /** Записи активного курсу для автозаповнення курсантських нод */
-  courseRecords?: CourseRecordData[]
 }
 
 // Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
 // loading-тост замінюється success/error без накопичення повідомлень.
 const EXPORT_TOAST_ID = "docx-export"
-
-// Режим «лише заповнення»: каретка мусить жити лише всередині полів (content controls).
-// Рушій обмежує тільки Tab-навігацію, тому доповнюємо синхронною підпискою:
-// щойно каретка покидає поле (клік поза ним) — одразу повертаємо її в найближче поле,
-// до того, як користувач встигне щось надрукувати. На час програмного заповнення
-// підпису відскік призупинено (bounceSuspend), щоб не перехоплювати sélection-зміни.
-function FormFillToggle() {
-  const editor = useDocxEditor()
-  const { formFill, toggleFormFill, controls } = useContentControl()
-
-  React.useEffect(() => {
-    if (!formFill || !editor) return
-    return editor.on("selectionChange", (snapshot) => {
-      if (bounceSuspend.active || !editor.surface || !snapshot.editable) return
-      const atControl = editor.query({ type: "contentControlAt" })
-      if (atControl) return
-      editor.surface.contentControls.navigate("next")
-    })
-  }, [editor, formFill])
-
-  function handleToggle() {
-    const turningOn = !formFill
-    toggleFormFill()
-    if (turningOn && editor?.surface && !editor.query({ type: "contentControlAt" })) {
-      editor.surface.contentControls.navigate("next")
-    }
-  }
-
-  return (
-    <Button
-      type="button"
-      variant={formFill ? "secondary" : "ghost"}
-      size="icon-sm"
-      onClick={handleToggle}
-      disabled={controls.length === 0}
-      title="Режим заповнення: редагування лише всередині полів"
-      aria-label="Режим заповнення"
-    >
-      <ScanText className="size-4" />
-    </Button>
-  )
-}
-
-// Підсвітка полів: boundary-хром на всіх контролах — видно, що треба заповнювати.
-// Увімкнена за замовчуванням; кнопка перемикає. Стан повторно застосовується при
-// кожній версії документа: surface з'являється після завантаження файлу, а
-// setShowAll — idempotentний стан хрому (без reflow).
-function HighlightToggle({ docVersion }: { docVersion: number }) {
-  const editor = useDocxEditor()
-  const [on, setOn] = React.useState(true)
-
-  React.useEffect(() => {
-    if (!editor?.surface) return
-    editor.surface.contentControls.setShowAll(on)
-  }, [editor, editor?.surface, on, docVersion])
-
-  return (
-    <Button
-      type="button"
-      variant={on ? "secondary" : "ghost"}
-      size="icon-sm"
-      onClick={() => setOn((value) => !value)}
-      title="Підсвітка полів для заповнення"
-      aria-label="Підсвітка полів для заповнення"
-    >
-      <Highlighter className="size-4" />
-    </Button>
-  )
-}
-
-// Перемикач панелі заповнення: панель завжди змонтована, кнопка лише ховає/показує її.
-// За замовчуванням панель скрита — кнопка слугує точкою входу для заповнення полів.
-function FillPanelToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  return (
-    <Button
-      type="button"
-      variant={open ? "secondary" : "ghost"}
-      size="icon-sm"
-      onClick={onToggle}
-      title={open ? "Сховати панель заповнення" : "Показати панель заповнення"}
-      aria-label={open ? "Сховати панель заповнення" : "Показати панель заповнення"}
-      aria-pressed={open}
-    >
-      <PanelRight className="size-4" />
-    </Button>
-  )
-}
 
 // Іконка «посилання» з публічного реєстру chrome (Material Symbols path-дані).
 const LINK_ICON_PATHS =
@@ -297,9 +204,10 @@ function ViewportImageDrop({ className, children }: { className?: string; childr
   )
 }
 
-// Експорт/збереження: editor.save() → сервер → тост.
-// Режим "template": збереження байтів у Template через exportHandler (без завантаження);
-// режим "document" (дефолт): збереження в історію експортів користувача + завантаження.
+// Експорт/збереження → сервер → тост.
+// Режим "template": editor.save() — копія, яку ЗБЕРІГАЄМО (чіпи лишаються,
+// документ відкриється тут знову). Режим "document": saveForExport() —
+// зовнішня копія, preserveOnExport визначень вирішує, що з нею стається.
 function ExportButton({
   templateId,
   title,
@@ -317,17 +225,27 @@ function ExportButton({
     setPending(true)
     toast.loading(saveHandler ? "Збереження шаблону..." : "Формування DOCX...", { id: EXPORT_TOAST_ID })
     try {
-      const buffer = await editor.save()
-      const form = new FormData()
-      form.set("file", new Blob([buffer], { type: DOCX_MIME }), "document.docx")
-      form.set("title", title)
-
       if (saveHandler) {
+        // Копія, яку зберігаємо: editor.save() лишає чіпи полів у шаблоні.
+        const buffer = await editor.save()
+        const form = new FormData()
+        form.set("file", new Blob([buffer], { type: DOCX_MIME }), "document.docx")
+        form.set("title", title)
         const result = await saveHandler(form)
         toast[result.ok ? "success" : "error"](result.message, { id: EXPORT_TOAST_ID })
         return
       }
 
+      // Копія, що лишає систему: saveForExport застосовує preserveOnExport
+      // визначень (задокументований шлях для зовнішніх копій).
+      const outgoing = await saveForExport(editor)
+      if (!outgoing.ok) {
+        toast.error("Не вдалося сформувати документ для завантаження.", { id: EXPORT_TOAST_ID })
+        return
+      }
+      const form = new FormData()
+      form.set("file", new Blob([new Uint8Array(outgoing.bytes)], { type: DOCX_MIME }), "document.docx")
+      form.set("title", title)
       form.set("templateId", templateId)
       const response = await fetch("/api/exports", { method: "POST", body: form })
       const result = (await response.json()) as { message?: string; downloadUrl?: string }
@@ -370,30 +288,27 @@ function ExportButton({
   )
 }
 
-// Робоча область: DocxEditor.Root (контекст) + хром редактора + панель заповнення.
+// Робоча область: DocxEditor.Root (контекст) + хром редактора.
 // Тематизація: бібліотека чекає класи docx-editor (світлі токени) і docx-editor.dark
 // (темні токени --doc-*) на спільному корені хрому, тому обгортаємо хром обгорткою,
 // що слідкує за темою сайту. Папір лишається білим; документ не залишає браузер.
 export default function DocumentWorkspace({
   templateId,
   title,
-  fields,
-  personnel,
   docxUrl,
   mode = "document",
   exportHandler,
   titleActions,
   sidePanel,
-  courseRecords,
 }: WorkspaceProps) {
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
-  const [docVersion, setDocVersion] = React.useState(0)
-  const [fillOpen, setFillOpen] = React.useState(false)
   const [pageSetupOpen, setPageSetupOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
-  // Діалог вставки кастомного поля заповнення (лише адмінський режим шаблона)
-  const [insertFieldOpen, setInsertFieldOpen] = React.useState(false)
+  // Кастомні поля (custom nodes): діалог вставки в режимі шаблона. Вміст
+  // чіпа редагується прямо в документі (нода без payload, lock: false),
+  // тому окремої форми заповнення немає.
+  const [fieldInsertOpen, setFieldInsertOpen] = React.useState(false)
   // Назву документа можна змінити/дописати — експорт іде з назвою користувача.
   // Синхронізація з пропом не потрібна: батько монтує компонент із key=templateId,
   // тож при зміні шаблона стан назви ініціалізується заново.
@@ -443,9 +358,11 @@ export default function DocumentWorkspace({
       document={bytes}
       mode="edit"
       fonts={EDITOR_FONTS}
-      onChange={() => setDocVersion((v) => v + 1)}
-    >      {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
+      modules={DOCX_MODULES}
+    >
+      {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>
+      <FieldSelect />
       <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
         <Input
@@ -475,23 +392,18 @@ export default function DocumentWorkspace({
       <DocxEditor.Toolbar>
         <DocxEditor.Toolbar.Comments hidden />
         <DocxEditor.Toolbar.EditingMode hidden />
-        {/* Зображення: з панелі заповнення; з тулбара лишається тільки обтікання */}
+        {/* Зображення вставляються з меню «Вставити»; з тулбара лишається тільки обтікання */}
         <DocxEditor.Toolbar.ImageInsert hidden />
         <DocxEditor.Toolbar.ImageProperties hidden />
         <DocxEditor.Toolbar.ImageAltText hidden />
-        {/* Кастомні кнопки: рендеряться останньою групою тулбара */}
-        {/* Панель заповнення — лише в режимі документа; у шаблонному режимі її місце займає sidePanel */}
-        {mode === "document" && <FillPanelToggle open={fillOpen} onToggle={() => setFillOpen((v) => !v)} />}
-        {/* «Додати поле» — адмін вставляє кастомний content control у місце курсора/виділення */}
+        {/* Кастомні поля (custom nodes): вставка в режимі шаблона */}
         {mode === "template" && (
           <DocxEditor.Toolbar.Action
-            label="Додати поле"
-            icon={<TextCursorInput className="size-4" />}
-            onSelect={() => setInsertFieldOpen(true)}
+            label="Додати кастомне поле"
+            icon={<Braces className="size-4" />}
+            onSelect={() => setFieldInsertOpen(true)}
           />
         )}
-        <HighlightToggle docVersion={docVersion} />
-        <FormFillToggle />
         {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
             Режим "template": exportHandler зберігає байти в Template.docxData */}
         <ExportButton
@@ -502,9 +414,7 @@ export default function DocumentWorkspace({
       </DocxEditor.Toolbar>
 
       {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
-          батька, а відступи центрування бібліотека рахує від ширини viewport.
-          Якщо лишити її над рядком viewport+панель, при відкритій панелі
-          центри лінійки й сторінки роз'їжджаються на половину ширини панелі. */}
+          батька, а відступи центрування бібліотека рахує від ширини viewport. */}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <DocxEditor.HorizontalRuler />
@@ -514,6 +424,10 @@ export default function DocumentWorkspace({
               <DocxEditor.HeaderFooterChrome />
               <DocxEditor.NotesChrome />
               <DocxEditor.Content />
+              {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
+                  порядок з прикладу документації). Вміст редагується прямо
+                  в документі, тому обробників активації немає. */}
+              <CustomNodeChrome />
               <DocxEditor.HyperLink />
               <DocxEditor.ContextMenu>
                 {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
@@ -521,21 +435,17 @@ export default function DocumentWorkspace({
                 <DocxEditor.ContextMenu.Slot slot="review.comments" hidden />
                 <InsertLinkMenuRow />
               </DocxEditor.ContextMenu>
-              <DocxEditor.ContentControl />
             </DocxEditor.Viewport>
             <DocxEditor.Loading overlay />
           </ViewportImageDrop>
         </div>
-        {mode === "document" && (
-          <FillPanel open={fillOpen} fields={fields} personnel={personnel} docVersion={docVersion} courseRecords={courseRecords} />
-        )}
         {sidePanel}
       </div>
       </div>
 
       <DocxEditor.PageSetupDialog open={pageSetupOpen} onClose={() => setPageSetupOpen(false)} />
       <ImageInsertDialog open={imageDialogOpen} onOpenChange={setImageDialogOpen} />
-      <InsertFieldDialog open={insertFieldOpen} onOpenChange={setInsertFieldOpen} />
+      <FieldInsertDialog open={fieldInsertOpen} onOpenChange={setFieldInsertOpen} />
       </LocaleProvider>
     </DocxEditor.Root>
   )
