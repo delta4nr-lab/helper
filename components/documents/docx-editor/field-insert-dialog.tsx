@@ -32,6 +32,8 @@ import { Label } from "@/components/ui/label"
 // Той самий формат ключа, що й у старій системі полів.
 const TAG_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/
 
+const LOG = "[field-insert]"
+
 export function FieldInsertDialog({
   open,
   onOpenChange,
@@ -124,6 +126,33 @@ function FieldInsertForm({
 
   async function handleInsert() {
     if (!editor || !canSubmit) return
+    // Виділений текст замінюється нодою: insertCustomNode вставляє в точку
+    // head виділення без видалення (перевірено в імплементації пакета),
+    // тому спершу очищаємо виділення публічною командою paste { text: "" }
+    // («Insert the clipboard payload at the selection, replacing it» —
+    // payload аргументом, системний буфер не чіпається); відмова →
+    // fallback cut («delete it», мінус — текст іде в буфер обміну).
+    const snapshot = editor.snapshot()
+    if (!snapshot.selectionCollapsed) {
+      let cleared = editor.exec({ type: "paste", text: "" })
+      if (!cleared.ok) {
+        console.info(LOG, "paste-clear відхилено → fallback cut →", {
+          code: cleared.code,
+          reason: cleared.reason,
+        })
+        cleared = editor.exec({ type: "cut" })
+      }
+      if (!cleared.ok) {
+        console.info(LOG, "очищення виділення не вдалося →", {
+          code: cleared.code,
+          reason: cleared.reason,
+        })
+      } else {
+        console.info(LOG, "виділення очищено →", {
+          collapsed: editor.snapshot().selectionCollapsed,
+        })
+      }
+    }
     // lock: false — без замка вміст чіпа редагується прямо в документі;
     // відмова движка несе reason і code, інвалідний key ловиться вище.
     const result = insertCustomNode(editor, FieldNode, {
