@@ -38,9 +38,10 @@ export const FieldNode = defineCustomNode({
   fromDocx: ({ attrs }): FieldChipAttrs | null => {
     const key = attrs["key"]
     if (!key) return null
-    // Схема staff.{i}.{f} — fieldType/personInstance виводяться з key;
-    // p — personnelId, доданий прив'язкою людини (updateCustomNode).
-    const m = /^staff\.([1-9][0-9]*)\.([a-zA-Z][a-zA-Z0-9_]*)$/.exec(key)
+    // Схеми identity: staff.{i}.{f} (персонал) / cadet.{i}.{f} (курсанти) —
+    // fieldType/personInstance виводяться з key; p — personnelId, доданий
+    // прив'язкою людини (updateCustomNode).
+    const m = /^(?:staff|cadet)\.([1-9][0-9]*)\.([a-zA-Z][a-zA-Z0-9_]*)$/.exec(key)
     return {
       key,
       fieldType: m ? m[2] : (attrs["f"] ?? undefined),

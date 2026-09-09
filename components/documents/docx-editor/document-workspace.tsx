@@ -21,7 +21,11 @@ import { FieldEditMenu } from "@/components/documents/docx-editor/field-edit-dia
 import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
-import { PersonnelPanel, type PersonnelEntry } from "@/components/documents/docx-editor/personnel-panel"
+import {
+  PersonnelPanel,
+  type PersonnelEntry,
+} from "@/components/documents/docx-editor/personnel-panel"
+import type { CourseRecordData } from "@/lib/courses/types"
 import { DOCX_MODULES } from "@/lib/docx-editor/field-node"
 import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
@@ -57,6 +61,8 @@ type WorkspaceProps = {
   sidePanel?: React.ReactNode
   /** Довідник персоналу для персональних полів (template-режим) */
   personnel?: PersonnelEntry[]
+  /** Курсанти з активного курсу (template-режим, cadet.{i}.{f}-ноди) */
+  cadets?: readonly CourseRecordData[]
 }
 
 // Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
@@ -325,6 +331,7 @@ export default function DocumentWorkspace({
   titleActions,
   sidePanel,
   personnel,
+  cadets,
 }: WorkspaceProps) {
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -456,8 +463,8 @@ export default function DocumentWorkspace({
               {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
                   порядок з прикладу документації). У template-режимі з
                   персональними нодами — хром із hover-кнопками прив'язки персоналу */}
-              {mode === "template" && personnel && personnel.length ? (
-                <PersonnelChrome personnel={personnel} />
+              {mode === "template" && (personnel?.length || cadets?.length) ? (
+                <PersonnelChrome personnel={personnel ?? []} cadets={cadets ?? []} />
               ) : (
                 <CustomNodeChrome />
               )}

@@ -4,6 +4,7 @@ import nextDynamic from "next/dynamic"
 import { Loader2 } from "lucide-react"
 
 import type { PersonnelEntry } from "@/components/documents/docx-editor/personnel-panel"
+import type { CourseRecordData } from "@/lib/courses/types"
 
 // Редактор Docx рендериться лише в браузері (SSR кидає помилку), тому динамічний імпорт.
 const DocumentWorkspace = nextDynamic(() => import("./document-workspace"), {
@@ -31,6 +32,8 @@ type Props = {
   sidePanel?: React.ReactNode
   /** Довідник персоналу для персональних полів (template-режим) */
   personnel?: PersonnelEntry[]
+  /** Курсанти з активного курсу (template-режим, cadet.{i}.{f}-ноди) */
+  cadets?: readonly CourseRecordData[]
 }
 
 export function DocumentEditor({
@@ -42,6 +45,7 @@ export function DocumentEditor({
   titleActions,
   sidePanel,
   personnel,
+  cadets,
 }: Props) {
   return (
     <div className="flex h-[calc(100svh-9rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg border">
@@ -54,6 +58,7 @@ export function DocumentEditor({
         titleActions={titleActions}
         sidePanel={sidePanel}
         personnel={personnel}
+        cadets={cadets}
       />
     </div>
   )

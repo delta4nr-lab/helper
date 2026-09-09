@@ -19,12 +19,19 @@ import { Minus, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import {
+  COURSE_FIELD_LABELS,
+  COURSE_RECORD_TEXT_FIELDS,
+  type CourseRecordTextField,
+} from "@/lib/courses/types"
+
+import {
   placeCaretBesideField,
   suspendFieldSelect,
 } from "@/components/documents/docx-editor/field-select"
 import { FieldNode } from "@/lib/docx-editor/field-node"
 
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 export type PersonnelFieldType = "fullName" | "position" | "rank" | "signature"
@@ -57,6 +64,7 @@ const LOG = "[personnel-panel]"
 export function PersonnelPanel() {
   const editor = useDocxEditor()
   const [instance, setInstance] = React.useState(1)
+  const [cadetInstance, setCadetInstance] = React.useState(1)
 
   const fields = Object.keys(PERSONNEL_FIELD_LABELS) as PersonnelFieldType[]
 
@@ -119,63 +127,172 @@ export function PersonnelPanel() {
     )
   }
 
+  async function insertCadetField(field: CourseRecordTextField | "orderNumber") {
+    if (!editor) return
+    // Identity курсанта: key/f/i в attrs → w:tag — cadet.{i}.{f} (окрема
+    // схема від staff.*), lock: false → чіп редагований; значення з АКТИВНОГО
+    // курсу підставляється при прив'язці курсанта (p = record.id).
+    const attrs = {
+      key: `cadet.${cadetInstance}.${field}`,
+      f: field,
+      i: String(cadetInstance),
+    }
+    const label = `${COURSE_FIELD_LABELS[field] ?? field} (${cadetInstance})`
+    // Авто-виділення FieldSelect призупинено на час вставки+розміщення.
+    suspendFieldSelect(true)
+    const result = insertCustomNode(editor, FieldNode, {
+      attrs,
+      text: label,
+      alias: label,
+      lock: false,
+    })
+    if (!result.ok) {
+      suspendFieldSelect(false)
+      toast.error(result.reason ?? "Не вдалося вставити поле.")
+      return
+    }
+    toast.success(`Поле «${label}» вставлено.`, { id: INSERT_TOAST_ID })
+    // Каретка одразу за нодою — той самий рушійний шлях, що й у field-insert-dialog.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        void placeCaretBesideField(editor).finally(() => suspendFieldSelect(false))
+      })
+    )
+  }
+
+  const cadetFields: Array<CourseRecordTextField | "orderNumber"> = [
+    ...COURSE_RECORD_TEXT_FIELDS,
+    "orderNumber",
+  ]
+
   return (
-    <div className="w-64 shrink-0 rounded-lg border bg-card p-3">
-      <div className="text-sm font-semibold">Персонал</div>
+    <div className="w-72 shrink-0 rounded-lg border bg-card p-3">
+      <Tabs defaultValue="personnel">
+        <TabsList variant="line" className="w-full">
+          <TabsTrigger value="personnel" className="flex-1">
+            Персонал
+          </TabsTrigger>
+          <TabsTrigger value="cadets" className="flex-1">
+            Курсанти
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="mt-3 text-xs text-muted-foreground">
-        Екземпляр — для якої людини зараз вставляються поля
-      </div>
-      <div className="mt-1 inline-flex items-center gap-1.5 rounded-lg border p-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Попередній екземпляр"
-          disabled={instance <= 1}
-          onClick={() => setInstance((v) => Math.max(1, v - 1))}
-        >
-          <Minus className="size-4" />
-        </Button>
-        <span
-          className={cn(
-            "min-w-8 text-center text-sm font-medium tabular-nums",
-            !editor && "text-muted-foreground"
-          )}
-        >
-          {instance}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Наступний екземпляр"
-          disabled={instance >= MAX_INSTANCE}
-          onClick={() => setInstance((v) => Math.min(MAX_INSTANCE, v + 1))}
-        >
-          <Plus className="size-4" />
-        </Button>
-      </div>
+        <TabsContent value="personnel" className="mt-2 grid gap-3">
+          <div className="text-xs text-muted-foreground">
+            Екземпляр — для якої людини зараз вставляються поля
+          </div>
+          <div className="inline-flex items-center gap-1.5 rounded-lg border p-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Попередній екземпляр"
+              disabled={instance <= 1}
+              onClick={() => setInstance((v) => Math.max(1, v - 1))}
+            >
+              <Minus className="size-4" />
+            </Button>
+            <span
+              className={cn(
+                "min-w-8 text-center text-sm font-medium tabular-nums",
+                !editor && "text-muted-foreground"
+              )}
+            >
+              {instance}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Наступний екземпляр"
+              disabled={instance >= MAX_INSTANCE}
+              onClick={() => setInstance((v) => Math.min(MAX_INSTANCE, v + 1))}
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
 
-      <div className="mt-3 text-xs text-muted-foreground">Поля</div>
-      <div className="mt-1 grid grid-cols-2 gap-2">
-        {fields.map((fieldType) => (
-          <Button
-            key={fieldType}
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!editor}
-            onClick={() => void insertField(fieldType)}
-          >
-            {PERSONNEL_FIELD_LABELS[fieldType]}
-          </Button>
-        ))}
-      </div>
+          <div className="text-xs text-muted-foreground">Поля</div>
+          <div className="grid grid-cols-2 gap-2">
+            {fields.map((fieldType) => (
+              <Button
+                key={fieldType}
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!editor}
+                onClick={() => void insertField(fieldType)}
+              >
+                {PERSONNEL_FIELD_LABELS[fieldType]}
+              </Button>
+            ))}
+          </div>
 
-      <p className="mt-3 text-xs text-muted-foreground">
-        Вставлені поля цього екземпляра прив&apos;язуються до працівника кнопкою на чіпі в документі.
-      </p>
+          <p className="text-xs text-muted-foreground">
+            Вставлені поля цього екземпляра прив&apos;язуються до працівника кнопкою на чіпі в документі.
+          </p>
+        </TabsContent>
+
+        <TabsContent value="cadets" className="mt-2 grid gap-3">
+          <div className="text-xs text-muted-foreground">
+            Екземпляр — для якого курсанта зараз вставляються поля
+          </div>
+          <div className="inline-flex items-center gap-1.5 rounded-lg border p-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Попередній екземпляр"
+              disabled={cadetInstance <= 1}
+              onClick={() => setCadetInstance((v) => Math.max(1, v - 1))}
+            >
+              <Minus className="size-4" />
+            </Button>
+            <span
+              className={cn(
+                "min-w-8 text-center text-sm font-medium tabular-nums",
+                !editor && "text-muted-foreground"
+              )}
+            >
+              {cadetInstance}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Наступний екземпляр"
+              disabled={cadetInstance >= MAX_INSTANCE}
+              onClick={() => setCadetInstance((v) => Math.min(MAX_INSTANCE, v + 1))}
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
+
+          <div className="text-xs text-muted-foreground">Поля (з активного курсу)</div>
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-border/50 p-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
+              {cadetFields.map((field) => (
+                <Button
+                  key={field}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto justify-start whitespace-normal px-2 py-1 text-[11px] leading-tight"
+                  disabled={!editor}
+                  onClick={() => void insertCadetField(field)}
+                >
+                  {COURSE_FIELD_LABELS[field] ?? field}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Прив&apos;язка курсанта до полів — кнопкою на чіпі в документі (після вибору
+            оновлюється курсант із активного курсу).
+          </p>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

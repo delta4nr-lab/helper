@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/site-footer"
 import { SiteHeader } from "@/components/site-header"
 import { orm } from "@/lib/db"
 import { saveTemplateDocxAction } from "@/lib/templates/actions"
+import { getActiveCourseRecords } from "@/lib/courses/queries"
 
 export const dynamic = "force-dynamic"
 
@@ -36,6 +37,9 @@ export default async function AdminTemplateEditorPage({
     .limit(500)
     .all()
 
+  // Курсанти з активного курсу (cadet.{i}.{f}-ноди)
+  const cadets = await getActiveCourseRecords()
+
   return (
     <div className="min-h-svh bg-muted/20">
       <SiteHeader />
@@ -57,6 +61,7 @@ export default async function AdminTemplateEditorPage({
                 position: p.position,
                 signaturePath: p.signaturePath ?? null,
               }))}
+              cadets={cadets}
               saveHandler={saveTemplateDocxAction.bind(null, template.id)}
             />
           </div>
