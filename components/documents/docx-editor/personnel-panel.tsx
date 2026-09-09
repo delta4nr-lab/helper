@@ -67,6 +67,9 @@ export function PersonnelPanel() {
     // короткий (≤ 64 перевірено) — переповнення неможливе.
     const attrs = { key: getStaffTag(instance, fieldType) }
     const label = `${PERSONNEL_FIELD_LABELS[fieldType]} (${instance})`
+    // Маркер місця підпису в шаблоні — чіп видимый («Підпис (N)»); при
+    // прив'язці людини текст переписується на пробіл у вмісті документа
+    // (bindPerson), а картинка стає праворуч від чіпа.
     // Авто-виділення FieldSelect призупинено на час вставки+розміщення —
     // той самий патерн, що й у field-insert-dialog.
     suspendFieldSelect(true)

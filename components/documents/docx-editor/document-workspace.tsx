@@ -418,9 +418,10 @@ export default function DocumentWorkspace({
       <DocxEditor.Toolbar>
         <DocxEditor.Toolbar.Comments hidden />
         <DocxEditor.Toolbar.EditingMode hidden />
-        {/* Зображення вставляються з меню «Вставити»; з тулбара лишається тільки обтікання */}
+        {/* Зображення вставляються з меню «Вставити»; властивості обраної
+            картинки (розмір/обтікання/позиція) — вбудований контрол */}
         <DocxEditor.Toolbar.ImageInsert hidden />
-        <DocxEditor.Toolbar.ImageProperties hidden />
+        <DocxEditor.Toolbar.ImageProperties />
         <DocxEditor.Toolbar.ImageAltText hidden />
         {/* Кастомні поля (custom nodes): вставка в режимі шаблона */}
         {mode === "template" && (

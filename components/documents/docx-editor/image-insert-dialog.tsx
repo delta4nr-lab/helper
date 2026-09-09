@@ -133,9 +133,12 @@ async function reencodeJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
 }
 
 // Спільна вставка: байти зображення → валідація → вбудовування в DOCX у каретку.
+// max — необов'язковий дефолт-ліміт розміру (pt): після normalisation
+// масштабуємо ВНИЗ зі збереженням пропорцій, щоб вписатись у межі.
 export async function insertImageIntoDocument(
   editor: EditorInstance,
-  image: UserImage
+  image: UserImage,
+  max?: { widthPt: number; heightPt: number }
 ): Promise<boolean> {
   try {
     const response = await fetch(image.path)
@@ -155,12 +158,26 @@ export async function insertImageIntoDocument(
         if (reparsed.ok) payload = reparsed
       }
     }
+    // Дефолт-ліміт розміру: масштабуємо ВНИЗ (ніколи не вгору) зі
+    // збереженням пропорцій; масштабування застосовуємо до точок до
+    // executeImageCommand, щоб позиціонування у Word рахувалось від них.
+    let widthPoints = payload.widthPoints
+    let heightPoints = payload.heightPoints
+    if (max) {
+      const scale = Math.min(
+        1,
+        max.widthPt / Math.max(1, widthPoints),
+        max.heightPt / Math.max(1, heightPoints)
+      )
+      widthPoints = Math.round(widthPoints * scale)
+      heightPoints = Math.round(heightPoints * scale)
+    }
     const result = await editor.executeImageCommand({
       type: "insertImage",
       data: payload.bytes,
       mime: payload.mime,
-      widthPoints: payload.widthPoints,
-      heightPoints: payload.heightPoints,
+      widthPoints,
+      heightPoints,
     })
     if (!result.ok) {
       toast.error(result.reason ?? "Зображення не вдалося вставити.")
