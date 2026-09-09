@@ -21,6 +21,21 @@ export default async function AdminTemplateEditorPage({
     .first()
   if (!template) notFound()
 
+  // Довідник персоналу для персональних полів (панель у template-режимі)
+  const personnel = await orm.Personnel
+    .select(
+      "id",
+      "lastName",
+      "firstName",
+      "middleName",
+      "rank",
+      "position",
+      "signaturePath"
+    )
+    .orderBy((p) => p.lastName.asc())
+    .limit(500)
+    .all()
+
   return (
     <div className="min-h-svh bg-muted/20">
       <SiteHeader />
@@ -35,6 +50,13 @@ export default async function AdminTemplateEditorPage({
             <TemplateEditorScreen
               templateId={template.id}
               title={template.title}
+              personnel={personnel.map((p) => ({
+                id: p.id,
+                fullName: [p.lastName, p.firstName, p.middleName].filter(Boolean).join(" "),
+                rank: p.rank,
+                position: p.position,
+                signaturePath: p.signaturePath ?? null,
+              }))}
               saveHandler={saveTemplateDocxAction.bind(null, template.id)}
             />
           </div>

@@ -2,16 +2,19 @@
 
 import Link from "next/link"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
+import type { PersonnelEntry } from "@/components/documents/docx-editor/personnel-panel"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 export function TemplateEditorScreen({
   templateId,
   title,
+  personnel,
   saveHandler,
 }: {
   templateId: string
   title: string
+  personnel: PersonnelEntry[]
   saveHandler: (formData: FormData) => Promise<{ ok: boolean; message: string }>
 }) {
   return (
@@ -35,6 +38,7 @@ export function TemplateEditorScreen({
             docxUrl={`/api/admin/templates/${templateId}/docx`}
             mode="template"
             exportHandler={saveHandler}
+            personnel={personnel}
           />
         </div>
       </div>

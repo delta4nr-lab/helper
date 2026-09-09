@@ -20,11 +20,21 @@ import { FieldNode } from "@/lib/docx-editor/field-node"
 
 const LOG = "[field-select]"
 
-// Каретка одразу ЗА щойно вставленою нодою — рушійним шляхом, без DOM:
-// editor.getReviewItems() (доступний завдяки reviewModule) дає для кожної
-// ноди рушійний range — ReviewRange { start, end: { paragraphId, offset } }.
-// Кінець ноди від рушія + публічний setSelection у SemanticPosition-армах
-// { paragraphId, offset } — і каретка стоїть за чіпом, як при друці.
+// Програмна вставка поля придушує авто-виділення FieldSelect: рушій лишає
+// каретку всередині чіпа, і selectionChange від вставки/розміщення каретки
+// виглядає як «вхід у поле» — без прапорця FieldSelect перекривав би
+// поставлену каретку (той самий патерн bounceSuspend старої системи).
+let fieldSelectSuspended = false
+
+export function suspendFieldSelect(on: boolean) {
+  fieldSelectSuspended = on
+}
+
+// Каретка одразу ЗА щойно вставленою нодою ([]текст — нода спереду, друк
+// після неї) — рушійним шляхом, без DOM: editor.getReviewItems() (доступний
+// завдяки reviewModule) дає для кожної ноди рушійний range — ReviewRange
+// { start, end: { paragraphId, offset } }. Позиція range.end від рушія +
+// публічний setSelection у SemanticPosition-армах { paragraphId, offset }.
 // Задокументованого прямого «caret after node» немає, тому цей обхідний
 // шлях через рушійні позиції (documentaція «Review items — requires the
 // review module»).
@@ -33,11 +43,20 @@ const LOG = "[field-select]"
 // по кадрах до появи ноди. Пост-перевірка (atCaret після setSelection)
 // показує affinity: чи рушій все ще бачить чіп у каретці.
 export async function placeCaretBesideField(editor: DocxEditorInstance): Promise<boolean> {
-  // Діалог повернув фокус на тулбар: каретка-оверлей малюється лише в
-  // сфокусованому редакторі, тому спершу повертаємо фокус движку.
-  const focused = editor.surface?.focus()
-  console.info(LOG, "focus →", focused)
+  // Знімання призупинення — в finally: прапорець діє до завершення
+  // розміщення (пост-перевірки), а будь-який вихід з функції його опускає.
+  try {
+    // Діалог повернув фокус на тулбар: каретка-оверлей малюється лише в
+    // сфокусованому редакторі, тому спершу повертаємо фокус движку.
+    const focused = editor.surface?.focus()
+    console.info(LOG, "focus →", focused)
+    return await placeCaretBesideFieldInner(editor)
+  } finally {
+    fieldSelectSuspended = false
+  }
+}
 
+async function placeCaretBesideFieldInner(editor: DocxEditorInstance): Promise<boolean> {
   // Чіп на мить активний — atCaret() дає його тег для пошуку review item.
   const boundary = editor.surface?.contentControls.atCaret()
   if (!boundary) {
@@ -66,12 +85,15 @@ export async function placeCaretBesideField(editor: DocxEditorInstance): Promise
     return true
   }
 
+  // Матч по канонічному id нodi (boundary.id === review item.id): теги після
+  // payload-міграції в усіх ноде однакові (acme:field), тож matching за тегом
+  // завжди повертав би першу ноду документа.
   let end: { paragraphId: string; offset: number } | null = null
   for (let attempt = 0; attempt < 10 && !end; attempt++) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     const entry = editor
       .getReviewItems()
-      .find((candidate) => candidate.kind === "custom" && candidate.item.tag === boundary.tag)
+      .find((candidate) => candidate.kind === "custom" && candidate.item.id === boundary.id)
     if (!entry || entry.kind !== "custom") continue
     const itemRange = entry.item.range
     if (!itemRange) {
@@ -162,6 +184,9 @@ export function FieldSelect() {
         decoded.prefix === FieldNode.tagPrefix &&
         decoded.name === FieldNode.name
       if (!isField) return
+      // Під час програмної вставки/розміщення каретки авто-виділення
+      // призупинено, щоб воно не перебивало поставлену каретку.
+      if (fieldSelectSuspended) return
       if (!entered && !click) return
 
       // paraId каретки: DocRange у snapshot несе paraId без офсетів.

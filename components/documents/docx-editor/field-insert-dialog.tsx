@@ -2,12 +2,11 @@
 
 // Діалог «Додати кастомне поле»: вставляє FieldNode у позицію каретки
 // через insertCustomNode (одна транзакція, один undo-крок — документація
-// «Insert, update, remove»). Нода без payload, тому identity (key) пише
-// в attrs → w:tag, а вміст задається текстом назви; lock: false робить
-// чіп редагованим прямо в документі (документована конфігурація «nodes
-// without a payload»). Стан форми живе у внутрішньому компоненті, який
-// розмонтовується разом із DialogContent, — діалог щоразу відкривається
-// чистим, без скидання стану в ефекті.
+// «Insert, update, remove»). Уся конкретика поля (key) живе в офіційному
+// data payload, w:tag = acme:field — коротка фіксована ідентичність.
+// Стан форми живе у внутрішньому компоненті, який розмонтовується разом
+// із DialogContent, — діалог щоразу відкривається чистим, без скидання
+// стану в ефекті.
 
 import * as React from "react"
 import { customNodesOf, encodeCustomNodeTag, insertCustomNode } from "@docx-editor.dev/pro"
@@ -15,7 +14,10 @@ import { useDocxEditor } from "@docx-editor.dev/react"
 import { toast } from "sonner"
 
 import { FIELD_TAG_PREFIX, FieldNode } from "@/lib/docx-editor/field-node"
-import { placeCaretBesideField } from "@/components/documents/docx-editor/field-select"
+import {
+  placeCaretBesideField,
+  suspendFieldSelect,
+} from "@/components/documents/docx-editor/field-select"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -29,8 +31,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-// Той самий формат ключа, що й у старій системі полів.
-const TAG_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/
+// Той самий формат ключа, що й у старій системі полів (спільний з edit-формою).
+export const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,63}$/
 
 const LOG = "[field-insert]"
 
@@ -89,7 +91,8 @@ function FieldInsertForm({
 
   // customNodesOf читає документ щоразу заново («no change event, re-read
   // after an edit»), тому наявні ключі збираємо на кожен рендер форми.
-  // Ідентичність ноди без payload — attrs після fromDocx.
+  // Ідентичність — key в attrs після fromDocx (свідомий редагований варіант
+  // без payload).
   const takenKeys = React.useMemo(() => {
     if (!editor) return new Set<string>()
     return new Set(
@@ -102,14 +105,16 @@ function FieldInsertForm({
   const normalizedKey = key.trim()
   const normalizedTitle = title.trim()
   const keyError =
-    normalizedKey && !TAG_PATTERN.test(normalizedKey)
+    normalizedKey && !FIELD_KEY_PATTERN.test(normalizedKey)
       ? "Ключ: латиниця, цифри та _, з літери."
       : null
   const duplicateError =
     !keyError && normalizedKey && takenKeys.has(normalizedKey)
       ? "Поле з таким ключем уже вставлено."
       : null
-  // Word лімітує w:tag 64 символами; валідуємо точно так, як це зробить вставка.
+  // Word лімітує w:tag 64 символами; валідуємо точно ту саму схему attrs,
+  // яку зробить вставка (лише key — fieldType/personInstance виводяться
+  // з key, personnelId дописується прив'язкою).
   const tagOverflowError =
     !keyError && normalizedKey
       ? encodeCustomNodeTag(FIELD_TAG_PREFIX, FieldNode.name, { key: normalizedKey }).ok
@@ -126,6 +131,11 @@ function FieldInsertForm({
 
   async function handleInsert() {
     if (!editor || !canSubmit) return
+    // Вставка + розміщення каретки — один блок: авто-виділення FieldSelect
+    // призупинено на весь цей час (bounceSuspend-патерн), інакше воно
+    // перебиває поставлену каретку; placeCaretBesideField знімає
+    // призупинення у finally.
+    suspendFieldSelect(true)
     // Виділений текст замінюється нодою: insertCustomNode вставляє в точку
     // head виділення без видалення (перевірено в імплементації пакета),
     // тому спершу очищаємо виділення публічною командою paste { text: "" }
@@ -153,8 +163,8 @@ function FieldInsertForm({
         })
       }
     }
-    // lock: false — без замка вміст чіпа редагується прямо в документі;
-    // відмова движка несе reason і code, інвалідний key ловиться вище.
+    // Ідентичність — один ключ в attrs → w:tag; чіп без payload, тому
+    // редаговується прямо в документі; відмова движка несе reason і code.
     const result = insertCustomNode(editor, FieldNode, {
       attrs: { key: normalizedKey },
       text: normalizedTitle,
@@ -162,6 +172,7 @@ function FieldInsertForm({
       lock: false,
     })
     if (!result.ok) {
+      suspendFieldSelect(false)
       toast.error(result.reason ?? "Не вдалося вставити поле.")
       return
     }
@@ -193,8 +204,8 @@ function FieldInsertForm({
             placeholder="date"
             autoFocus
           />
-          {(keyError ?? duplicateError ?? tagOverflowError) && (
-            <p className="text-xs text-destructive">{keyError ?? duplicateError ?? tagOverflowError}</p>
+          {(keyError ?? duplicateError) && (
+            <p className="text-xs text-destructive">{keyError ?? duplicateError}</p>
           )}
         </div>
 

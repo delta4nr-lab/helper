@@ -17,8 +17,11 @@ import {
   uploadImageFile,
   validateImageFile,
 } from "@/components/documents/docx-editor/image-insert-dialog"
+import { FieldEditMenu } from "@/components/documents/docx-editor/field-edit-dialog"
 import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
+import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
+import { PersonnelPanel, type PersonnelEntry } from "@/components/documents/docx-editor/personnel-panel"
 import { DOCX_MODULES } from "@/lib/docx-editor/field-node"
 import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
@@ -52,6 +55,8 @@ type WorkspaceProps = {
   titleActions?: React.ReactNode
   /** Панель праворуч від документа (усередині Root — контекст редактора доступний) */
   sidePanel?: React.ReactNode
+  /** Довідник персоналу для персональних полів (template-режим) */
+  personnel?: PersonnelEntry[]
 }
 
 // Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
@@ -319,6 +324,7 @@ export default function DocumentWorkspace({
   exportHandler,
   titleActions,
   sidePanel,
+  personnel,
 }: WorkspaceProps) {
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -447,15 +453,21 @@ export default function DocumentWorkspace({
               <DocxEditor.NotesChrome />
               <DocxEditor.Content />
               {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
-                  порядок з прикладу документації). Вміст редагується прямо
-                  в документі, тому обробників активації немає. */}
-              <CustomNodeChrome />
+                  порядок з прикладу документації). У template-режимі з
+                  персональними нодами — хром із hover-кнопками прив'язки персоналу */}
+              {mode === "template" && personnel && personnel.length ? (
+                <PersonnelChrome personnel={personnel} />
+              ) : (
+                <CustomNodeChrome />
+              )}
               <DocxEditor.HyperLink />
               <DocxEditor.ContextMenu>
                 {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
-                    «Вставити посилання»: дефолтний рядок мертвий — замінюємо робочим */}
+                    «Вставити посилання»: дефолтний рядок мертвий — замінюємо робочим.
+                    «Edit {label}»: канонічний edit-вхід кастомних ручних полів */}
                 <DocxEditor.ContextMenu.Slot slot="review.comments" hidden />
                 <InsertLinkMenuRow />
+                <FieldEditMenu />
               </DocxEditor.ContextMenu>
               {/* Boundary-хром контентів: потрібний для читання офсетів чіпа
                   (каретка після вставки) і показує межі активного контрола */}
@@ -465,6 +477,8 @@ export default function DocumentWorkspace({
           </ViewportImageDrop>
         </div>
         {sidePanel}
+        {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
+        {mode === "template" && personnel ? <PersonnelPanel /> : null}
       </div>
       </div>
 
