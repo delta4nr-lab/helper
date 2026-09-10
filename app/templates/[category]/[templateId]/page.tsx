@@ -7,6 +7,8 @@ import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import { getCategory } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
+import { getActiveCourseRecords } from "@/lib/courses/queries"
+import type { CourseRecordData } from "@/lib/courses/types"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
 
 type Params = { category: string; templateId: string }
@@ -47,6 +49,46 @@ export default async function TemplateDetailPage({ params }: { params: Promise<P
     notFound()
   }
 
+  // Довідники для прив'язки персональних/курсантських полів у документі:
+  // користувач заповнює маркери, вставлені адміном у шаблоні.
+  let personnel: {
+    id: string
+    fullName: string
+    rank: string
+    position: string
+    signaturePath: string | null
+  }[] = []
+  let cadets: CourseRecordData[] = []
+
+  try {
+    personnel = await orm.Personnel
+      .select(
+        "id",
+        "lastName",
+        "firstName",
+        "middleName",
+        "rank",
+        "position",
+        "signaturePath"
+      )
+      .orderBy((p) => p.lastName.asc())
+      .limit(500)
+      .all()
+      .then((rows) =>
+        rows.map((p) => ({
+          id: p.id,
+          fullName: [p.lastName, p.firstName, p.middleName].filter(Boolean).join(" "),
+          rank: p.rank,
+          position: p.position,
+          signaturePath: p.signaturePath ?? null,
+        }))
+      )
+
+    cadets = await getActiveCourseRecords()
+  } catch {
+    // Довідники несуттєві для відкриття документа — редагування без прив'язки
+  }
+
   return (
     <div className="flex min-h-svh flex-col bg-background">
       <SiteHeader />
@@ -68,7 +110,12 @@ export default async function TemplateDetailPage({ params }: { params: Promise<P
         </nav>
 
         <div className="mt-4 flex-1">
-          <DocumentEditor templateId={templateId} title={title} />
+          <DocumentEditor
+            templateId={templateId}
+            title={title}
+            personnel={personnel}
+            cadets={cadets}
+          />
         </div>
       </main>
       <SiteFooter />

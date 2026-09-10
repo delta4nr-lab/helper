@@ -26,8 +26,6 @@ import {
   type PersonnelEntry,
 } from "@/components/documents/docx-editor/personnel-panel"
 import { suspendFieldSelect } from "@/components/documents/docx-editor/field-select"
-import { COURSE_FIELD_LABELS } from "@/lib/courses/types"
-import type { CourseRecordData } from "@/lib/courses/types"
 import { FieldNode, type FieldChipAttrs } from "@/lib/docx-editor/field-node"
 
 import {
@@ -44,27 +42,21 @@ const LOG = "[personnel-picker]"
 const SIGNATURE_HEIGHT_PT = 54 // висота підпису в документі, pt (≈ 4em при 14pt)
 const SIGNATURE_WIDTH_MIN_PT = 24
 
-// Чіп FieldNode (identity за тегом acme:field). two flavor-и в ключі:
-// staff.{i}.{f} — персонал; cadet.{i}.{f} — курсанти (з активного курсу).
-// Ручні поля (лише key) — не розпізнаються.
-type ChipFlavor = "staff" | "cadet"
-
+// Персональний чіп — FieldNode (identity за тегом acme:field), у attrs
+// якого after-fromDocx є fieldType + personInstance (читаються зі схеми
+// key = staff.{i}.{f}). Ручні поля (лише key) — не персональні.
 function personChipInfo(editor: NonNullable<ReturnType<typeof useDocxEditor>>, node: ActivatedCustomNode) {
   const decoded = decodeCustomNodeTag(node.tag)
   if (!(decoded?.prefix === FieldNode.tagPrefix && decoded.name === FieldNode.name)) return null
   let attrs = node.attrs as FieldChipAttrs
-  if (!attrs.key || !attrs.fieldType || !attrs.personInstance) {
+  if (!attrs.fieldType || !attrs.personInstance) {
     // hover-Activation не завжди несе attrs — фолбек: читання з документа
     // за канонічним id (матч за тегом був би завжди першою нодою).
     const match = customNodesOf(editor).find((candidate) => candidate.nodeId === node.nodeId)
     attrs = (match?.attrs ?? attrs) as FieldChipAttrs
   }
-  if (!attrs.key || !attrs.fieldType || !attrs.personInstance) return null
-  return {
-    flavor: attrs.key.startsWith("cadet.") ? ("cadet" as ChipFlavor) : ("staff" as ChipFlavor),
-    fieldType: attrs.fieldType,
-    instance: attrs.personInstance,
-  }
+  if (!attrs.fieldType || !attrs.personInstance) return null
+  return { fieldType: attrs.fieldType, instance: attrs.personInstance }
 }
 
 // значення текстових полів із вибраної людини (ПІБ/Посада/Звання)
@@ -81,38 +73,26 @@ function textForField(fieldType: string, person: PersonnelEntry): string {
   }
 }
 
-// значення поля курсанта з запису активного курсу (orderNumber → рядок)
-function cadetFieldValue(fieldType: string, cadet: CourseRecordData): string {
-  const raw = (cadet as unknown as Record<string, string | number | null>)[fieldType] ?? null
-  return raw == null ? "" : String(raw)
-}
-
-export function PersonnelChrome({
-  personnel,
-  cadets,
-}: {
-  personnel: PersonnelEntry[]
-  cadets?: readonly CourseRecordData[]
-}) {
+export function PersonnelChrome({ personnel }: { personnel: PersonnelEntry[] }) {
   const editor = useDocxEditor()
-  // hover — плаваюча кнопка над чіпом ([]{ position, instance, flavor });
+  // hover — плаваюча кнопка над чіпом ([]{ position, personInstance });
   // відкриття списку — тільки кліком по цій кнопці.
   const [hover, setHover] = React.useState<{
     left: number
     top: number
     instance: string
-    flavor: ChipFlavor
   } | null>(null)
   const [instance, setInstance] = React.useState<string | null>(null)
-  const [source, setSource] = React.useState<ChipFlavor>("staff")
   const [open, setOpen] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
-  // Порт a5f8381: session-карта key → вставлений підпис (drawingId + якір-
-  // абзац). В межах сесії дозволяє прибрати стару картинку при перезаписі;
-  // після save/load карта порожня — див. обмеження L1 (переліку зображень
-  // у публічному API немає).
+  // Порт a5f8381: session-карта key → вставлені підписи (drawingId + якір-
+  // абзац) — МАСИВ, бо один екземпляр може мати кілька чіпів підпису в
+  // документі (той самий key staff.{i}.signature), кожен чіп — власна
+  // картинка. В межах сесії дозволяє прибрати старі картинки при
+  // переприв'язці; після save/load карта порожня — див. обмеження L1
+  // (переліку зображень у публічному API немає).
   const sigMarkersRef = React.useRef(
-    new Map<string, { drawingId: string; anchorParaId: string }>()
+    new Map<string, Array<{ drawingId: string; anchorParaId: string }>>()
   )
 
   function handleNodeHover(node: ActivatedCustomNode) {
@@ -121,13 +101,12 @@ export function PersonnelChrome({
       setHover(null)
       return
     }
-    setHover({ left: node.rect.right, top: node.rect.top, instance: info.instance, flavor: info.flavor })
+    setHover({ left: node.rect.right, top: node.rect.top, instance: info.instance })
   }
 
   function openPicker() {
     if (!hover) return
     setInstance(hover.instance)
-    setSource(hover.flavor)
     setOpen(true)
     setHover(null)
   }
@@ -138,10 +117,31 @@ export function PersonnelChrome({
   async function bindPerson(person: PersonnelEntry) {
     if (!editor || !instance) return
     setBusy(true)
-    // Група оновлень рухає каретку між нодами — авто-виділення FieldSelect
-    // призупинено на весь блок (bounceSuspend-патерн, знімається в finally).
+    // Старт прив'язки = переприв'язка: прибираємо ВСІ картинки попередніх
+    // підписів цього екземпляра (в межах сесії), ПЕРШ ніж обробляти чіпи —
+    // саме тут, а не в bindSignatureImage, щоб другий чіп того ж поля не
+    // зітрив картинку першого, вставлену в цьому ж проході.
     suspendFieldSelect(true)
     try {
+      const priorKeys = new Set(
+        customNodesOf(editor)
+          .map((node) => node.attrs as FieldChipAttrs)
+          .filter((attrs) => attrs.fieldType === "signature" && attrs.personInstance === String(instance))
+          .map((attrs) => attrs.key)
+      )
+      for (const markerKey of priorKeys) {
+        const stale = sigMarkersRef.current.get(markerKey) ?? []
+        for (const marker of stale) {
+          const del = editor.exec({ type: "deleteImage", drawingNodeId: marker.drawingId })
+          console.info(LOG, "deleteImage попереднього підпису →", {
+            chipKey: markerKey,
+            ok: del.ok,
+            reason: del.ok ? undefined : del.reason,
+          })
+        }
+        if (stale.length > 0) sigMarkersRef.current.delete(markerKey)
+      }
+
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
         return (
@@ -200,62 +200,6 @@ export function PersonnelChrome({
     }
   }
 
-  // Прив'язка курсанта (cadet.{i}.{f}-чипи + активний курс): той самий
-  // патерн групового оновлення; значення — з відповідної колонки запису
-  // (orderNumber → рядок); ПОРОЖНЯ колонка — маркер лишається (текст не
-  // чіпаємо). Підписів у курсантів немає (CourseRecord без зображень).
-  async function bindCadet(cadet: CourseRecordData) {
-    if (!editor || !instance) return
-    setBusy(true)
-    suspendFieldSelect(true)
-    try {
-      const nodes = customNodesOf(editor).filter((node) => {
-        const attrs = node.attrs as FieldChipAttrs
-        return (
-          attrs.key?.startsWith(`cadet.${instance}.`) === true &&
-          attrs.personInstance === String(instance)
-        )
-      })
-      if (nodes.length === 0) {
-        toast.error(`Поле екземпляра ${instance} у документі не знайдено.`)
-        return
-      }
-      for (const node of nodes) {
-        const attrs = node.attrs as FieldChipAttrs
-        const key = attrs.key ?? ""
-        const fieldType = key.slice(`cadet.${instance}.`.length) || ""
-        const label =
-          COURSE_FIELD_LABELS[fieldType as keyof typeof COURSE_FIELD_LABELS] ?? "Поле"
-        const value = cadetFieldValue(fieldType, cadet)
-        // identity: key зберігається, p = record.id; порожня колонка —
-        // маркер (текст) не чіпається: text не passaемо взагалі.
-        const update = updateCustomNode(editor, FieldNode, node.nodeId, {
-          attrs: { key, p: cadet.id },
-          ...(value ? { text: value } : {}),
-        })
-        console.info(LOG, "cadet update →", {
-          fromId: node.nodeId,
-          fieldType,
-          ok: update.ok,
-          newId: update.ok ? update.nodeId : undefined,
-          reason: update.ok ? undefined : update.reason,
-        })
-        if (!update.ok) {
-          toast.error(update.reason ?? `Не вдалося оновити поле «${label}».`)
-        }
-      }
-      const display =
-        cadet.fullName ??
-        [cadet.lastName, cadet.firstName, cadet.middleName].filter(Boolean).join(" ") ??
-        "курсант"
-      toast.success(`Екземпляр ${instance}: курсант прив'язаний (${display}).`)
-    } finally {
-      suspendFieldSelect(false)
-      setOpen(false)
-      setBusy(false)
-    }
-  }
-
   // Порт fillSignature з a5f8381: маркер-чип лишається (слово ховається
   // поверховим setValue), зображення вставляється ТІЛЬКИ позаControls на
   // materialization-aware як-абзац тієї ж сторінки, що й маркер, і
@@ -297,16 +241,8 @@ export function PersonnelChrome({
     let drawingId: string | null = null
     let currentId = ""
     try {
-      // Попередній плаваючий підпис цього поля прибираємо за id (в межах сесії)
-      const previous = sigMarkersRef.current.get(chipKey)
-      if (previous) {
-        const del = editor.exec({ type: "deleteImage", drawingNodeId: previous.drawingId })
-        console.info(LOG, "deleteImage попереднього підпису →", {
-          ok: del.ok,
-          reason: del.ok ? undefined : del.reason,
-        })
-        sigMarkersRef.current.delete(chipKey)
-      }
+      // Попередні підписи цього ключа вже видалено на старті прив'язки
+      // (bindPerson) — тут лише вставка нового маркера для поточного чіпа.
 
       // Поле ПІБ групи — для позиції «зліва від ПІБ» (актуальний id —
       // rewrite міг змінити його у цій же групі).
@@ -381,7 +317,7 @@ export function PersonnelChrome({
         }
       }
       const takenAnchors = new Set(
-        [...sigMarkersRef.current.values()].map((info) => info.anchorParaId)
+        [...sigMarkersRef.current.values()].flat().map((info) => info.anchorParaId)
       )
       let anchorParaId: string | null = null
       for (let i = pageCandidates.length - 1; i >= 0; i--) {
@@ -576,7 +512,10 @@ export function PersonnelChrome({
 
       // Ховаємо назву поля («Підпис (N)») — картинка її замінила
       surface.contentControls.setValue(chipNodeId, "")
-      sigMarkersRef.current.set(chipKey, { drawingId: currentId, anchorParaId })
+      sigMarkersRef.current.set(chipKey, [
+        ...(sigMarkersRef.current.get(chipKey) ?? []),
+        { drawingId: currentId, anchorParaId },
+      ])
       ok = true
       return true
     } finally {
@@ -592,11 +531,6 @@ export function PersonnelChrome({
     }
   }
 
-  const cadetRowDisplay = (cadet: CourseRecordData) =>
-    cadet.fullName ??
-    [cadet.lastName, cadet.firstName, cadet.middleName].filter(Boolean).join(" ") ??
-    "Курсант"
-
   return (
     <>
       {/* Хром чіпів — малювальний стиль + hover-активність персональних нод */}
@@ -607,8 +541,8 @@ export function PersonnelChrome({
       {hover && (
         <button
           type="button"
-          aria-label={source === "cadet" ? "Вибрати курсанта" : "Вибрати співробітника"}
-          title={source === "cadet" ? "Вибрати курсанта" : "Вибрати співробітника"}
+          aria-label="Вибрати співробітника"
+          title="Вибрати співробітника"
           className="fixed z-50 -translate-x-full -translate-y-full items-center justify-center rounded-md border bg-popover/95 p-1 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground"
           style={{ left: hover.left, top: hover.top }}
           onClick={() => openPicker()}
@@ -619,43 +553,12 @@ export function PersonnelChrome({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{source === "cadet" ? "Вибрати курсанта" : "Вибрати співробітника"}</DialogTitle>
+            <DialogTitle>Вибрати співробітника</DialogTitle>
             <DialogDescription>
-              {source === "cadet"
-                ? `Екземпляр ${instance}: курсант з активного курсу.`
-                : `Екземпляр ${instance}: усі поля цього екземпляра прив'язуються до обраної людини.`}
+              Екземпляр {instance}: усі поля цього екземпляра прив&apos;язуються до обраної людини.
             </DialogDescription>
           </DialogHeader>
-          {source === "cadet" ? (
-            cadets && cadets.length > 0 ? (
-              <div className="max-h-72 overflow-y-auto rounded-lg border border-border/50 p-1">
-                {cadets.map((cadet) => (
-                  <button
-                    key={cadet.id}
-                    type="button"
-                    disabled={busy}
-                    className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted disabled:opacity-50"
-                    onClick={() => void bindCadet(cadet)}
-                  >
-                    <UserRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">{cadetRowDisplay(cadet)}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {cadet.position || "—"} · {cadet.rank || "—"}
-                      </span>
-                    </span>
-                    {busy && (
-                      <Loader2 className="ml-auto mt-1 size-4 animate-spin text-muted-foreground" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="py-6 text-center text-sm text-muted-foreground">
-                Курсантів немає — додайте курс і зробіть його активним в адмінці.
-              </div>
-            )
-          ) : personnel.length === 0 ? (
+          {personnel.length === 0 ? (
             <div className="py-6 text-center text-sm text-muted-foreground">Персоналу немає.</div>
           ) : (
             <div className="max-h-72 overflow-y-auto rounded-lg border border-border/50 p-1">

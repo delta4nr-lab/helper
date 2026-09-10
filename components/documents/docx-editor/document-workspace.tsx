@@ -331,7 +331,8 @@ export default function DocumentWorkspace({
   titleActions,
   sidePanel,
   personnel,
-  cadets,
+  // cadets лишається в типах для сумісності переданої ланцюжка пропів,
+  // але PersonnelChrome його більше не приймає (фічура курсантів знята)
 }: WorkspaceProps) {
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -463,8 +464,12 @@ export default function DocumentWorkspace({
               {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
                   порядок з прикладу документації). У template-режимі з
                   персональними нодами — хром із hover-кнопками прив'язки персоналу */}
-              {mode === "template" && (personnel?.length || cadets?.length) ? (
-                <PersonnelChrome personnel={personnel ?? []} cadets={cadets ?? []} />
+              {/* Хром чіпів + прив'язка: у документ-режимі (заповнення) —
+                  PersonnelChrome з hover-кнопкою вибору людини;
+                  у template-режимі адмін лише вставляє маркери — прив'язки
+                  там немає */}
+              {mode !== "template" && personnel?.length ? (
+                <PersonnelChrome personnel={personnel ?? []} />
               ) : (
                 <CustomNodeChrome />
               )}
@@ -486,7 +491,8 @@ export default function DocumentWorkspace({
         </div>
         {sidePanel}
         {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
-        {mode === "template" && personnel ? <PersonnelPanel /> : null}
+        {/* Панель вставки полів (template-режим): степери + кнопки полів */}
+        {mode === "template" ? <PersonnelPanel /> : null}
       </div>
       </div>
 

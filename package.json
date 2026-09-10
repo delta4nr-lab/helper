@@ -15,9 +15,10 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@docx-editor.dev/core": "^2.15.1",
-    "@docx-editor.dev/pro": "^2.15.1",
-    "@docx-editor.dev/react": "^2.15.1",
+    "@docx-editor.dev/core": "^2.16.0",
+    "@docx-editor.dev/i18n": "^2.16.0",
+    "@docx-editor.dev/pro": "^2.16.0",
+    "@docx-editor.dev/react": "^2.16.0",
     "@hookform/resolvers": "^5.9.1",
     "@prisma/orm-postgres": "^8.0.0-rc.8",
     "@tanstack/react-table": "^9.2.4",
