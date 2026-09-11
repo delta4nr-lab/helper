@@ -47,25 +47,36 @@ type ChipFlavor = "staff" | "cadet"
 const SIGNATURE_HEIGHT_PT = 54 // висота підпису в документі, pt (≈ 4em при 14pt)
 const SIGNATURE_WIDTH_MIN_PT = 24
 
-// Персональний чіп — FieldNode (identity за тегом acme:field), у attrs
-// якого after-fromDocx є fieldType + personInstance (читаються зі схеми
-// key = staff.{i}.{f}). Ручні поля (лише key) — не персональні.
-function personChipInfo(editor: NonNullable<ReturnType<typeof useDocxEditor>>, node: ActivatedCustomNode) {
+// Єдиний розбір персонального чіпа (hover/reposition/popup — одна точка
+// парсингу): регекс схеми key /^(staff|cadet)\.(\d+)\./; фолбек на читання
+// attrs з документа за канонічним id, бо hover-Activation не завжди несе
+// attrs (матч за тегом був би завжди першою нодою). Ручні поля (лише key)
+// — null.
+function resolvePersonField(
+  editor: NonNullable<ReturnType<typeof useDocxEditor>>,
+  node: Pick<ActivatedCustomNode, "tag" | "attrs" | "nodeId">
+): { nodeId: string; flavor: ChipFlavor; instance: number; fieldType: string } | null {
   const decoded = decodeCustomNodeTag(node.tag)
   if (!(decoded?.prefix === FieldNode.tagPrefix && decoded.name === FieldNode.name)) return null
   let attrs = node.attrs as FieldChipAttrs
   if (!attrs.fieldType || !attrs.personInstance) {
-    // hover-Activation не завжди несе attrs — фолбек: читання з документа
-    // за канонічним id (матч за тегом був би завжди першою нодою).
     const match = customNodesOf(editor).find((candidate) => candidate.nodeId === node.nodeId)
     attrs = (match?.attrs ?? attrs) as FieldChipAttrs
   }
   if (!attrs.fieldType || !attrs.personInstance) return null
+  const flavor: ChipFlavor = attrs.key.startsWith("cadet.") ? "cadet" : "staff"
   return {
-    flavor: attrs.key.startsWith("cadet.") ? ("cadet" as ChipFlavor) : ("staff" as ChipFlavor),
+    nodeId: node.nodeId ?? "",
+    flavor,
+    instance: Number(attrs.personInstance),
     fieldType: attrs.fieldType,
-    instance: attrs.personInstance,
   }
+}
+
+// Внутрішній UI-ключ екземпляра: не змінює формат DOCX attrs/key —
+// лише розділяє staff і cadet лічильники як окремі слоти стану
+function instanceKey(flavor: ChipFlavor, instance: number): string {
+  return `${flavor}:${instance}`
 }
 
 // Людська назва поля за flavor-ом чіпа (для тостів/unbind)
@@ -96,19 +107,22 @@ export function PersonnelChrome({
   cadets?: readonly CourseRecordData[]
 }) {
   const editor = useDocxEditor()
-  // float — кругла кнопка-пікер біля чіпа ([]{ position, instance, flavor });
-  // список персоналу відкривається ТІЛЬКИ кліком по цій кнопці.
-  const [float, setFloat] = React.useState<{
-    left: number
-    top: number
-    instance: string
+  // Єдиний стан активного поля (hover-контролер): логічна identity =
+  // nodeId + flavor + instance; rect — лише щойна геометрія для
+  // позиції кнопки (rect НЕ є identity — не ремонтую кнопку на рух
+  // курсора по чіпу). Замінює колишні float(left/top/instance/flavor/chipNodeId).
+  const [activeField, setActiveField] = React.useState<{
+    nodeId: string
     flavor: ChipFlavor
+    instance: number
+    fieldType: string
+    rect: DOMRect
   } | null>(null)
   // open — відкритий попап: доки відкритий, «плаваюча» кнопка лишається
   // на місці навіть коли курсор пішов з чіпа (порт quickPick 10985f0).
   const [open, setOpen] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
-  // Обрані люди по екземплярах (для галочки в попапі): instance → person.id
+  // Обрані люди по екземплярах (для галочки в попапі): `${flavor}:${instance}` → person.id
   const [selectedByInstance, setSelectedByInstance] = React.useState<Record<string, string>>({})
   // Порт a5f8381: session-карта key → вставлені підписи (drawingId + якір-
   // абзац) — МАСИВ, бо один екземпляр може мати кілька чіпів підпису в
@@ -122,24 +136,73 @@ export function PersonnelChrome({
 
   function handleNodeHover(node: ActivatedCustomNode) {
     if (open) return
-    const info = editor ? personChipInfo(editor, node) : null
+    const info = editor ? resolvePersonField(editor, node) : null
     if (!info) {
-      setFloat(null)
+      // Компонент не докладає подій «виходу» курсора з чіпа — приховування
+      // робить pointerleave-случач нижче (порт старого quickPick 10985f0)
+      return
+    }
+    // Identity: nodeId + flavor + instance. Той самий чіп (повторний hover,
+    // рух курсора) — лише мердж свіжої геометрії: кнопка не ремонтується,
+    // анімація знову не грає; rect НЕ є identity
+    if (
+      activeField &&
+      activeField.nodeId === info.nodeId &&
+      activeField.flavor === info.flavor &&
+      activeField.instance === info.instance
+    ) {
+      setActiveField((prev) => (prev ? { ...prev, rect: node.rect } : prev))
       return
     }
     // Позиція «праворуч від рамки поля» зі старого quickPick: rect.right + 6,
-    // вертикально по центру рамки
-    setFloat({
-      left: node.rect.right + 6,
-      top: node.rect.top,
-      instance: info.instance,
+    // вертикально по центру рамки (translate-клас біля позиції в JSX)
+    setActiveField({
+      nodeId: info.nodeId,
       flavor: info.flavor,
+      instance: info.instance,
+      fieldType: info.fieldType,
+      rect: node.rect,
     })
   }
 
+  // Таймер приховування кнопки: курсор пішов із чіпа/кнопки — кнопка гасне
+  // із затримкою 200 мс (порт quickPick 10985f0: час на «переповзти» через
+  // 6px проміжок); відкритий попап тримає кнопку
+  const hideTimer = React.useRef<number | null>(null)
+  const clearHideTimer = React.useCallback(() => {
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+  }, [])
+  const scheduleHide = React.useCallback(() => {
+    clearHideTimer()
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = null
+      setActiveField((prev) => (prev && !busy ? null : prev))
+    }, 200)
+  }, [busy, clearHideTimer])
+
+  // Видалення кнопки при виході курсора з чіпа: CustomNodeChrome не подає
+  // подій «leave», тому pointerleave вішаємо на хром активного чіпа;
+  // відкритий попап (open) і хід прив'язки (busy) тримають кнопку.
+  // Залежність — лише nodeId: об'єкт activeField міняється на кожен рух
+  // курсора по чіпу (оновлення rect), а слухач потрібен тільки на
+  // конкретному вузлі — перевішуємо лише при переході на інший чіп.
+  const activeNodeId = activeField?.nodeId
+  React.useEffect(() => {
+    if (!activeNodeId || open || busy) return
+    const chrome = document.querySelector<HTMLElement>(
+      `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(activeNodeId)}"]`
+    )
+    if (!chrome) return
+    chrome.addEventListener("pointerleave", scheduleHide)
+    return () => chrome.removeEventListener("pointerleave", scheduleHide)
+  }, [activeNodeId, open, busy, scheduleHide])
+
   // Список для пікера за flavor-ом чіпа: зі штату або з активного курсу
   const pickerItems: PersonPickerItem[] = React.useMemo(() => {
-    if (float?.flavor === "cadet") {
+    if (activeField?.flavor === "cadet") {
       return (cadets ?? []).map((r) => ({
         id: r.id,
         name:
@@ -156,18 +219,26 @@ export function PersonnelChrome({
       position: p.position,
       rank: p.rank,
     }))
-  }, [float?.flavor, personnel, cadets])
+  }, [activeField?.flavor, personnel, cadets])
 
   // Перепозиціювання відкритого попапа при скролі viewport: кнопку тримаємо
   // біля ПІБ-чіпа групи (якщо чіп пішов з paint-шару — попап закривається)
+  const activeInstance = activeField?.instance
+  const activeFlavor = activeField?.flavor
   React.useEffect(() => {
-    if (!open || !float || !editor) return
+    if (!open || activeInstance == null || !editor) return
     const viewport = document.querySelector<HTMLElement>(".docx-editor-one-surface__viewport")
     const reposition = () => {
-      const personNode = customNodesOf(editor).find((node) => {
-        const a = node.attrs as FieldChipAttrs
-        return a.fieldType === "fullName" && a.personInstance === float.instance
-      })
+      const personNode = customNodesOf(editor)
+        .map((node) => resolvePersonField(editor, node))
+        .find(
+          (field) =>
+            field != null &&
+            field.flavor === activeFlavor &&
+            field.instance === activeInstance &&
+            // Позицію кнопки ведемо біля ПІБ-чіпа групи (як і раніше)
+            field.fieldType === "fullName"
+        )
       const rect = personNode
         ? document
             .querySelector<HTMLElement>(
@@ -177,16 +248,17 @@ export function PersonnelChrome({
         : null
       if (!rect || rect.width === 0) {
         setOpen(false)
-        setFloat(null)
+        setActiveField(null)
         return
       }
-      setFloat((prev) => (prev ? { ...prev, left: rect.right + 6, top: rect.top } : prev))
+      // Merдж лише геометрії — логічна identity поля не змінюється
+      setActiveField((prev) => (prev ? { ...prev, rect } : prev))
     }
     viewport?.addEventListener("scroll", reposition, { passive: true })
     return () => viewport?.removeEventListener("scroll", reposition)
-    // [float] — об'єкт міняється рідко (лише при reposition/відкритті на
-    // іншому чіпі); поки попап відкритий, hover не рухає кнопку (open-guard)
-  }, [open, float, editor])
+    // [activeFlavor, activeInstance] — логічна identity групи, а не об'єкт
+    // геометрії; поки попап відкритий, hover не рухає кнопку (open-guard)
+  }, [open, activeInstance, activeFlavor, editor])
 
   // Групове оновлення (§13): тільки існуючі ноди цього personInstance, без
   // створення відсутніх. Актуальний nodeId — тільки з результату операції
@@ -274,11 +346,15 @@ export function PersonnelChrome({
       }
       toast.success(`Екземпляр ${instanceId}: персонал оновлено (${person.fullName}).`)
     } finally {
-      setSelectedByInstance((prev) => ({ ...prev, [instanceId]: person.id }))
+      // Галочка в попапі — за єдиним ключем flavor:instance
+      setSelectedByInstance((prev) => ({
+        ...prev,
+        [instanceKey("staff", Number(instanceId))]: person.id,
+      }))
       suspendFieldSelect(false)
       setOpen(false)
       setBusy(false)
-      setFloat(null)
+      setActiveField(null)
     }
   }
 
@@ -332,11 +408,15 @@ export function PersonnelChrome({
         "курсант"
       toast.success(`Екземпляр ${instanceId}: курсант прив'язаний (${display}).`)
     } finally {
-      setSelectedByInstance((prev) => ({ ...prev, [instanceId]: cadet.id }))
+      // Галочка в попапі — за єдиним ключем flavor:instance
+      setSelectedByInstance((prev) => ({
+        ...prev,
+        [instanceKey("cadet", Number(instanceId))]: cadet.id,
+      }))
       suspendFieldSelect(false)
       setOpen(false)
       setBusy(false)
-      setFloat(null)
+      setActiveField(null)
     }
   }
 
@@ -349,7 +429,7 @@ export function PersonnelChrome({
   // «Зняти особу» (футер попапа): видаляємо картинкі підписів екземпляра
   // (session-мапа) і повертаємо чіпи до назв полів («ПІБ (N)»), personnelId
   // з тега прибирається оновленням identity без p.
-  function unbindPerson(instanceId: string) {
+  function unbindPerson(instanceId: string, flavor: ChipFlavor) {
     if (!editor) return
     suspendFieldSelect(true)
     try {
@@ -378,9 +458,10 @@ export function PersonnelChrome({
           reason: update.ok ? undefined : update.reason,
         })
       }
+      // Галочка в попапі знімається за єдиним ключем flavor:instance
       setSelectedByInstance((prev) => {
         const next = { ...prev }
-        delete next[instanceId]
+        delete next[instanceKey(flavor, Number(instanceId))]
         return next
       })
       toast.success(`Екземпляр ${instanceId}: особу знято.`)
@@ -388,7 +469,7 @@ export function PersonnelChrome({
       suspendFieldSelect(false)
       setOpen(false)
       setBusy(false)
-      setFloat(null)
+      setActiveField(null)
     }
   }
 
@@ -729,28 +810,38 @@ export function PersonnelChrome({
       <CustomNodeChrome onNodeHover={handleNodeHover} />
       {/* Кругла кнопка-пікер біля чіпа (порт quickPick 10985f0): відкриває
           попап зі списком персоналу з пошуком; поки попап відкритий, кнопка
-          лишається на місці (hover не ховає її) */}
-      {float && (
+          лишається на місці (hover не ховає її). Позиція — з activeField.rect
+          (геометріяidera, identity поля — nodeId+flavor+instance) */}
+      {activeField && (
         <div
           className="fixed z-50 -translate-y-1/2"
-          style={{ left: float.left, top: float.top }}
+          style={{ left: activeField.rect.right + 6, top: activeField.rect.top }}
+          // Курсор на кнопці — скасовує приховування; пішов з кнопки —
+          // scheduleHide знову планує гаснення через 200 мс
+          onPointerEnter={clearHideTimer}
+          onPointerLeave={scheduleHide}
         >
           <PersonPicker
             compact
             open={open}
             onOpenChange={(next) => {
               if (next) {
+                // Відкритий список тримає кнопку: таймер приховування скидаємо
+                clearHideTimer()
                 setOpen(true)
                 return
               }
+              // Закриття попапа → кнопка зникає одразу (якщо не busy)
               setOpen(false)
-              if (!busy) setFloat(null)
+              if (!busy) setActiveField(null)
             }}
-            title={float.flavor === "cadet" ? "Вибрати курсанта" : "Вибрати співробітника"}
+            // Контекст пікер-попапа — від контролера: flavor вирішує джерело
+            // списку (через items/title); пікер не знає нічого про DOCX
+            title={activeField.flavor === "cadet" ? "Вибрати курсанта" : "Вибрати співробітника"}
             triggerLabel=""
             icon={<UserRoundSearch className="size-4" />}
             items={
-              float.flavor === "cadet"
+              activeField.flavor === "cadet"
                 ? (cadets ?? []).length > 0
                   ? pickerItems
                   : []
@@ -758,17 +849,17 @@ export function PersonnelChrome({
                   ? pickerItems
                   : []
             }
-            selectedId={float.instance ? (selectedByInstance[float.instance] ?? null) : null}
+            selectedId={selectedByInstance[instanceKey(activeField.flavor, activeField.instance)] ?? null}
             onSelect={(personId) => {
-              if (float.flavor === "cadet") {
+              if (activeField.flavor === "cadet") {
                 const cadet = (cadets ?? []).find((c) => c.id === personId)
-                if (cadet) bindCadet(cadet, float.instance)
+                if (cadet) bindCadet(cadet, String(activeField.instance))
                 return
               }
               const person = personnel.find((p) => p.id === personId)
-              if (person) void bindPerson(person, float.instance)
+              if (person) void bindPerson(person, String(activeField.instance))
             }}
-            onClear={() => unbindPerson(float.instance)}
+            onClear={() => unbindPerson(String(activeField.instance), activeField.flavor)}
           />
         </div>
       )}
