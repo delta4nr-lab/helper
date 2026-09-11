@@ -331,8 +331,7 @@ export default function DocumentWorkspace({
   titleActions,
   sidePanel,
   personnel,
-  // cadets лишається в типах для сумісності переданої ланцюжка пропів,
-  // але PersonnelChrome його більше не приймає (фічура курсантів знята)
+  cadets,
 }: WorkspaceProps) {
   const [bytes, setBytes] = React.useState<Uint8Array | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -468,8 +467,8 @@ export default function DocumentWorkspace({
                   PersonnelChrome з hover-кнопкою вибору людини;
                   у template-режимі адмін лише вставляє маркери — прив'язки
                   там немає */}
-              {mode !== "template" && personnel?.length ? (
-                <PersonnelChrome personnel={personnel ?? []} />
+              {mode !== "template" && (personnel?.length || cadets?.length) ? (
+                <PersonnelChrome personnel={personnel ?? []} cadets={cadets ?? []} />
               ) : (
                 <CustomNodeChrome />
               )}
