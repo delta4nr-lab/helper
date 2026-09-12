@@ -1,17 +1,26 @@
 // Визначення Custom Node — @docx-editor.dev/pro, конфігурація «Nodes
 // without a payload»: schema немає — рушій не прив'язує чіп до customXml,
-// тож вміст чіпа РЕДАГОВУЄТЬСЯ прямо в документі (друк у чіпі працює для
+// тож вміст чіпа РЕДАГУЄТЬСЯ прямо в документі (друк у чіпі працює для
 // всіх нод; «a payload-bearing node is uneditable whatever this says» —
 // саме тому payload не використовуємо).
 //
 // Identity в тезі — мінімальна і стабільна:
 //   key = staff.{index}.{field} (getStaffTag) для персональних полів,
-//         або довільний ключ ручного поля (≤ 48 символів — валідація через
-//         encodeCustomNodeTag при вставці/редагуванні);
-//   p   = personnelId, дописується в тег прив'язкою людини (updateCustomNode
-//         з attrs { key, p }) — сумарний тег ≤ 64 (nanoid 21 → 58, перевірено).
+//         або довільний ключ ручного поля;
+//   p   = personnelId, дописується в тег прив'язкою людини.
 // fieldType/personInstance ВИВОДЯТЬСЯ зі схеми key у fromDocx — не
 // кодуються в тезі додатково.
+//
+// ФІЗИЧНЕ кодування attr (Fix B1): w:tag рушія обмежений 64 символами
+// (`acme:field?<attrs>`); частина найдовших cadet-ключів у парі з p
+// перевищувала ліміт (registrationAddress/distinctiveFeatures = 66).
+// Тому write-шлях пише коротший PHYSICAL attr `k` замість `key`:
+//   logical key = "cadet.1.distinctiveFeatures"  (у коді/UI/Runtime)
+//   physical    = k=cadet.1.distinctiveFeatures   (у w:tag)
+// fromDocx читає ОБИДВА (`k` і legacy `key`) — старі DOCX сумісні;
+// логічний key у моделі завжди залишається `attrs.key`.
+// p — незмінний формат (повний DB id).
+//
 // fromDocx читає attrs тега при відкритті (Word зберігає тег) і повертає
 // null для контролів без key — вони лишаються звичайними content controls.
 //
@@ -32,11 +41,22 @@ export type FieldChipAttrs = {
   personnelId?: string
 }
 
+// Єдина точка фізичного кодування attr для w:tag (Fix B1).
+// Використовується write-місцями, які дописують p; UI-код оперує лише
+// логічним key — фізичне представлення тут.
+export function encodeFieldChipAttrs(
+  key: string,
+  entityId?: string | null
+): Record<string, string> {
+  return entityId ? { k: key, p: entityId } : { k: key }
+}
+
 export const FieldNode = defineCustomNode({
   name: "field",
   tagPrefix: FIELD_TAG_PREFIX,
   fromDocx: ({ attrs }): FieldChipAttrs | null => {
-    const key = attrs["key"]
+    // Fix B1: новий фізичний `k` + legacy `key` (backward compatibility)
+    const key = attrs["k"] ?? attrs["key"]
     if (!key) return null
     // Схеми identity: staff.{i}.{f} (персонал) / cadet.{i}.{f} (курсанти) —
     // fieldType/personInstance виводяться з key; p — personnelId, доданий

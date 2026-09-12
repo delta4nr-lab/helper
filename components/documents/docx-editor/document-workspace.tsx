@@ -21,6 +21,8 @@ import { FieldEditMenu } from "@/components/documents/docx-editor/field-edit-dia
 import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
+import { TableRowDuplicate } from "@/components/documents/docx-editor/table-row-duplicate"
+import { DocumentRuntimeBridge } from "@/components/documents/docx-editor/runtime/document-runtime-bridge"
 import {
   PersonnelPanel,
   type PersonnelEntry,
@@ -396,6 +398,9 @@ export default function DocumentWorkspace({
       <LocaleProvider i18n={uk}>
       <FieldSelect />
       <FormFillKeeper />
+      {/* Document Runtime v1: індексація/locator (editor — джерело істини,
+          dev-only debug через window.__docxRuntimeDebug) */}
+      <DocumentRuntimeBridge />
       <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
         <Input
@@ -472,6 +477,9 @@ export default function DocumentWorkspace({
               ) : (
                 <CustomNodeChrome />
               )}
+              {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
+                  engine-кнопку рядка тільки коли рядок має персональні чіпи */}
+              {mode !== "template" ? <TableRowDuplicate /> : null}
               <DocxEditor.HyperLink />
               <DocxEditor.ContextMenu>
                 {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».

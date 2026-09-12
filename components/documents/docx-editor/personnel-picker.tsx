@@ -30,7 +30,8 @@ import {
 } from "@/components/documents/docx-editor/personnel-panel"
 import { PersonPicker, type PersonPickerItem } from "@/components/documents/person-picker"
 import { suspendFieldSelect } from "@/components/documents/docx-editor/field-select"
-import { FieldNode, type FieldChipAttrs } from "@/lib/docx-editor/field-node"
+import { useDocumentRuntime } from "@/components/documents/docx-editor/runtime/use-document-runtime"
+import { FieldNode, encodeFieldChipAttrs, type FieldChipAttrs } from "@/lib/docx-editor/field-node"
 import {
   COURSE_FIELD_LABELS,
   type CourseRecordData,
@@ -41,7 +42,7 @@ const LOG = "[personnel-picker]"
 // Чіп FieldNode (identity за тегом acme:field). Два flavor-и в ключі:
 // staff.{i}.{f} — персонал; cadet.{i}.{f} — курсанти (з активного курсу).
 // Ручні поля (лише key) — не розпізнаються.
-type ChipFlavor = "staff" | "cadet"
+export type ChipFlavor = "staff" | "cadet"
 
 // Порт fillSignature з a5f8381 (перевірений старий механізм вставки підпису)
 const SIGNATURE_HEIGHT_PT = 54 // висота підпису в документі, pt (≈ 4em при 14pt)
@@ -52,7 +53,7 @@ const SIGNATURE_WIDTH_MIN_PT = 24
 // attrs з документа за канонічним id, бо hover-Activation не завжди несе
 // attrs (матч за тегом був би завжди першою нодою). Ручні поля (лише key)
 // — null.
-function resolvePersonField(
+export function resolvePersonField(
   editor: NonNullable<ReturnType<typeof useDocxEditor>>,
   node: Pick<ActivatedCustomNode, "tag" | "attrs" | "nodeId">
 ): { nodeId: string; flavor: ChipFlavor; instance: number; fieldType: string } | null {
@@ -80,7 +81,7 @@ function instanceKey(flavor: ChipFlavor, instance: number): string {
 }
 
 // Людська назва поля за flavor-ом чіпа (для тостів/unbind)
-function fieldLabel(flavor: ChipFlavor, fieldType: string): string {
+export function fieldLabel(flavor: ChipFlavor, fieldType: string): string {
   if (flavor === "cadet") return COURSE_FIELD_LABELS[fieldType as keyof typeof COURSE_FIELD_LABELS] ?? "Поле"
   return PERSONNEL_FIELD_LABELS[fieldType as keyof typeof PERSONNEL_FIELD_LABELS] ?? "Поле"
 }
@@ -107,6 +108,9 @@ export function PersonnelChrome({
   cadets?: readonly CourseRecordData[]
 }) {
   const editor = useDocxEditor()
+  // Runtime v1 — джерело низькорівневих читань (зокрема paragraphId ноди
+  // підпису для її якоря; без setSelection-probe)
+  const runtime = useDocumentRuntime()
   // Єдиний стан активного поля (hover-контролер): логічна identity =
   // nodeId + flavor + instance; rect — лише щойна геометрія для
   // позиції кнопки (rect НЕ є identity — не ремонтую кнопку на рух
@@ -133,6 +137,26 @@ export function PersonnelChrome({
   const sigMarkersRef = React.useRef(
     new Map<string, Array<{ drawingId: string; anchorParaId: string }>>()
   )
+
+  // Видаляє ВСІ session-підписи екземпляра — мульти-видалення для
+  // дубльованих груп: декілька чіпів можуть мати один і той самий key
+  // (staff.{i}.signature), і кожен з них тримає власний drawing у масиві
+  // карти. Матч за КЛЮЧЕМ-СХЕМОЮ (не за attrs нод), щоб не залежати від
+  // того, як рушій віддає attrs. Повертає видалені ключі (діагностика).
+  function deleteSignatureMarkersForInstance(instanceId: string): string[] {
+    if (!editor) return []
+    const pattern = new RegExp(`^(staff|cadet)\\.${instanceId}\\.signature$`)
+    const deletedKeys: string[] = []
+    for (const [key, markers] of sigMarkersRef.current) {
+      if (!pattern.test(key)) continue
+      for (const marker of markers) {
+        editor.exec({ type: "deleteImage", drawingNodeId: marker.drawingId })
+      }
+      sigMarkersRef.current.delete(key)
+      deletedKeys.push(key)
+    }
+    return deletedKeys
+  }
 
   function handleNodeHover(node: ActivatedCustomNode) {
     if (open) return
@@ -272,27 +296,21 @@ export function PersonnelChrome({
     // зітрив картинку першого, вставлену в цьому ж проході.
     suspendFieldSelect(true)
     try {
-      const priorKeys = new Set(
-        customNodesOf(editor)
-          .map((node) => node.attrs as FieldChipAttrs)
-          .filter(
-            (attrs) =>
-              attrs.fieldType === "signature" && attrs.personInstance === String(instanceId)
-          )
-          .map((attrs) => attrs.key)
-      )
-      for (const markerKey of priorKeys) {
-        const stale = sigMarkersRef.current.get(markerKey) ?? []
-        for (const marker of stale) {
-          const del = editor.exec({ type: "deleteImage", drawingNodeId: marker.drawingId })
-          console.info(LOG, "deleteImage попереднього підпису →", {
-            chipKey: markerKey,
-            ok: del.ok,
-            reason: del.ok ? undefined : del.reason,
-          })
-        }
-        if (stale.length > 0) sigMarkersRef.current.delete(markerKey)
-      }
+      // Мульти-видалення: прибираємо ВСІ картинки підписів цього екземпляра
+      // (у т.ч. в дубльованих групах з тим самим key), ПЕРШ ніж обробляти
+      // чіпи — щоб другий чіп того ж поля не зітрив картинку першого.
+      const deletedKeys = deleteSignatureMarkersForInstance(String(instanceId))
+      const signatureNodes = customNodesOf(editor).filter((node) => {
+        const attrs = node.attrs as FieldChipAttrs
+        return (
+          attrs.fieldType === "signature" && attrs.personInstance === String(instanceId)
+        )
+      })
+      console.info(LOG, "signature cleanup (bindPerson) →", {
+        instance: instanceId,
+        duplicateSignatureNodes: signatureNodes.length,
+        deletedKeys,
+      })
 
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
@@ -304,6 +322,14 @@ export function PersonnelChrome({
         toast.error(`Поле екземпляра ${instanceId} у документі не знайдено.`)
         return
       }
+      // Вставку підпису відкладаємо на КІНЕЦЬ циклу: updateCustomNode для
+      // сусідніх полів групи (ПІБ/посада/звання) переписує той самий абзац і
+      // зніс би щойно вставлений anchored-drawing. Робимо всі rewrite'и ->
+      // потім вставляємо зображення (більше нічого в абзаці не переписується).
+      const pendingSignatures: Array<{
+        key: string
+        nodeId: string
+      }> = []
       for (const node of nodes) {
         const attrs = node.attrs as FieldChipAttrs
         const fieldType = attrs.fieldType ?? ""
@@ -318,7 +344,8 @@ export function PersonnelChrome({
         // прив'язування зачиста стару картинку автоматично); якщо підпису
         // НЕМА — слово «Підпис (N)» повертається (без картинки).
         const update = updateCustomNode(editor, FieldNode, node.nodeId, {
-          attrs: { key, p: person.id },
+          // логічний key без змін; фізичне кодування attr (k) — єдина точка
+          attrs: encodeFieldChipAttrs(key, person.id),
           text: fieldType === "signature" ? (person.signaturePath ? " " : label) : textForField(fieldType, person),
         })
         console.info(LOG, "update →", {
@@ -332,17 +359,23 @@ export function PersonnelChrome({
           toast.error(update.reason ?? `Не вдалося оновити поле «${label}».`)
           continue
         }
-        // Підпис — порт fillSignature: ховається слово (setValue " "), 
-        // плаваюча картинка «зліва від ПІБ» і автозаникнення при
-        // переприв'язці (rewritний вміст).
-        if (fieldType === "signature" && person.signaturePath) {
+        // Підпис — окремий flow (insertImage→wrap→position). Якщо в картці
+        // людини немає підпису — НЕ мовчимо (раніше це був тихий пропуск).
+        if (fieldType === "signature") {
+          if (!person.signaturePath) {
+            toast.warning(`У ${person.fullName} немає підпису в картці персоналії`)
+            continue
+          }
           if (!update.nodeId) {
             toast.error("Двигун не повернув новий id маркера підпису.")
             continue
           }
-          const ok = await bindSignatureImage(person, key, update.nodeId, String(instanceId))
-          if (!ok) continue
+          pendingSignatures.push({ key, nodeId: update.nodeId })
         }
+      }
+      // Усі rewrite'и групи завершено — тепер вставляємо підписи.
+      for (const pending of pendingSignatures) {
+        await bindSignatureImage(person, pending.key, pending.nodeId)
       }
       toast.success(`Екземпляр ${instanceId}: персонал оновлено (${person.fullName}).`)
     } finally {
@@ -385,11 +418,15 @@ export function PersonnelChrome({
         const fieldType = key.slice(`cadet.${instanceId}.`.length) || ""
         const label = fieldLabel("cadet", fieldType)
         const value = cadetFieldValue(fieldType, cadet)
-        // identity: key зберігається, p = record.id; порожня колонка —
-        // маркер (текст) не чіпається: text не passaєм взагалі.
+        // Fix A: engine-перезапис identity ВИМАГАЄ непорожній text
+        // (insertInlineContentControl → invalid-property-value на порожньому).
+        // Порожня колонка → дефолтний label поля, як при unbind, з (N).
+        const text = value ? value : `${label} (${instanceId})`
+        // identity: логічний key зберігається; p = record.id (повний id);
+        // фізичне кодування attr (k) — єдина точка encodeFieldChipAttrs
         const update = updateCustomNode(editor, FieldNode, node.nodeId, {
-          attrs: { key, p: cadet.id },
-          ...(value ? { text: value } : {}),
+          attrs: encodeFieldChipAttrs(key, cadet.id),
+          text,
         })
         console.info(LOG, "cadet update →", {
           fromId: node.nodeId,
@@ -433,19 +470,22 @@ export function PersonnelChrome({
     if (!editor) return
     suspendFieldSelect(true)
     try {
+      // Мульти-видалення: знімаємо ВСІ картинки підписів екземпляра,
+      // включно з дубльованими групами (той самий key).
+      const deletedKeys = deleteSignatureMarkersForInstance(String(instanceId))
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
         return attrs.fieldType != null && attrs.personInstance === String(instanceId)
+      })
+      console.info(LOG, "signature cleanup (unbindPerson) →", {
+        instance: instanceId,
+        deletedKeys,
       })
       for (const node of nodes) {
         const attrs = node.attrs as FieldChipAttrs
         const fieldType = attrs.fieldType ?? ""
         const key = attrs.key ?? ""
-        const label = fieldLabel(attrs.key.startsWith("cadet.") ? "cadet" : "staff", fieldType)
-        for (const marker of sigMarkersRef.current.get(key) ?? []) {
-          editor.exec({ type: "deleteImage", drawingNodeId: marker.drawingId })
-        }
-        sigMarkersRef.current.delete(key)
+        const label = fieldLabel(key.startsWith("cadet.") ? "cadet" : "staff", fieldType)
         const update = updateCustomNode(editor, FieldNode, node.nodeId, {
           // attrs заміняється цілком: без p personnelId прибирається з тега
           attrs: { key },
@@ -473,30 +513,31 @@ export function PersonnelChrome({
     }
   }
 
-  // Порт fillSignature з a5f8381: маркер-чип лишається (слово ховається
-  // поверховим setValue), зображення вставляється ТІЛЬКИ позаControls на
-  // materialization-aware як-абзац тієї ж сторінки, що й маркер, і
-  // позиціюється розрахованими EMU (зліва від ПІБ) повним аналогом старого.
-  // Session-мапа sigMarkersRef дозволяє прибрати стару картинку при
-  // повторній прив'язці (в межах сесії).
+  // Підпис — плаваюче зображення «перед текстом» (рухомий anchored drawing).
+  // Інлайн-вставка через engine image-intent lane, далі окремі кроки:
+  //   insertImage → setDrawingWrap:"inFront" (id може змінитись — DOM-диф) →
+  //   positionDrawing (relativeToV: paragraph, фолбек page) → confirmRendered.
+  // ЯКІР вставки — рідний абзац ноди (Runtime v1:
+  // locator.node(chipNodeId).location) — без текст-пошуку й setSelection-probe.
+  // Геометрія DOM потрібна лише для піксельних координат позиції. Чіп
+  // ховається ПІСЛЯ позиціювання (anchored поза контролом — setValue його не
+  // знищує).
   async function bindSignatureImage(
     person: PersonnelEntry,
     chipKey: string,
-    chipNodeId: string,
-    instance: string
+    chipNodeId: string
   ): Promise<boolean> {
-    if (!editor) return false
+    if (!editor || !person.signaturePath) return false
     const surface = editor.surface
-    if (!person.signaturePath || !surface) return false
-
-    // 0) Тимчасовий пробіл замість слова «Підпис»: порожній контрол дає
-    // нестабільну геометрію хрому — пробіл стабілізує вимірювання.
-    const staged = surface.contentControls.setValue(chipNodeId, " ")
-    if (staged !== true) {
-      console.warn(LOG, "setValue пробілу відхилено →", { chipNodeId })
-      toast.error("Обмеження API: не приймається запис значення поля підпису.")
+    if (!surface) {
+      console.warn(LOG, "signature bind skipped →", { reason: "no-surface" })
       return false
     }
+
+    // Кроку setValue(" ") тут НЕМАЄ: bindPerson уже виставив вміст чіпа в
+    // пробіл через updateCustomNode, а додатковий rewrite контрола під час
+    // фази вставки переписав би абзац і зніс drawing попереднього підпису
+    // групи (кілька підписів в одному абзаці).
 
     // 1) fetch + normalize зображення підпису людини
     const response = await fetch(person.signaturePath)
@@ -514,121 +555,48 @@ export function PersonnelChrome({
     let drawingId: string | null = null
     let currentId = ""
     try {
-      // Попередні підписи цього ключа вже видалено на старті прив'язки
-      // (bindPerson) — тут лише вставка нового маркера для поточного чіпа.
-
-      // Поле ПІБ групи — для позиції «зліва від ПІБ» (актуальний id —
-      // rewrite міг змінити його у цій же групі).
-      const personNodeId = customNodesOf(editor).find((node) => {
-        const a = node.attrs as FieldChipAttrs
-        return a.fieldType === "fullName" && a.personInstance === instance
-      })?.nodeId
-
-      const heightEmu = Math.round(SIGNATURE_HEIGHT_PT * 12700)
-      const widthEmu = Math.round(
-        (normalized.widthPoints / Math.max(1, normalized.heightPoints)) * heightEmu
-      )
-      const widthPx = widthEmu / 9525
-      const heightPx = heightEmu / 9525
-
-      // Геометрія полів ДО вставки: плаваюча картинка рядок не ростить, тож
-      // вимірювання залишаються валідними після wrap. Ретраї 20×25 мс.
-      let pageRect: DOMRect | null = null
-      let sigRect: DOMRect | null = null
-      let personLefts: number[] = []
-      let sigChrome: HTMLElement | null = null
-      for (let attempt = 0; attempt < 20 && !pageRect; attempt++) {
-        sigChrome = document.querySelector<HTMLElement>(
-          `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(chipNodeId)}"]`
-        )
-        const personChrome = personNodeId
-          ? document.querySelector<HTMLElement>(
-              `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(personNodeId)}"]`
-            )
-          : null
-        sigRect =
-          sigChrome?.querySelector<HTMLElement>(".docx-content-control-boundary")?.getBoundingClientRect() ?? null
-        const personLeftsRaw = [
-          ...(personChrome?.querySelectorAll<HTMLElement>(".docx-content-control-boundary") ?? []),
-        ].map((b) => b.getBoundingClientRect().left)
-        // Фолбек: без ПІБ-поля групи — позиція зліва від самого поля підпису
-        personLefts = personLeftsRaw.length > 0 ? personLeftsRaw : sigRect ? [sigRect.left] : []
-        pageRect =
-          (sigChrome?.closest(".docx-editor-page") ?? sigChrome?.closest("[class*='docx-page']"))
-            ?.getBoundingClientRect() ?? null
-        if (!pageRect || !sigRect || personLefts.length === 0) {
-          pageRect = null
-          await new Promise((resolve) => setTimeout(resolve, 25))
-        }
-      }
-      if (!pageRect || !sigRect || personLefts.length === 0) {
-        console.warn(LOG, "геометрію чіпа не знайдено у намальованому DOM")
+      // Якір вставки — рідний абзац ноди (канонічний id + offset).
+      const chipLocation = runtime?.locator.node(chipNodeId)?.location ?? null
+      const anchorParaId: string | null = chipLocation?.paragraphId ?? null
+      const anchorOffset: number | null = chipLocation?.paragraphOffset ?? null
+      if (!anchorParaId || anchorOffset === null) {
+        console.warn(LOG, "Runtime не визначив paragraphId/offset ноди підпису", {
+          chipNodeId,
+          anchorParaId,
+          anchorOffset,
+        })
         return false
       }
 
-      // Якор: materialization-aware підбір абзацу сторінки чіпа (з кінця,
-      // скіпаючи зайняті), тест公开发 candidacy — каретка поза контролами;
-      // фолбек — глобальний walk (випадок таблиці).
-      const paragraphs = [...editor.query({ type: "paragraphs" })]
-      const byText = new Map<string, string[]>()
-      for (const p of paragraphs) {
-        if (!p.paraId) continue
-        const normalizedText = p.text.trim()
-        if (!normalizedText) continue
-        const list = byText.get(normalizedText) ?? []
-        list.push(p.paraId)
-        byText.set(normalizedText, list)
-      }
-      const sigPage =
-        sigChrome?.closest(".docx-editor-page") ?? sigChrome?.closest("[class*='docx-page']")
-      const pageCandidates: string[] = []
-      if (sigPage) {
-        for (const el of sigPage.querySelectorAll<HTMLElement>("[data-paragraph-id]")) {
-          const text = (el.textContent ?? "").trim()
-          if (!text) continue
-          for (const paraId of byText.get(text) ?? []) pageCandidates.push(paraId)
-        }
-      }
-      const takenAnchors = new Set(
-        [...sigMarkersRef.current.values()].flat().map((info) => info.anchorParaId)
-      )
-      let anchorParaId: string | null = null
-      for (let i = pageCandidates.length - 1; i >= 0; i--) {
-        const candidate = pageCandidates[i]
-        if (takenAnchors.has(candidate)) continue
-        if (!editor.exec({ type: "setSelection", anchor: { paraId: candidate } }).ok) continue
-        if (!editor.query({ type: "contentControlAt" })) {
-          anchorParaId = candidate
-          break
-        }
-      }
-      if (!anchorParaId) {
-        // Фолбек: глобальний walk по всіх модельних абзацах (табличний
-        // випадок: на сторінці поля чистих абзаців може не бути)
-        for (let i = paragraphs.length - 1; i >= 0; i--) {
-          const candidate = paragraphs[i].paraId
-          if (!candidate || takenAnchors.has(candidate)) continue
-          if (!editor.exec({ type: "setSelection", anchor: { paraId: candidate } }).ok) continue
-          if (!editor.query({ type: "contentControlAt" })) {
-            anchorParaId = candidate
-            break
-          }
-        }
-      }
-      if (!anchorParaId) {
-        console.warn(LOG, "вільний як-абзац не знайдено")
+      // 2) Каретка — точка вставки (paragraphId+offset з Runtime, не probe).
+      const caret = editor.exec({
+        type: "setSelection",
+        range: {
+          anchor: { paragraphId: anchorParaId, offset: anchorOffset },
+          head: { paragraphId: anchorParaId, offset: anchorOffset },
+        },
+      })
+      if (!caret.ok) {
+        console.warn(LOG, "не вдалося поставити каретку у signature node →", {
+          reason: caret.reason,
+        })
         return false
       }
+      surface.flushPendingInput()
 
-      // Знімок id наявних drawing — ДО вставки (пошук нової у DOM-дифі)
+      // Знімок id наявних drawing — ДО вставки: у DOM-дифі шукаємо саме
+      // щойно вставлене зображення (виділення при кількох drawings ненадійне).
       const knownIdsPre = new Set(
-        [
-          ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
-        ].map((el) => el.getAttribute("data-drawing-node-id") ?? "")
+        [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")].map(
+          (el) => el.getAttribute("data-drawing-node-id") ?? ""
+        )
       )
+      const findNewDrawingId = (): string | null =>
+        [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
+          .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
+          .find((id) => id !== "" && !knownIdsPre.has(id)) ?? null
 
-      // Вставка ПОВНОГО розміру (a:ext серіалізується з розміру вставки —
-      // resize в окремому комміті губив розмір), ретраї ×2×120 мс.
+      // 3) Штатна вставка зображення у каретку (engine image-intent lane).
       const insertCommand = {
         type: "insertImage" as const,
         data: normalized.bytes,
@@ -641,105 +609,45 @@ export function PersonnelChrome({
         ),
         heightPoints: SIGNATURE_HEIGHT_PT,
       }
-      let result = await editor.executeImageCommand(insertCommand)
-      for (let attempt = 0; !result.ok && attempt < 2; attempt++) {
+      let insertResult = await editor.executeImageCommand(insertCommand)
+      for (let attempt = 0; !insertResult.ok && attempt < 2; attempt++) {
         await new Promise((resolve) => setTimeout(resolve, 120))
-        result = await editor.executeImageCommand(insertCommand)
+        insertResult = await editor.executeImageCommand(insertCommand)
       }
-      if (!result.ok) {
-        console.warn(LOG, "insertImage відхилено →", { reason: result.reason })
+      if (!insertResult.ok) {
+        console.warn(LOG, "executeImageCommand(insertImage) відхилено →", {
+          reason: insertResult.reason,
+        })
         return false
       }
 
-      // Id вставленого drawing: виділення або короткий DOM-диф
-      drawingId = editor.getSelectedImage()?.id ?? null
+      // 4) id вставленого drawing — DOM-диф (нове зображення) з пріоритетом;
+      // виділення беремо лише якщо воно теж не належало документу до вставки.
       for (let attempt = 0; attempt < 8 && !drawingId; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 25))
+        const selected = editor.getSelectedImage()?.id ?? null
         drawingId =
-          editor.getSelectedImage()?.id ??
-          [
-            ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
-          ]
-            .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
-            .find((id) => id && !knownIdsPre.has(id)) ??
-          null
+          findNewDrawingId() ?? (selected && !knownIdsPre.has(selected) ? selected : null)
+        if (!drawingId) await new Promise((resolve) => setTimeout(resolve, 25))
       }
       if (!drawingId) {
-        console.warn(LOG, "id вставленого drawing не знайдено")
+        console.warn(LOG, "id вставленого drawing не знайдено", {
+          knownBefore: [...knownIdsPre],
+        })
         return false
       }
       currentId = drawingId
 
-      // «Перед текстом» — ОКРЕМИЙ крок ДО resize: конвертація inline →
-      // anchored перезаписує a:ext — resize в тому ж кроці губиться; і саме
-      // через surface.applyDrawingOps setDrawingWrap inline→anchored
-      // (публічна exec-команда setImageWrapType вимагає kind==='anchored').
+      // 5) «Перед текстом» — через офіційний image-intent API
+      // (applyImageProperties), а не сирі tree-op: атомарна транзакція
+      // реєструє drawing у моделі пакунка. Конвертація inline→anchored може
+      // змінити id вузла — беремо id із результату.
       const knownIds = new Set(
-        [
-          ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
-        ]
+        [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
           .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
           .filter((id) => id !== currentId)
       )
-      const wrapped = surface.applyDrawingOps([
-        { op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" },
-      ])
-      if (!wrapped.committed || wrapped.rejected) {
-        console.warn(LOG, "setDrawingWrap не коммітився →", { reason: wrapped.reason })
-        toast.error(`Не вдалося застосувати обгортку «перед текстом».`)
-        return false
-      }
-      // Конвертація може змінити id вузла — перезнаходимо після wrap
-      const freshId = [
-        ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
-      ]
-        .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
-        .find((id) => !knownIds.has(id))
-      if (freshId) {
-        drawingId = freshId
-        currentId = freshId
-      }
-
-      // Позиція «зліва від ПІБ». Горизонталь — завжди сторінково; вертикаль —
-      // від ЯК-АБЗАЦУ (основна; переноситься між рендерерами без дрейфу),
-      // сторінкова — фолбек.
-      const pageXEmu = Math.max(
-        0,
-        Math.round((Math.min(...personLefts) - 4 - widthPx - pageRect.left) * 9525)
-      )
-      const imageTopPx = sigRect.top + sigRect.height / 2 - heightPx / 2
-      const pageYEmu = Math.max(0, Math.round((imageTopPx - pageRect.top) * 9525))
-
-      let paragraphYEmu: number | null = null
-      const paraEls = [...document.querySelectorAll<HTMLElement>("[data-paragraph-id]")]
-      const anchorTops = paraEls
-        .filter((el) => el.getAttribute("data-paragraph-id") === anchorParaId)
-        .map((el) => el.getBoundingClientRect().top)
-      if (anchorTops.length > 0) {
-        const anchorTop = Math.min(...anchorTops)
-        paragraphYEmu = Math.round((imageTopPx - anchorTop) * 9525)
-      }
-
-      const positionOnce = (
-        verticalEmu: number,
-        relativeToV: "page" | "paragraph"
-      ) =>
-        surface.applyDrawingOps([
-          {
-            op: "positionDrawing",
-            drawingNodeId: currentId,
-            position: {
-              horizontalEmu: pageXEmu,
-              relativeToH: "page",
-              verticalEmu,
-              relativeToV,
-            },
-          },
-        ])
       const refreshId = () => {
-        const fresh = [
-          ...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]"),
-        ]
+        const fresh = [...document.querySelectorAll<HTMLElement>("[data-drawing-node-id]")]
           .map((el) => el.getAttribute("data-drawing-node-id") ?? "")
           .find((id) => !knownIds.has(id))
         if (fresh) {
@@ -747,10 +655,77 @@ export function PersonnelChrome({
           currentId = fresh
         }
       }
+      const wrapped = surface.applyImageProperties({
+        drawingNodeId: currentId,
+        hyperlink: null,
+        ops: [{ op: "setDrawingWrap", drawingNodeId: currentId, wrap: "inFront" }],
+      })
+      if (!wrapped.ok) {
+        console.warn(LOG, "setDrawingWrap не закомітився →", { reason: wrapped.reason })
+        toast.error("Не вдалося застосувати обгортку «перед текстом».")
+        return false
+      }
+      if (wrapped.drawingNodeId) {
+        drawingId = wrapped.drawingNodeId
+        currentId = wrapped.drawingNodeId
+      } else {
+        refreshId()
+      }
+
+      // 6) Геометрія: x — правий край зображення по лівому краю поля підпису
+      // (зображення ЛІВОРУЧ від ноди); y — центр лінії поля
+      // (relativeToV: абзац чіпа, фолбек — сторінка).
+      const heightPx = (SIGNATURE_HEIGHT_PT * 12700) / 9525
+      const widthPx =
+        heightPx * (normalized.widthPoints / Math.max(1, normalized.heightPoints))
+
+      let pageRect: DOMRect | null = null
+      let sigRect: DOMRect | null = null
+      let sigChrome: HTMLElement | null = null
+      for (let attempt = 0; attempt < 20; attempt++) {
+        sigChrome = document.querySelector<HTMLElement>(
+          `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(chipNodeId)}"]`
+        )
+        sigRect =
+          sigChrome
+            ?.querySelector<HTMLElement>(".docx-content-control-boundary")
+            ?.getBoundingClientRect() ?? null
+        pageRect =
+          (sigChrome?.closest(".docx-editor-page") ?? sigChrome?.closest("[class*='docx-page']"))
+            ?.getBoundingClientRect() ?? null
+        if (pageRect && sigRect) break
+        pageRect = null
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+      if (!pageRect || !sigRect) {
+        console.warn(LOG, "геометрію чіпа підпису не знайдено у DOM")
+        return false
+      }
+
+      // x — правий край зображення притиснутий до лівого краю поля, тобто
+      // зображення стоїть ЛІВОРУЧ від ноди підпису
+      const pageXEmu = Math.max(
+        0,
+        Math.round((sigRect.left - widthPx - pageRect.left) * 9525)
+      )
+      const imageTopPx = sigRect.top + sigRect.height / 2 - heightPx / 2
+      const pageYEmu = Math.max(0, Math.round((imageTopPx - pageRect.top) * 9525))
+
+      let paragraphYEmu: number | null = null
+      const anchorTops = [...document.querySelectorAll<HTMLElement>("[data-paragraph-id]")]
+        .filter((el) => el.getAttribute("data-paragraph-id") === anchorParaId)
+        .map((el) => el.getBoundingClientRect().top)
+      if (anchorTops.length > 0) {
+        paragraphYEmu = Math.round((imageTopPx - Math.min(...anchorTops)) * 9525)
+      }
+
       const confirmRendered = async () => {
         for (let attempt = 0; attempt < 5; attempt++) {
-          if (document.querySelector(`[data-drawing-node-id="${CSS.escape(currentId)}"]`) !== null)
+          if (
+            document.querySelector(`[data-drawing-node-id="${CSS.escape(currentId)}"]`) !== null
+          ) {
             return true
+          }
           await new Promise((resolve) => setTimeout(resolve, 60))
         }
         return false
@@ -761,11 +736,31 @@ export function PersonnelChrome({
         attempts: number
       ) => {
         for (let attempt = 0; attempt < attempts; attempt++) {
-          const applied = positionOnce(verticalEmu, relativeToV)
-          refreshId()
-          if (!applied.committed || applied.rejected) {
+          const applied = surface.applyImageProperties({
+            drawingNodeId: currentId,
+            hyperlink: null,
+            ops: [
+              {
+                op: "positionDrawing",
+                drawingNodeId: currentId,
+                position: {
+                  horizontalEmu: pageXEmu,
+                  relativeToH: "page",
+                  verticalEmu,
+                  relativeToV,
+                },
+              },
+            ],
+          })
+          if (!applied.ok) {
             await new Promise((resolve) => setTimeout(resolve, 250))
             continue
+          }
+          if (applied.drawingNodeId) {
+            drawingId = applied.drawingNodeId
+            currentId = applied.drawingNodeId
+          } else {
+            refreshId()
           }
           if (await confirmRendered()) return true
         }
@@ -774,17 +769,16 @@ export function PersonnelChrome({
 
       let positioned =
         paragraphYEmu !== null ? await tryPosition(paragraphYEmu, "paragraph", 4) : false
+      if (!positioned) positioned = await tryPosition(pageYEmu, "page", 6)
       if (!positioned) {
-        positioned = await tryPosition(pageYEmu, "page", 6)
-      }
-      if (!positioned) {
-        console.warn(LOG, "позиціювання підпису не підтвердилось render'ом")
+        console.warn(LOG, "позиціювання підпису не підтвердилось рендером")
         toast.error("Зображення вставлено, але позиціювання не вдалося підтвердити.")
         return false
       }
 
-      // Ховаємо назву поля («Підпис (N)») — картинка її замінила
-      surface.contentControls.setValue(chipNodeId, "")
+      // 7) Назву поля вже приховано пробілом (updateCustomNode у bindPerson).
+      // Деструктивний setValue("") не викликаємо — setContentControlValue має
+      // replacesContent:true і discarded-каскад по нащадках контрола.
       sigMarkersRef.current.set(chipKey, [
         ...(sigMarkersRef.current.get(chipKey) ?? []),
         { drawingId: currentId, anchorParaId },
@@ -793,10 +787,10 @@ export function PersonnelChrome({
       return true
     } finally {
       if (!ok) {
-        // Невдале заповнення: прибираємо щойно вставлену картинку; слово
+        // Невдале заповнення: прибираємо щойно вставлений drawing; слово
         // не повертаємо — контрол лишається порожнім (чистий друк/експорт)
         if (drawingId) {
-          const del = editor.exec({ type: "deleteImage", drawingNodeId: drawingId })
+          const del = surface.deleteImage(drawingId)
           console.info(LOG, "failure cleanup deleteImage →", { ok: del.ok })
         }
         surface.contentControls.setValue(chipNodeId, "")
@@ -811,7 +805,7 @@ export function PersonnelChrome({
       {/* Кругла кнопка-пікер біля чіпа (порт quickPick 10985f0): відкриває
           попап зі списком персоналу з пошуком; поки попап відкритий, кнопка
           лишається на місці (hover не ховає її). Позиція — з activeField.rect
-          (геометріяidera, identity поля — nodeId+flavor+instance) */}
+          (identity поля — nodeId+flavor+instance) */}
       {activeField && (
         <div
           className="fixed z-50 -translate-y-1/2"
