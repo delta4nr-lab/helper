@@ -193,7 +193,3 @@ export class DocumentLocator {
     return located.ok ? located.location.columnIndex : null
   }
 }
-
-export function createDocumentLocator(index: import("./document-index").DocumentIndex): DocumentLocator {
-  return new DocumentLocator(index)
-}

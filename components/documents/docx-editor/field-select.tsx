@@ -48,8 +48,7 @@ export async function placeCaretBesideField(editor: DocxEditorInstance): Promise
   try {
     // Діалог повернув фокус на тулбар: каретка-оверлей малюється лише в
     // сфокусованому редакторі, тому спершу повертаємо фокус движку.
-    const focused = editor.surface?.focus()
-    console.info(LOG, "focus →", focused)
+    editor.surface?.focus()
     return await placeCaretBesideFieldInner(editor)
   } finally {
     fieldSelectSuspended = false
@@ -60,10 +59,8 @@ async function placeCaretBesideFieldInner(editor: DocxEditorInstance): Promise<b
   // Чіп на мить активний — atCaret() дає його тег для пошуку review item.
   const boundary = editor.surface?.contentControls.atCaret()
   if (!boundary) {
-    console.info(LOG, "caret: активного контрола немає")
     return false
   }
-  console.info(LOG, "caret: активний контрол →", { id: boundary.id, tag: boundary.tag })
 
   // Режим заповнення: каретку лишаємо в полі, але вміст чіпа виділяємо —
   // друк одразу заміняє назву (заповнення). Anchor-search — той самий
@@ -72,7 +69,6 @@ async function placeCaretBesideFieldInner(editor: DocxEditorInstance): Promise<b
     const chipText = customNodesOf(editor).find((candidate) => candidate.tag === boundary.tag)?.text
     const from = editor.snapshot().selection?.from
     const paraId = from && "paraId" in from ? from.paraId : null
-    console.info(LOG, "режим заповнення → виділяємо вміст чіпа", { chipText, paraId })
     if (chipText && paraId) {
       editor.exec({
         type: "setSelection",
@@ -135,12 +131,6 @@ async function placeCaretBesideFieldInner(editor: DocxEditorInstance): Promise<b
 
   // Post-check: чи рушій все ще бачить чіп у каретці (affinity позиції).
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  const after = editor.surface?.contentControls.atCaret()
-  console.info(LOG, "caret: post-check →", {
-    ...end,
-    chipStillAtCaret: after?.id === boundary.id,
-    selectionCollapsed: editor.snapshot().selectionCollapsed,
-  })
   return true
 }
 
@@ -202,9 +192,7 @@ export function FieldSelect() {
           to: { paraId, search: text },
         },
       })
-      if (result.ok && editor.query({ type: "selectedText" }) === text) {
-        console.info(LOG, "вміст поля виділено", JSON.stringify(text))
-      } else if (!result.ok) {
+      if (!result.ok) {
         console.info(LOG, "виділення відхилено →", { code: result.code, reason: result.reason, text })
       }
     })

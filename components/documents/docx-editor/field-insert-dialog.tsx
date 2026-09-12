@@ -146,20 +146,12 @@ function FieldInsertForm({
     if (!snapshot.selectionCollapsed) {
       let cleared = editor.exec({ type: "paste", text: "" })
       if (!cleared.ok) {
-        console.info(LOG, "paste-clear відхилено → fallback cut →", {
-          code: cleared.code,
-          reason: cleared.reason,
-        })
         cleared = editor.exec({ type: "cut" })
       }
       if (!cleared.ok) {
-        console.info(LOG, "очищення виділення не вдалося →", {
+        console.warn(LOG, "не вдалося очистити виділення перед вставкою поля →", {
           code: cleared.code,
           reason: cleared.reason,
-        })
-      } else {
-        console.info(LOG, "виділення очищено →", {
-          collapsed: editor.snapshot().selectionCollapsed,
         })
       }
     }

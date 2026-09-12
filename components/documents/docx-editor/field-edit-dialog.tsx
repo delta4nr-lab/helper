@@ -40,8 +40,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-const LOG = "[field-edit]"
-
 export function FieldEditMenu() {
   const [active, setActive] = React.useState<ActivatedCustomNode | null>(null)
 
@@ -138,12 +136,6 @@ function FieldEditForm({
       const result = updateCustomNode(editor, FieldNode, nodeId, {
         attrs: { key: normalizedKey },
         text: normalizedTitle,
-      })
-      console.info(LOG, "update →", {
-        fromId: nodeId,
-        ok: result.ok,
-        newId: result.ok ? result.nodeId : undefined,
-        reason: result.ok ? undefined : result.reason,
       })
       if (!result.ok) {
         toast.error(result.reason ?? "Не вдалося зберегти поле.")

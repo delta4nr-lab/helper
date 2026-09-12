@@ -37,7 +37,3 @@ export class DocumentNodeManager {
     return this.index.findByInstance(flavor, instance)
   }
 }
-
-export function createNodeManager(index: DocumentIndex): DocumentNodeManager {
-  return new DocumentNodeManager(index)
-}

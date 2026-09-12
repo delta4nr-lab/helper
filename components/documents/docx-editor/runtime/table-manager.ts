@@ -61,7 +61,6 @@ export class DocumentTableManager {
       .filter(
         (node) => node.location !== null && paragraphUnderRow(node.location.paragraphId, rowId || "")
       )
-      .map((node) => node)
   }
 
   /** Ноди комірки (cell ordinal у рядку; ≠ grid column для merged cells). */
@@ -71,8 +70,4 @@ export class DocumentTableManager {
       return paragraphId !== null && cellOrdinalUnderRow(paragraphId, rowId) === columnIndex
     })
   }
-}
-
-export function createTableManager(index: DocumentIndex, locator: DocumentLocator): DocumentTableManager {
-  return new DocumentTableManager(index, locator)
 }

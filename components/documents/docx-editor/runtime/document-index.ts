@@ -44,15 +44,6 @@ export class DocumentIndex {
     return this.rebuild(revision)
   }
 
-  /** Повертає параграф чіна з review items: nodeId → paragraphId | null. */
-  private paragraphIdByReview(nodeId: string): string | null {
-    for (const entry of this.editor.getReviewItems()) {
-      if (entry.kind !== "custom" || entry.item.id !== nodeId) continue
-      return entry.item.range?.start?.paragraphId ?? null
-    }
-    return null
-  }
-
   /** Повне перебудування індексу з editor (public API only). */
   refresh(): readonly DocumentNode[] {
     return this.rebuild(this.currentRevision())
@@ -151,8 +142,4 @@ export class DocumentIndex {
   cadet(instance: number): readonly DocumentNode[] {
     return this.findByInstance("cadet", instance)
   }
-}
-
-export function createDocumentIndex(editor: DocxEditorInstance): DocumentIndex {
-  return new DocumentIndex(editor)
 }

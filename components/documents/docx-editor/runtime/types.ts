@@ -32,19 +32,6 @@ export type NodeLocationReason =
    */
   | "derivation-unsupported"
 
-/**
- * Нейтральний базовий блок документа (v1): абзац-обгортка.
- * v1-мапінг: blockId === paragraphId, kind = "paragraph" — без прив'язки
- * до таблиць/CustomNode (залишається базовим типом на майбутнє).
- */
-export type DocumentBlockKind = "paragraph" | "unknown"
-
-export type DocumentBlock = {
-  readonly blockId: string
-  readonly paragraphId: string
-  readonly kind: DocumentBlockKind
-}
-
 export type NodeLocation = {
   /** Стабільний абзац чіпа завжди відомий (з review items) */
   readonly paragraphId: string

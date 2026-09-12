@@ -109,7 +109,3 @@ export class DocumentRuntime {
     return rows
   }
 }
-
-export function createDocumentRuntime(editor: DocxEditorInstance): DocumentRuntime {
-  return new DocumentRuntime(editor)
-}

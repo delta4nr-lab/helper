@@ -23,9 +23,6 @@ import { duplicateTableRow } from "@/lib/docx-editor/table-row-duplicate"
 import { customNodesOf } from "@docx-editor.dev/pro"
 import { resolvePersonField } from "@/components/documents/docx-editor/personnel-picker"
 import { suspendFieldSelect } from "@/components/documents/docx-editor/field-select"
-import { type FieldChipAttrs } from "@/lib/docx-editor/field-node"
-
-const DUPLICATE_IN_FLIGHT = new WeakSet<HTMLButtonElement>()
 
 export function TableRowDuplicate() {
   const editor = useDocxEditor()
@@ -50,24 +47,17 @@ export function TableRowDuplicate() {
       // + вертикальні полоси чіпів за rowIndex; engine-кнопка вертикально
       // лежить посередині свого рядка (rowMidY) → матч полоси.
       suspendFieldSelect(true)
-      let handled = false
       let sourceRowIndex: number | null = null
       try {
         const originalParaId = (
           editor.query({ type: "selection" })?.from as { paraId?: string } | undefined
         )?.paraId ?? null
         const customNodes = customNodesOf(editor)
-        console.info(
-          "[table-row-duplicate]",
-          "click «» →",
-          { tableId, rowId, chipsTotal: customNodes.length }
-        )
         // Мінімальний caret-probe: тільки АБЗАЦИ чіпів. Геометрія рядка —
         // з РЕКТА ПАРАГРАФА чіпа ([data-paragraph-id] пейнтований завжди),
         // а не з boundary чіпа (рухомий хром малюється не завжди).
         type ChipRow = { rowIndex: number; top: number; bottom: number }
         const chipRows: ChipRow[] = []
-        let skipLogged = 0
         for (const node of customNodes) {
           const info = resolvePersonField(editor, node)
           if (!info) continue
@@ -85,36 +75,14 @@ export function TableRowDuplicate() {
               ?.closest<HTMLElement>("[data-paragraph-id]")
               ?.getAttribute("data-paragraph-id") ?? null
           }
-          const attrs = node.attrs as FieldChipAttrs
           if (!paraId) {
-            if (skipLogged < 3) {
-              skipLogged += 1
-              console.info("[table-row-duplicate]", "чип без paraId (review/DOM) → пропущено", {
-                key: attrs?.key,
-                nodeId: node.nodeId,
-              })
-            }
             continue
           }
           if (!editor.exec({ type: "setSelection", anchor: { paraId } }).ok) {
-            if (skipLogged < 3) {
-              skipLogged += 1
-              console.info("[table-row-duplicate]", "setSelection відхилено → пропущено", {
-                key: attrs?.key,
-                paraId,
-              })
-            }
             continue
           }
           const context = editor.query({ type: "tableContext" })
           if (!context) {
-            if (skipLogged < 3) {
-              skipLogged += 1
-              console.info("[table-row-duplicate]", "tableContext null у каретці чіпа → пропущено", {
-                key: attrs?.key,
-                paraId,
-              })
-            }
             continue
           }
           // Рект абзацу чіпа (пейнтований елемент рядка під курсором)
@@ -166,11 +134,6 @@ export function TableRowDuplicate() {
         }
         // Допуск: кнопка висотою ~16px, полоса чіпів трохи вужча за рядок
         if (sourceRowIndexCandidate === null || bestDistance > 60) {
-          console.info(
-            "[table-row-duplicate]",
-            "рядок без персональних чіпів → клік відпускається двигуну",
-            { buttonCenterY, candidates: [...bands] }
-          )
           return
         }
         sourceRowIndex = sourceRowIndexCandidate
@@ -178,7 +141,6 @@ export function TableRowDuplicate() {
         // Перехоплюємо й дублюємо рядок (targeted insertRow + нові чіпи)
         event.preventDefault()
         event.stopPropagation()
-        handled = true
         const outcome = duplicateTableRow(editor, tableId, rowId, sourceRowIndex)
         if (!outcome.ok) {
           // Вставка не реалізована (targeted can() refused / no caret) —
@@ -189,10 +151,8 @@ export function TableRowDuplicate() {
         console.warn("[table-row-duplicate]", "помилка класифікації/дублювання →", error)
         event.preventDefault()
         event.stopPropagation()
-        handled = true
       } finally {
         suspendFieldSelect(false)
-        if (handled) DUPLICATE_IN_FLIGHT.delete(button)
       }
     },
     [editor]

@@ -81,7 +81,7 @@ function instanceKey(flavor: ChipFlavor, instance: number): string {
 }
 
 // Людська назва поля за flavor-ом чіпа (для тостів/unbind)
-export function fieldLabel(flavor: ChipFlavor, fieldType: string): string {
+function fieldLabel(flavor: ChipFlavor, fieldType: string): string {
   if (flavor === "cadet") return COURSE_FIELD_LABELS[fieldType as keyof typeof COURSE_FIELD_LABELS] ?? "Поле"
   return PERSONNEL_FIELD_LABELS[fieldType as keyof typeof PERSONNEL_FIELD_LABELS] ?? "Поле"
 }
@@ -138,6 +138,12 @@ export function PersonnelChrome({
     new Map<string, Array<{ drawingId: string; anchorParaId: string }>>()
   )
 
+  // Єдина точка закриття попапа + скидання якоря.
+  const closePicker = React.useCallback(() => {
+    setOpen(false)
+    setActiveField(null)
+  }, [])
+
   // Видаляє ВСІ session-підписи екземпляра — мульти-видалення для
   // дубльованих груп: декілька чіпів можуть мати один і той самий key
   // (staff.{i}.signature), і кожен з них тримає власний drawing у масиві
@@ -159,7 +165,12 @@ export function PersonnelChrome({
   }
 
   function handleNodeHover(node: ActivatedCustomNode) {
-    if (open) return
+    // Якщо попап «залип» відкритим без якоря — скидаємо й даємо hover
+    // відпрацювати (захист від стану, коли кнопка більше не з'являється).
+    if (open) {
+      if (activeField) return
+      setOpen(false)
+    }
     const info = editor ? resolvePersonField(editor, node) : null
     if (!info) {
       // Компонент не докладає подій «виходу» курсора з чіпа — приховування
@@ -200,12 +211,16 @@ export function PersonnelChrome({
     }
   }, [])
   const scheduleHide = React.useCallback(() => {
+    // Поки попап відкритий або триває прив'язка — кнопку не ховаємо: попап
+    // рендериться в порталі, тож перехід у список дає хибний pointerleave
+    // на контейнері кнопки.
+    if (open || busy) return
     clearHideTimer()
     hideTimer.current = window.setTimeout(() => {
       hideTimer.current = null
-      setActiveField((prev) => (prev && !busy ? null : prev))
+      setActiveField(null)
     }, 200)
-  }, [busy, clearHideTimer])
+  }, [open, busy, clearHideTimer])
 
   // Видалення кнопки при виході курсора з чіпа: CustomNodeChrome не подає
   // подій «leave», тому pointerleave вішаємо на хром активного чіпа;
@@ -223,6 +238,9 @@ export function PersonnelChrome({
     chrome.addEventListener("pointerleave", scheduleHide)
     return () => chrome.removeEventListener("pointerleave", scheduleHide)
   }, [activeNodeId, open, busy, scheduleHide])
+
+  // Таймер не має лишатися після розмонтування.
+  React.useEffect(() => () => clearHideTimer(), [clearHideTimer])
 
   // Список для пікера за flavor-ом чіпа: зі штату або з активного курсу
   const pickerItems: PersonPickerItem[] = React.useMemo(() => {
@@ -348,13 +366,6 @@ export function PersonnelChrome({
           attrs: encodeFieldChipAttrs(key, person.id),
           text: fieldType === "signature" ? (person.signaturePath ? " " : label) : textForField(fieldType, person),
         })
-        console.info(LOG, "update →", {
-          fromId: node.nodeId,
-          fieldType,
-          ok: update.ok,
-          newId: update.ok ? update.nodeId : undefined,
-          reason: update.ok ? undefined : update.reason,
-        })
         if (!update.ok) {
           toast.error(update.reason ?? `Не вдалося оновити поле «${label}».`)
           continue
@@ -385,9 +396,8 @@ export function PersonnelChrome({
         [instanceKey("staff", Number(instanceId))]: person.id,
       }))
       suspendFieldSelect(false)
-      setOpen(false)
+      closePicker()
       setBusy(false)
-      setActiveField(null)
     }
   }
 
@@ -428,13 +438,6 @@ export function PersonnelChrome({
           attrs: encodeFieldChipAttrs(key, cadet.id),
           text,
         })
-        console.info(LOG, "cadet update →", {
-          fromId: node.nodeId,
-          fieldType,
-          ok: update.ok,
-          newId: update.ok ? update.nodeId : undefined,
-          reason: update.ok ? undefined : update.reason,
-        })
         if (!update.ok) {
           toast.error(update.reason ?? `Не вдалося оновити поле «${label}».`)
         }
@@ -451,9 +454,8 @@ export function PersonnelChrome({
         [instanceKey("cadet", Number(instanceId))]: cadet.id,
       }))
       suspendFieldSelect(false)
-      setOpen(false)
+      closePicker()
       setBusy(false)
-      setActiveField(null)
     }
   }
 
@@ -486,16 +488,10 @@ export function PersonnelChrome({
         const fieldType = attrs.fieldType ?? ""
         const key = attrs.key ?? ""
         const label = fieldLabel(key.startsWith("cadet.") ? "cadet" : "staff", fieldType)
-        const update = updateCustomNode(editor, FieldNode, node.nodeId, {
+        updateCustomNode(editor, FieldNode, node.nodeId, {
           // attrs заміняється цілком: без p personnelId прибирається з тега
           attrs: { key },
           text: label,
-        })
-        console.info(LOG, "unbind update →", {
-          fromId: node.nodeId,
-          fieldType,
-          ok: update.ok,
-          reason: update.ok ? undefined : update.reason,
         })
       }
       // Галочка в попапі знімається за єдиним ключем flavor:instance
@@ -507,9 +503,8 @@ export function PersonnelChrome({
       toast.success(`Екземпляр ${instanceId}: особу знято.`)
     } finally {
       suspendFieldSelect(false)
-      setOpen(false)
+      closePicker()
       setBusy(false)
-      setActiveField(null)
     }
   }
 
@@ -809,11 +804,14 @@ export function PersonnelChrome({
       {activeField && (
         <div
           className="fixed z-50 -translate-y-1/2"
-          style={{ left: activeField.rect.right + 6, top: activeField.rect.top }}
+          style={{
+            left: activeField.rect.right + 6,
+            top: activeField.rect.top,
+          }}
           // Курсор на кнопці — скасовує приховування; пішов з кнопки —
           // scheduleHide знову планує гаснення через 200 мс
           onPointerEnter={clearHideTimer}
-          onPointerLeave={scheduleHide}
+          onPointerLeave={open ? undefined : scheduleHide}
         >
           <PersonPicker
             compact
@@ -825,9 +823,13 @@ export function PersonnelChrome({
                 setOpen(true)
                 return
               }
-              // Закриття попапа → кнопка зникає одразу (якщо не busy)
-              setOpen(false)
-              if (!busy) setActiveField(null)
+              if (busy) {
+                // Закриття під час прив'язки — якір скине finally відповідної дії
+                setOpen(false)
+                return
+              }
+              // Закриття попапа → кнопка зникає одразу
+              closePicker()
             }}
             // Контекст пікер-попапа — від контролера: flavor вирішує джерело
             // списку (через items/title); пікер не знає нічого про DOCX
