@@ -56,6 +56,10 @@ export function encodeFieldChipAttrs(
 export const FieldNode = defineCustomNode({
   name: "field",
   tagPrefix: FIELD_TAG_PREFIX,
+  // Колір фону чіпа (CustomNodeChrome → 12% tint). Індиго замість синього
+  // --doc-accent: відрізняється від кольору виділення тексту і читається
+  // і на білій сторінці, і на темній.
+  chrome: { color: "#818cf8" },
   fromDocx: ({ attrs }): FieldChipAttrs | null => {
     // Fix B1: новий фізичний `k` + legacy `key` (backward compatibility)
     const key = attrs["k"] ?? attrs["key"]

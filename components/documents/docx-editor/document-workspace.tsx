@@ -438,7 +438,7 @@ export default function DocumentWorkspace({
       {/* Document Runtime v1: індексація/locator (editor — джерело істини,
           dev-only debug через window.__docxRuntimeDebug) */}
       <DocumentRuntimeBridge />
-      <div className={cn("docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
+      <div className={cn("app-docx docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
       <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
         <Input
           value={docTitle}

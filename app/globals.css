@@ -168,6 +168,24 @@
   background: color-mix(in srgb, var(--doc-primary) 7%, transparent);
 }
 
+/* Колір виділеного тексту (::selection) у редакторі: бібліотека в темній темі
+   має бурштинове виділення (виглядає жовтим), у світлій — синє. Уніфікуємо з
+   кольором чіпів полів (індиго #818cf8) в обох темах.
+   Темний варіант — «передфільтровий»: .docx-page-content під
+   invert(1) hue-rotate(180deg) contrast(.92), тож оголошуємо темніший індиго,
+   щоб після фільтра він виглядав як у світлій темі. Специфічність .app-docx …
+   вища за бібліотечні ::selection-правила. */
+.app-docx .docx-editor .docx-page-content ::selection,
+.app-docx .docx-editor .docx-page-content::-moz-selection {
+  background-color: rgba(129, 140, 248, 0.45) !important;
+  color: inherit !important;
+}
+.app-docx .docx-editor.dark .docx-page-content ::selection,
+.app-docx .docx-editor.dark .docx-page-content::-moz-selection {
+  background-color: rgba(47, 43, 128, 0.6) !important;
+  color: inherit !important;
+}
+
 /* Підказки колонтитулів і маркер розриву розділу зашиті в editor.css англійською
    через content (i18n-каталог їх не покриває) — перекладаємо українською.
    Специфічність 0,3,1 / 0,2,1 — вища за бібліотечні 0,2,1 / 0,1,1. */
