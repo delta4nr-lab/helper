@@ -22,6 +22,10 @@ import { FieldInsertDialog } from "@/components/documents/docx-editor/field-inse
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
 import { TableRowDuplicate, RepeatRowAdmin } from "@/components/documents/docx-editor/table-row-duplicate"
+import {
+  canReplayClipboardPaste,
+  inlineClipboardCssFont,
+} from "@/components/documents/docx-editor/clipboard-html"
 import { DocumentRuntimeBridge } from "@/components/documents/docx-editor/runtime/document-runtime-bridge"
 import {
   PersonnelPanel,
@@ -38,15 +42,14 @@ import { cn } from "@/lib/utils"
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-// Дефолтний шрифт редактора: рани без явного шрифту розв'язуються у defaultFont
-// рушія — без конфіга це Calibri 11pt (далі системний фолбек). 28 half-points
-// = 14pt — дзеркало docDefaults документа. Стабільне посилання ОБОВ'ЯЗКОВЕ:
+// Дефолтний шрифт/розмір документа (Times New Roman, 28 half-points = 14pt)
+// задає сам шаблон через w:docDefaults — рушій його читає (effectiveRunDefaults),
+// тож надрукований текст лишається 14pt. Глобальний defaultFont рушія тут НЕ
+// задаємо: інакше він накидав 14 на будь-який текст без явного формату, зокрема
+// вставлений ззовні (paste має лишатися «як є»). Стабільне посилання ОБОВ'ЯЗКОВЕ:
 // новий конфіг щорендеру запускав би перезавантаження шрифтів рушія щоразу —
 // «Maximum update depth exceeded».
-const EDITOR_FONTS = composeFontConfiguration({
-  sources: [],
-  defaultFont: { family: "Times New Roman", sizeHalfPoints: 28 },
-})
+const EDITOR_FONTS = composeFontConfiguration({ sources: [] })
 
 type WorkspaceProps = {
   templateId: string
@@ -192,6 +195,8 @@ function findImageFile(source: DataTransfer | null): File | null {
 
 function ViewportImageDrop({ className, children }: { className?: string; children: React.ReactNode }) {
   const editor = useDocxEditor()
+  // Захист від рекурсії: перевідправлений paste знову пройде через цей capture.
+  const replayingPaste = React.useRef(false)
 
   async function processImageFile(file: File) {
     if (!editor) return
@@ -216,6 +221,38 @@ function ViewportImageDrop({ className, children }: { className?: string; childr
   }
 
   function handlePasteCapture(event: React.ClipboardEvent<HTMLDivElement>) {
+    // Word кладе font-size у CSS-клас (`.MsoNormal`), який рушій ігнорує →
+    // вставлений текст успадковує docDefaults (14pt). Переносимо класовий
+    // шрифт у inline style і перевідправляємо paste зі зміненим clipboardData.
+    if (!replayingPaste.current) {
+      const html = event.clipboardData.getData("text/html")
+      if (html && canReplayClipboardPaste()) {
+        const patched = inlineClipboardCssFont(html)
+        if (patched !== html) {
+          event.preventDefault()
+          event.stopPropagation()
+          const data = new DataTransfer()
+          data.setData("text/plain", event.clipboardData.getData("text/plain"))
+          data.setData("text/html", patched)
+          const target = (event.target ?? event.currentTarget) as EventTarget
+          replayingPaste.current = true
+          try {
+            target.dispatchEvent(
+              new ClipboardEvent("paste", {
+                clipboardData: data,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+              })
+            )
+          } finally {
+            replayingPaste.current = false
+          }
+          return
+        }
+      }
+    }
+
     // Змішаний/текстовий paste лишаємо пакету — перехоплюємо лише «чисте» зображення
     if (event.clipboardData.getData("text/plain")) return
     const file = findImageFile(event.clipboardData)
@@ -430,6 +467,8 @@ export default function DocumentWorkspace({
       <DocxEditor.Toolbar>
         <DocxEditor.Toolbar.Comments hidden />
         <DocxEditor.Toolbar.EditingMode hidden />
+        {/* Стилі абзацу не використовуються у військових документах */}
+        <DocxEditor.Toolbar.StylePicker hidden />
         {/* Зображення вставляються з меню «Вставити»; властивості обраної
             картинки (розмір/обтікання/позиція) — вбудований контрол */}
         <DocxEditor.Toolbar.ImageInsert hidden />

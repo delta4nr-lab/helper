@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { signOut, useSession } from "next-auth/react"
+import { signOut } from "next-auth/react"
 import { LayoutDashboard, LogOut, User2 } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { useAuthSession } from "@/components/auth/auth-provider"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,12 +22,11 @@ function avatarFallback(username: string): string {
 }
 
 export function UserMenu() {
-  const { data: session } = useSession()
-  const user = session?.user
+  const { user } = useAuthSession()
   if (!user) return null
 
-  const username = (user as unknown as { username: string }).username ?? user.name ?? "?"
-  const role = (user as unknown as { role: string }).role
+  const username = user.username ?? user.name ?? "?"
+  const role = user.role
   const initial = avatarFallback(username)
 
   return (

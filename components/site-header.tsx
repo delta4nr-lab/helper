@@ -2,12 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useSession } from "next-auth/react"
 import { LogIn, Menu, X, Shield } from "lucide-react"
 
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
+import { useAuthSession } from "@/components/auth/auth-provider"
 import { AuthModal } from "@/components/auth/auth-modal"
 import { UserMenu } from "@/components/auth/user-menu"
 import { ThemeSwitcher } from "@/components/theme-switcher"
@@ -21,8 +21,8 @@ const nav = [
 export function SiteHeader() {
   const [open, setOpen] = React.useState(false)
   const [authOpen, setAuthOpen] = React.useState(false)
-  const { data: session, status } = useSession()
-  const isAuthed = status === "authenticated" && !!session?.user
+  const { user, status } = useAuthSession()
+  const isAuthed = status === "authenticated" && !!user
 
   return (
     <>
