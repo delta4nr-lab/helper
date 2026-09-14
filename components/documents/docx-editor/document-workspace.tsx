@@ -20,6 +20,7 @@ import {
 import { FieldEditMenu } from "@/components/documents/docx-editor/field-edit-dialog"
 import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
+import { KeyboardLayoutShortcuts } from "@/components/documents/docx-editor/keyboard-layout-shortcuts"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
 import { TableRowDuplicate, RepeatRowAdmin } from "@/components/documents/docx-editor/table-row-duplicate"
 import {
@@ -434,6 +435,7 @@ export default function DocumentWorkspace({
       {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>
       <FieldSelect />
+      <KeyboardLayoutShortcuts />
       <FormFillKeeper />
       {/* Document Runtime v1: індексація/locator (editor — джерело істини,
           dev-only debug через window.__docxRuntimeDebug) */}
