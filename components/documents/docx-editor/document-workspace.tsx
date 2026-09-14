@@ -28,7 +28,7 @@ import {
   type PersonnelEntry,
 } from "@/components/documents/docx-editor/personnel-panel"
 import type { CourseRecordData } from "@/lib/courses/types"
-import { DOCX_MODULES } from "@/lib/docx-editor/field-node"
+import { DOCX_MODULES, FieldNode } from "@/lib/docx-editor/field-node"
 import { uk } from "@/lib/docx-editor/uk"
 import { useTheme } from "@/components/theme-provider"
 
@@ -475,7 +475,9 @@ export default function DocumentWorkspace({
               {mode !== "template" && (personnel?.length || cadets?.length) ? (
                 <PersonnelChrome personnel={personnel ?? []} cadets={cadets ?? []} />
               ) : (
-                <CustomNodeChrome />
+                // Приховуємо внутрішні metadata-ноди (RepeatRowMarker/
+                // RepeatRowRegistry) — малюємо чіпи лише для FieldNode.
+                <CustomNodeChrome nodes={[FieldNode]} />
               )}
               {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
                   engine-кнопку рядка тільки коли рядок має персональні чіпи */}

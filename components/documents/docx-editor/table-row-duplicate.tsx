@@ -168,12 +168,13 @@ export function RepeatRowAdmin() {
         title="Зробити рядок повторюваним"
         onClick={handleMark}
         className={cn(
-          "inline-flex size-5 items-center justify-center rounded border border-border",
-          "bg-background text-muted-foreground shadow-sm transition-colors",
-          "hover:bg-accent hover:text-foreground active:scale-95"
+          // Той самий вигляд/розмір, що й engine-кнопка «+» (editor.css
+          // .docx-table-insert-row): 16×16, radius 2px, токени --doc-*.
+          "inline-flex size-4 items-center justify-center p-0 cursor-pointer select-none rounded-[2px]",
+          "border border-[color:var(--doc-border-dark)] bg-[var(--doc-surface)] text-[var(--doc-text-muted)]"
         )}
       >
-        <Repeat2 className="size-3.5" />
+        <Repeat2 className="size-3" />
       </button>
     </div>
   )

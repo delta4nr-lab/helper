@@ -776,8 +776,10 @@ export function PersonnelChrome({
 
   return (
     <>
-      {/* Хром чіпів — малювальний стиль + hover-активність персональних нод */}
-      <CustomNodeChrome onNodeHover={handleNodeHover} />
+      {/* Хром чіпів — малювальний стиль + hover-активність персональних нод.
+          `nodes={[FieldNode]}` приховує внутрішні metadata-ноди
+          (RepeatRowMarker/RepeatRowRegistry) — чіпи малюються лише для полів. */}
+      <CustomNodeChrome nodes={[FieldNode]} onNodeHover={handleNodeHover} />
       {/* Кругла кнопка-пікер біля чіпа (порт quickPick 10985f0): відкриває
           попап зі списком персоналу з пошуком; поки попап відкритий, кнопка
           лишається на місці (hover не ховає її). Позиція — з activeField.rect
