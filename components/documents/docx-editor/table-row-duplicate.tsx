@@ -1,31 +1,37 @@
 "use client"
 
-// Контролер «+» у таблиці як «ДОДАТИ ЩЕ ЛЮДИНУ/КУРСАНТА» (user flow):
-// двигун сам малює кнопку рядка (button.docx-table-insert-row, шар
-// .docx-table-furniture з dataset.tableId/dataset.rowId) — ми лише
-// перехоплюємо клік на ній (capture на document, раніше за engine-клік
-// handler на кнопці):
-//   1. SNAPSHOT чіпів документів (без вставки) + caret-probe;
-//   2. рядок-классификация: полоса чіпів одного rowIndex, чия вертикальна
-//      полоса містить centerY engine-кнопки — ЦЕ source row;
-//   3. рядок БЕЗ чіпів (band не найден) → ЖОДНОГО блокування: клік
-//      проходить до двигуна (звичайний insertRow);
-//   4. рядок з чіпами → перехоплення (preventDefault/stopPropagation) +
-//      duplicateTableRow() — targeted insertRow тільки з tableId/rowId/
-//      sourceRevision, без fallback, відмова → warn/toast без змін.
-// Логіка одна для всіх режимів; компонент монтується в документ-режимі.
-// Мутацій/DOM-клонування немає: подія click + публічні API.
+// Контролери рядка таблиці:
+//
+//   1. TableRowDuplicate (user flow) — перехоплює клік на engine-кнопці «+»
+//      (button.docx-table-insert-row, шар .docx-table-furniture), читає
+//      dataset.tableId/rowId і викликає model duplicateTableRow(). Якщо рядок
+//      не позначений RepeatRowMarker — intercept:false, клік іде двигуну.
+//
+//   2. RepeatRowAdmin (template/admin flow) — ОКРЕМА mini-кнопка ПОЗА
+//      furniture-шаром (рушій чистить будь-які власні елементи всередині
+//      .docx-table-furniture), позиціонована за getBoundingClientRect()
+//      реальної «+»-кнопки. Позначає рядок повторюваним через createRepeatRow.
+//
+// Уся model/engine логіка — в lib/docx-editor/table-row-duplicate.ts.
+// DOM використовується ВИКЛЮЧНО для UI-позиціонування overlay-кнопки.
 
 import * as React from "react"
 import { useDocxEditor } from "@docx-editor.dev/react"
+import { Repeat2 } from "lucide-react"
+import { toast } from "sonner"
 
-import { duplicateTableRow } from "@/lib/docx-editor/table-row-duplicate"
-import { customNodesOf } from "@docx-editor.dev/pro"
-import { resolvePersonField } from "@/components/documents/docx-editor/personnel-picker"
-import { suspendFieldSelect } from "@/components/documents/docx-editor/field-select"
+import { createRepeatRow, duplicateTableRow } from "@/lib/docx-editor/table-row-duplicate"
+import type { RepeatSourceContext } from "@/lib/docx-editor/repeat-data"
+import { cn } from "@/lib/utils"
 
-export function TableRowDuplicate() {
+export function TableRowDuplicate(props: { sourceContext: RepeatSourceContext }) {
   const editor = useDocxEditor()
+  const { sourceContext } = props
+  // Стабільний ref, щоб не перепідписувати click-лісенер на кожен рендер.
+  const ctxRef = React.useRef(sourceContext)
+  React.useEffect(() => {
+    ctxRef.current = sourceContext
+  }, [sourceContext])
 
   const onCaptureClick = React.useCallback(
     (event: MouseEvent) => {
@@ -37,123 +43,14 @@ export function TableRowDuplicate() {
       if (!button.closest(".docx-table-furniture")) return
       const tableId = button.dataset.tableId ?? ""
       const rowId = button.dataset.rowId ?? ""
-      if (!tableId || !rowId) {
-        console.warn("[table-row-duplicate]", "кнопка без dataset → звільняємо клік двигуну")
-        return
-      }
+      if (!tableId || !rowId) return
 
-      // ── Синхронна класифікація ДО insertRow ──
-      // Знімок чіпів (paraId через review/DOM-fallback, caret-probe рядків)
-      // + вертикальні полоси чіпів за rowIndex; engine-кнопка вертикально
-      // лежить посередині свого рядка (rowMidY) → матч полоси.
-      suspendFieldSelect(true)
-      let sourceRowIndex: number | null = null
-      try {
-        const originalParaId = (
-          editor.query({ type: "selection" })?.from as { paraId?: string } | undefined
-        )?.paraId ?? null
-        const customNodes = customNodesOf(editor)
-        // Мінімальний caret-probe: тільки АБЗАЦИ чіпів. Геометрія рядка —
-        // з РЕКТА ПАРАГРАФА чіпа ([data-paragraph-id] пейнтований завжди),
-        // а не з boundary чіпа (рухомий хром малюється не завжди).
-        type ChipRow = { rowIndex: number; top: number; bottom: number }
-        const chipRows: ChipRow[] = []
-        for (const node of customNodes) {
-          const info = resolvePersonField(editor, node)
-          if (!info) continue
-          let paraId: string | null = null
-          for (const entry of editor.getReviewItems()) {
-            if (entry.kind !== "custom" || entry.item.id !== node.nodeId) continue
-            paraId = entry.item.range?.start?.paragraphId ?? null
-            break
-          }
-          if (!paraId) {
-            const chrome = document.querySelector<HTMLElement>(
-              `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(node.nodeId ?? "")}"]`
-            )
-            paraId = chrome
-              ?.closest<HTMLElement>("[data-paragraph-id]")
-              ?.getAttribute("data-paragraph-id") ?? null
-          }
-          if (!paraId) {
-            continue
-          }
-          if (!editor.exec({ type: "setSelection", anchor: { paraId } }).ok) {
-            continue
-          }
-          const context = editor.query({ type: "tableContext" })
-          if (!context) {
-            continue
-          }
-          // Рект абзацу чіпа (пейнтований елемент рядка під курсором)
-          const paragraphEl = document.querySelector<HTMLElement>(
-            `[data-paragraph-id="${CSS.escape(paraId)}"]`
-          )
-          const rect = paragraphEl?.getBoundingClientRect()
-          chipRows.push({
-            rowIndex: context.rowIndex,
-            top: rect?.top ?? 0,
-            bottom: rect?.bottom ?? 0,
-          })
-        }
-        // Повертаємо каретку користувача (probe рухав її)
-        if (originalParaId) {
-          editor.exec({ type: "setSelection", anchor: { paraId: originalParaId } })
-        }
+      const outcome = duplicateTableRow(editor, tableId, rowId, ctxRef.current)
+      if (!outcome.intercept) return // рядок без RepeatRowMarker — двигун обробляє сам
 
-        // Полоса рядка з чіпами, що містить centerY кнопки (rowMidY):
-        // band rowIndex = [min top .. max bottom] boundary-ректів чіпів
-        const bands = new Map<number, { top: number; bottom: number }>()
-        for (const row of chipRows) {
-          if (row.top === 0 && row.bottom === 0) continue // boundary не пейнтований
-          const band = bands.get(row.rowIndex) ?? { top: Infinity, bottom: -Infinity }
-          band.top = Math.min(band.top, row.top)
-          band.bottom = Math.max(band.bottom, row.bottom)
-          bands.set(row.rowIndex, band)
-        }
-        const buttonRect = button.getBoundingClientRect()
-        const buttonCenterY = buttonRect.top + buttonRect.height / 2
-        let sourceRowIndexCandidate: number | null = null
-        let bestDistance = Infinity
-        for (const [rowIndex, band] of bands) {
-          if (!Number.isFinite(band.top) || !Number.isFinite(band.bottom)) continue
-          if (buttonCenterY >= band.top && buttonCenterY <= band.bottom) {
-            sourceRowIndexCandidate = rowIndex
-            bestDistance = 0
-            break
-          }
-          // Вузькі рядки: кнопка (16px) вертикально ширша за полосу чіпів
-          const distance = Math.min(
-            Math.abs(buttonCenterY - band.top),
-            Math.abs(buttonCenterY - band.bottom)
-          )
-          if (distance < bestDistance) {
-            sourceRowIndexCandidate = rowIndex
-            bestDistance = distance
-          }
-        }
-        // Допуск: кнопка висотою ~16px, полоса чіпів трохи вужча за рядок
-        if (sourceRowIndexCandidate === null || bestDistance > 60) {
-          return
-        }
-        sourceRowIndex = sourceRowIndexCandidate
-
-        // Перехоплюємо й дублюємо рядок (targeted insertRow + нові чіпи)
-        event.preventDefault()
-        event.stopPropagation()
-        const outcome = duplicateTableRow(editor, tableId, rowId, sourceRowIndex)
-        if (!outcome.ok) {
-          // Вставка не реалізована (targeted can() refused / no caret) —
-          // документ НЕ змінюється (жодного fallback)
-          return
-        }
-      } catch (error) {
-        console.warn("[table-row-duplicate]", "помилка класифікації/дублювання →", error)
-        event.preventDefault()
-        event.stopPropagation()
-      } finally {
-        suspendFieldSelect(false)
-      }
+      // Ми взяли клік на себе (навіть якщо safe-abort).
+      event.preventDefault()
+      event.stopPropagation()
     },
     [editor]
   )
@@ -166,4 +63,118 @@ export function TableRowDuplicate() {
   }, [editor, onCaptureClick])
 
   return null
+}
+
+// ── Admin: mini-кнопка «зробити рядок повторюваним» ─────────────────────────
+
+type HoverTarget = { tableId: string; rowId: string; left: number; top: number }
+
+/**
+ * Показується ТІЛЬКИ в template/admin-режимі. Стежить за курсором над
+ * engine-кнопкою «+» рядка (pointerenter фіксує furniture-кнопку), тримає
+ * mini-кнопку біля неї і по кліку позначає рядок повторюваним.
+ */
+export function RepeatRowAdmin() {
+  const editor = useDocxEditor()
+  const [hover, setHover] = React.useState<HoverTarget | null>(null)
+  const hideTimer = React.useRef<number | null>(null)
+
+  const clearHide = React.useCallback(() => {
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+  }, [])
+
+  const scheduleHide = React.useCallback(() => {
+    clearHide()
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = null
+      setHover(null)
+    }, 350)
+  }, [clearHide])
+
+  // Рушій малює furniture-кнопки у власному шарі (pointer-events:none на
+  // шарі, auto на самих кнопках). Слухаємо pointerover на document і
+  // фіксуємо саме button.docx-table-insert-row.
+  React.useEffect(() => {
+    if (!editor) return
+    const onPointerOver = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      // Курсор над нашою mini-кнопкою — не ховаємо (проміжок між «+» і нею).
+      if (target?.closest("[data-repeat-admin]")) {
+        clearHide()
+        return
+      }
+      const button = target?.closest<HTMLButtonElement>("button.docx-table-insert-row")
+      if (!button) {
+        scheduleHide()
+        return
+      }
+      const tableId = button.dataset.tableId ?? ""
+      const rowId = button.dataset.rowId ?? ""
+      if (!tableId || !rowId) {
+        scheduleHide()
+        return
+      }
+      const rect = button.getBoundingClientRect()
+      clearHide()
+      // Під кнопкою «+»: по центру її горизонталі, нижче нижнього краю.
+      setHover({
+        tableId,
+        rowId,
+        left: rect.left + rect.width / 2,
+        top: rect.bottom + 4,
+      })
+    }
+    document.addEventListener("pointerover", onPointerOver, true)
+    return () => document.removeEventListener("pointerover", onPointerOver, true)
+  }, [editor, clearHide, scheduleHide])
+
+  React.useEffect(() => () => clearHide(), [clearHide])
+
+  if (!hover) return null
+
+  const handleMark = () => {
+    if (!editor) return
+    const outcome = createRepeatRow(editor, hover.tableId, hover.rowId)
+    if (outcome.ok) {
+      toast.success("Рядок позначено повторюваним.")
+      setHover(null)
+      return
+    }
+    if (outcome.reason === "already-repeatable") {
+      toast.info("Цей рядок уже повторюваний.")
+      return
+    }
+    if (outcome.reason === "no-custom-nodes") {
+      toast.warning("Немає персональних полів у рядку — немає що повторювати.")
+      return
+    }
+    toast.error("Не вдалося позначити рядок повторюваним.")
+  }
+
+  return (
+    <div
+      data-repeat-admin
+      className="fixed z-50 -translate-x-1/2"
+      style={{ left: hover.left, top: hover.top }}
+      onPointerEnter={clearHide}
+      onPointerLeave={scheduleHide}
+    >
+      <button
+        type="button"
+        aria-label="Зробити рядок повторюваним"
+        title="Зробити рядок повторюваним"
+        onClick={handleMark}
+        className={cn(
+          "inline-flex size-5 items-center justify-center rounded border border-border",
+          "bg-background text-muted-foreground shadow-sm transition-colors",
+          "hover:bg-accent hover:text-foreground active:scale-95"
+        )}
+      >
+        <Repeat2 className="size-3.5" />
+      </button>
+    </div>
+  )
 }

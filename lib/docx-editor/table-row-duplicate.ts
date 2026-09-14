@@ -1,354 +1,714 @@
-// Дублювання рядка таблиці як «нової людини/курсанта» (user flow, не admin).
+// Повторювані рядки таблиці (full-clone).
 //
-// Захоплення engine-кнопки «+» (button.docx-table-insert-row, шар
-// .docx-table-furniture двигуна) з dataset.tableId / dataset.rowId —
-// публічний контракт furniture. Модельний рівень:
-// editor.exec({ type: "insertRow", where: "below", target }) — двигун
-// копіює tcPr-скелет кожної комірки (ширина/borders/alignment/shd) і
-// ставить каретку в перший новий абзац; вміст комірок — порожні абзаци
-// (структура без даних людини — це і є потрібне дублювання).
+// ДЖЕРЕЛО СТРУКТУРИ — LIVE template row: найверхніший w:tr групи
+// (tableId + repeatId). Копіюємо ВЕСЬ вміст комірок (усі абзаци, переноси,
+// нумерацію, вкладені таблиці, форматування) через public insertFragment
+// (block kinds paragraph|table|contentControl), який вставляє блоки в w:tc і
+// сам перепризначає всі node id. Змінюємо у копії лише наші FieldNode
+// (новий instance + значення з БД, без p/dataBinding) і прибираємо старий
+// RepeatRowMarker.
 //
-// ПОРЯДОК (обов'язковий):
-//   1. SNAPSHOT ДО insertRow: всі staff/cadet чіпи документа
-//      (customNodesOf → resolvePersonField → review item АБО DOM-фолбек
-//      для paraId) + caret-probe з кожного чіпа — rowIndex/columnIndex
-//      призначається ДО вставки;
-//   2. РІШЕННЯ про перехоплення ДО вставки: рядок engine-кнопки — це
-//      вертикальна полоса (band); чіпи групуються за rowIndex, полоса
-//      кожної групи [minTop..maxBottom] перевіряється на попадання
-//      centerY кнопки → source row знайдений або «чужого тут немає»;
-//   3. визначення newInstance = max(instance same flavor) + 1 (staff і
-//      cadet — окремі namespaces);
-//   4. targeted insertRow BELOW (tableId + rowId + sourceRevision),
-//      без fallback: відмова → warn/toast, документ не змінюється;
-//   5. newRowIndex з каретки — sanity-перевірка (source + 1);
-//   6. ре-ключ чіпів sourceRow: attrs { key: staff.N.<field> } БЕЗ p,
-//      текст — дефолтна назва поля («ПІБ (N)») / COURSE_FIELD_LABELS;
-//   7. signature: тільки новий маркер, floating image НЕ копіюється.
+// DATA (БД): значення dynamic-полів. Рядки мають `e=<entityId>` у thin marker;
+// next = перший DB-запис, чий entityId не використаний у групі (tableId+repeatId).
 //
-// Обмеження v1: статичний текст і номер рядка не копіюються (немає
-// публічного читання тексту комірки); без DOM cloning / innerHTML /
-// MutationObserver / рядкових замін.
+// Уся робота з canonical tree — через public editor.surface.session.part();
+// зміни — через public editor.surface.applyAutomationOps (layout-safe).
+// Без DOM, без caret, без setSelection-probe, без rowId-арифметики.
 
-import { customNodesOf, insertCustomNode } from "@docx-editor.dev/pro"
+import { customNodesOf, insertCustomNode, updateCustomNode } from "@docx-editor.dev/pro"
 import { toast } from "sonner"
 
 import { resolvePersonField } from "@/components/documents/docx-editor/personnel-picker"
 import { suspendFieldSelect } from "@/components/documents/docx-editor/field-select"
-import { FieldNode, type FieldChipAttrs } from "@/lib/docx-editor/field-node"
+import { PERSONNEL_FIELD_LABELS } from "@/components/documents/docx-editor/personnel-panel"
 import { COURSE_FIELD_LABELS } from "@/lib/courses/types"
+import { type FieldChipAttrs } from "@/lib/docx-editor/field-node"
+import {
+  generateRepeatId,
+  REPEAT_REGISTRY_ATTR,
+  REPEAT_REGISTRY_VALUE,
+  REPEAT_ROW_TAG_PREFIX,
+  RepeatRowMarker,
+  RepeatRowRegistry,
+  repeatRegistrySchema,
+  repeatRowSchema,
+  type RepeatDataSource,
+  type RepeatRowDefinition,
+} from "@/lib/docx-editor/repeat-row"
+import {
+  listRepeatRows,
+  type RepeatSourceContext,
+} from "@/lib/docx-editor/repeat-data"
 
 const LOG = "[table-row-duplicate]"
 
-// Людські назви полів staff за типом (коротка мапа — PERSONNEL_FIELD_LABELS
-// живе в панелі-компоненті, дублюємо, щоб не тягнути UI в lib)
-const STAFF_FIELD_LABELS: Record<string, string> = {
-  fullName: "ПІБ",
-  position: "Посада",
-  rank: "Звання",
-  signature: "Підпис",
+// ── Canonical tree (structural shape) ──────────────────────────────────────
+
+type OAttr = {
+  localName: string
+  value: string
+  namespaceUri?: string
+  prefix?: string
+  kind?: string
 }
 
-export type DuplicateRowOutcome =
-  | { readonly ok: true }
-  | {
-      readonly ok: false
-      readonly reason: "no-personal-chips" | "insert-refused" | "no-new-row"
+type ONode = {
+  id?: string
+  kind?: string
+  localName?: string
+  namespaceUri?: string
+  prefix?: string
+  namespaceBindings?: unknown
+  attributes?: OAttr[]
+  children?: ONode[]
+  /** textValue */
+  value?: string
+}
+
+function isElement(node: ONode): boolean {
+  return typeof node.localName === "string" && Array.isArray(node.children)
+}
+
+function elementChildren(node: ONode): ONode[] {
+  return (node.children ?? []).filter(isElement)
+}
+
+function directRows(table: ONode): ONode[] {
+  return elementChildren(table).filter((child) => child.localName === "tr")
+}
+
+function directCells(row: ONode): ONode[] {
+  return elementChildren(row).filter((child) => child.localName === "tc")
+}
+
+function directParagraphs(cell: ONode): ONode[] {
+  return elementChildren(cell).filter((child) => child.localName === "p")
+}
+
+function bodyRoot(editor: EditorLike): ONode | null {
+  const session = editor.surface?.session
+  if (!session) return null
+  return (session.part().root as unknown as ONode) ?? null
+}
+
+function findChild(node: ONode, localName: string): ONode | undefined {
+  return elementChildren(node).find((child) => child.localName === localName)
+}
+
+function findDescendant(node: ONode, localName: string): ONode | undefined {
+  for (const child of elementChildren(node)) {
+    if (child.localName === localName) return child
+    const nested = findDescendant(child, localName)
+    if (nested) return nested
+  }
+  return undefined
+}
+
+// ── Tag decode ─────────────────────────────────────────────────────────────
+
+function sdtTagValue(sdt: ONode): string | null {
+  const sdtPr = findChild(sdt, "sdtPr")
+  if (!sdtPr) return null
+  const tag = findChild(sdtPr, "tag")
+  return tag?.attributes?.find((a) => a.localName === "val")?.value ?? null
+}
+
+function decodeTagAttrs(tag: string): Record<string, string> {
+  const q = tag.indexOf("?")
+  if (q === -1) return {}
+  const attrs: Record<string, string> = {}
+  for (const part of tag.slice(q + 1).split("&")) {
+    const eq = part.indexOf("=")
+    if (eq <= 0) continue
+    attrs[part.slice(0, eq)] = decodeURIComponent(part.slice(eq + 1))
+  }
+  return attrs
+}
+
+function decodeRepeatMarkerTag(tag: string): { repeatId: string; entityId: string | null } | null {
+  if (!tag.startsWith(`${REPEAT_ROW_TAG_PREFIX}:row`) && !tag.startsWith("acme:repeatRow")) {
+    return null
+  }
+  const attrs = decodeTagAttrs(tag)
+  const repeatId = attrs["r"]
+  if (!repeatId) return null
+  return { repeatId, entityId: attrs["e"] ?? null }
+}
+
+function decodeFieldTag(tag: string): string | null {
+  if (!tag.startsWith("acme:field")) return null
+  const attrs = decodeTagAttrs(tag)
+  return attrs["k"] ?? attrs["key"] ?? null
+}
+
+// ── Marker / Registry ──────────────────────────────────────────────────────
+
+type MarkerHit = { rowId: string; repeatId: string; entityId: string | null }
+
+function readMarkersInRow(row: ONode): MarkerHit[] {
+  const hits: MarkerHit[] = []
+  for (const cell of directCells(row)) {
+    for (const paragraph of directParagraphs(cell)) {
+      for (const child of elementChildren(paragraph)) {
+        if (child.localName !== "sdt") continue
+        const tag = sdtTagValue(child)
+        if (!tag) continue
+        const decoded = decodeRepeatMarkerTag(tag)
+        if (!decoded) continue
+        hits.push({ rowId: row.id ?? "", repeatId: decoded.repeatId, entityId: decoded.entityId })
+      }
     }
+  }
+  return hits
+}
+
+function findMarkerForRow(tableId: string, rowId: string, root: ONode): MarkerHit | null {
+  const table = findByKey(root, tableId)
+  if (!table || table.localName !== "tbl") return null
+  const row = directRows(table).find((candidate) => candidate.id === rowId)
+  if (!row) return null
+  return readMarkersInRow(row)[0] ?? null
+}
+
+/** Template row = найверхніший w:tr групи repeatId (document order). */
+function findTemplateRow(table: ONode, repeatId: string): ONode | null {
+  for (const row of directRows(table)) {
+    if (readMarkersInRow(row).some((hit) => hit.repeatId === repeatId)) return row
+  }
+  return null
+}
+
+/** `e` усіх рядків групи (repeatId) у конкретній таблиці + фізичний порядок. */
+function collectGroupMarkers(
+  table: ONode,
+  repeatId: string
+): { rowOrder: string[]; usedEntityIds: Set<string> } {
+  const rowOrder: string[] = []
+  const usedEntityIds = new Set<string>()
+  for (const row of directRows(table)) {
+    const hit = readMarkersInRow(row).find((m) => m.repeatId === repeatId)
+    if (!hit) continue
+    rowOrder.push(row.id ?? "")
+    if (hit.entityId) usedEntityIds.add(hit.entityId)
+  }
+  return { rowOrder, usedEntityIds }
+}
+
+function readRegistry(
+  editor: EditorLike
+): { nodeId: string; definitions: Record<string, RepeatRowDefinition> } | null {
+  for (const node of customNodesOf(editor, { nodes: [RepeatRowRegistry] })) {
+    const nodeId = node.nodeId ?? ""
+    if (!nodeId) continue
+    const parsed = repeatRegistrySchema.safeParse(node.data)
+    if (!parsed.success) continue
+    return { nodeId, definitions: parsed.data.definitions }
+  }
+  return null
+}
+
+function readDefinition(editor: EditorLike, repeatId: string): RepeatRowDefinition | null {
+  const registry = readRegistry(editor)
+  if (!registry) return null
+  const parsed = repeatRowSchema.safeParse(registry.definitions[repeatId])
+  return parsed.success ? parsed.data : null
+}
+
+function lastBodyParagraph(root: ONode): ONode | null {
+  const body = findChild(root, "body") ?? root
+  const paragraphs = elementChildren(body).filter((child) => child.localName === "p")
+  return paragraphs.length > 0 ? paragraphs[paragraphs.length - 1]! : null
+}
+
+function upsertRegistry(editor: EditorLike, definition: RepeatRowDefinition): boolean {
+  const registry = readRegistry(editor)
+  const nextDefs = {
+    definitions: { ...(registry?.definitions ?? {}), [definition.repeatId]: definition },
+  }
+  if (registry) {
+    const updated = updateCustomNode(editor, RepeatRowRegistry, registry.nodeId, {
+      data: nextDefs,
+      text: " ",
+    })
+    if (!updated.ok) {
+      console.warn(LOG, "updateCustomNode(RepeatRowRegistry) відхилено →", {
+        reason: updated.reason,
+      })
+      return false
+    }
+    return true
+  }
+  const root = bodyRoot(editor)
+  const target = root ? lastBodyParagraph(root) : null
+  if (!target) {
+    console.warn(LOG, "немає body-абзацу для registry")
+    return false
+  }
+  const created = insertCustomNode(editor, RepeatRowRegistry, {
+    at: { paragraphId: target.id ?? "", offset: 0 },
+    attrs: { [REPEAT_REGISTRY_ATTR]: REPEAT_REGISTRY_VALUE },
+    text: " ",
+    data: nextDefs,
+    lock: false,
+  })
+  if (!created.ok) {
+    console.warn(LOG, "insertCustomNode(RepeatRowRegistry) відхилено →", {
+      reason: created.reason,
+    })
+    return false
+  }
+  return true
+}
+
+// ── Chips ──────────────────────────────────────────────────────────────────
 
 type EditorLike = Parameters<typeof resolvePersonField>[0]
-
-// Чіп sourceRow із знімку ДО вставки
-type ChipSnapshot = {
-  readonly nodeId: string
-  readonly flavor: "staff" | "cadet"
-  readonly sourceInstance: number
-  readonly fieldType: string
-  /** Абзац чіпа (review item або DOM) для caret-probe */
-  readonly paraId: string
-  /** Iндекс рядка/комірки, прочитаний tableContext ПІД час знімку */
-  readonly rowIndex: number
-  readonly columnIndex: number
-  /** Вертикальний span чіпа в пейнтованому DOM — для row-band матчингу кнопки */
-  readonly top: number
-  readonly bottom: number
-  /** Порядок у документі (customNodesOf) — порядок вставки в клон */
-  readonly docOrder: number
-}
-
 type CustomNodeRef = Parameters<typeof resolvePersonField>[1]
 
-function documentRevision(editor: EditorLike): number {
-  try {
-    if (typeof editor.getDocumentHandle === "function") {
-      return editor.getDocumentHandle().revision
-    }
-  } catch {
-    // revision недоступний — target може бути відхилено can(); без fallback
-  }
-  return 0
-}
-
-function paraIdOfSelection(editor: EditorLike): string | null {
-  const selection = editor.query({ type: "selection" })
-  const from = selection?.from as { paraId?: string } | undefined
-  return from?.paraId ?? null
-}
-
-// caret-probe: каретка в абзац → rowIndex/columnIndex з tableContext
-function probePosition(
-  editor: EditorLike,
-  paraId: string
-): { rowIndex: number; columnIndex: number } | null {
-  if (!editor.exec({ type: "setSelection", anchor: { paraId } }).ok) return null
-  const context = editor.query({ type: "tableContext" })
-  if (!context) return null
-  return { rowIndex: context.rowIndex, columnIndex: context.columnIndex }
-}
-
-/**
- * ParaId чіпа: спершу review item (item.range.start.paragraphId); якщо
- * range ще не розв'язано layout'ом — DOM-фолбек: хром чіпа
- * (.docx-content-control-chrome[data-docx-content-control]) →
- * найближчий [data-paragraph-id] (той самий патерн, що в bindSignatureImage).
- */
 function chipParagraphId(editor: EditorLike, nodeId: string): string | null {
   for (const entry of editor.getReviewItems()) {
     if (entry.kind !== "custom" || entry.item.id !== nodeId) continue
-    const paraId = entry.item.range?.start?.paragraphId ?? null
-    if (paraId) return paraId
-    break
+    return entry.item.range?.start?.paragraphId ?? null
   }
-  const chrome = document.querySelector<HTMLElement>(
-    `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(nodeId)}"]`
-  )
-  const paragraphEl = chrome?.querySelector<HTMLElement>(".docx-content-control-boundary")
-    ?.closest<HTMLElement>("[data-paragraph-id]")
-  return paragraphEl?.getAttribute("data-paragraph-id") ?? null
+  return null
 }
 
-/**
- * Snapshot всіх персональних чіпів ДО insertRow: ре-ключі attrs, колонка/
- * рядок (caret-probe) та вертикальний span чіпа (для матчингу engine-кнопки
- * з рядком — БЕЗ вставки). Каретку після знімку повертає викликач.
- */
-function snapshotChips(editor: EditorLike): ChipSnapshot[] {
-  const chips: ChipSnapshot[] = []
-  let docOrder = 0
+function flavorOfRow(editor: EditorLike, row: ONode): "staff" | "cadet" | null {
+  const paragraphIds = new Set<string>()
+  for (const cell of directCells(row)) {
+    for (const paragraph of directParagraphs(cell)) {
+      if (paragraph.id) paragraphIds.add(paragraph.id)
+    }
+  }
   for (const node of customNodesOf(editor)) {
     const info = resolvePersonField(editor, node as unknown as CustomNodeRef)
     if (!info) continue
     const attrs = node.attrs as FieldChipAttrs
     if (!attrs.key) continue
     const nodeId = node.nodeId ?? ""
-    const paraId = chipParagraphId(editor, nodeId)
-    if (!paraId) {
+    const paragraphId = nodeId ? chipParagraphId(editor, nodeId) : null
+    if (paragraphId && paragraphIds.has(paragraphId)) return info.flavor
+  }
+  return null
+}
+
+function maxInstanceForFlavor(editor: EditorLike, flavor: "staff" | "cadet"): number {
+  let max = 0
+  for (const node of customNodesOf(editor)) {
+    const info = resolvePersonField(editor, node as unknown as CustomNodeRef)
+    if (!info || info.flavor !== flavor) continue
+    max = Math.max(max, info.instance)
+  }
+  return max
+}
+
+function dataSourceForFlavor(flavor: "staff" | "cadet"): RepeatDataSource {
+  return flavor === "staff" ? "personnel" : "course"
+}
+
+// ── Clone + transform ──────────────────────────────────────────────────────
+
+type FieldRewriteCtx = {
+  readonly personInstance: number
+}
+
+/** Людська назва поля для плейсхолдера нового (unbound) чіпа. */
+function fieldLabelFor(flavor: "staff" | "cadet", fieldType: string): string {
+  if (flavor === "staff") {
+    return PERSONNEL_FIELD_LABELS[fieldType as keyof typeof PERSONNEL_FIELD_LABELS] ?? fieldType
+  }
+  return COURSE_FIELD_LABELS[fieldType as keyof typeof COURSE_FIELD_LABELS] ?? fieldType
+}
+
+function setSdtTag(sdt: ONode, newTag: string): void {
+  const sdtPr = findChild(sdt, "sdtPr")
+  if (!sdtPr) return
+  const tag = findChild(sdtPr, "tag")
+  const attr = tag?.attributes?.find((a) => a.localName === "val")
+  if (attr) attr.value = newTag
+}
+
+function setSdtText(sdt: ONode, value: string): void {
+  const content = findChild(sdt, "sdtContent")
+  if (!content) return
+  const t = findDescendant(content, "t")
+  const textValue = t?.children?.find((child) => child.kind === "textValue")
+  if (textValue) textValue.value = value
+}
+
+/**
+ * Переписує FieldNode у клоні: новий instance key + плейсхолдер-назва
+ * (`ПІБ (2)`), без `p` — нові поля лишаються unbound. Значення з БД тут НЕ
+ * підставляються (користувач прив'язує/заповнює сам).
+ */
+function rewriteFieldSdt(sdt: ONode, key: string, ctx: FieldRewriteCtx): boolean {
+  const m = /^(staff|cadet)\.[1-9][0-9]*\.([a-zA-Z][a-zA-Z0-9_]*)$/.exec(key)
+  if (!m) return false
+  const flavor = m[1] as "staff" | "cadet"
+  const fieldType = m[2]!
+  setSdtTag(sdt, `acme:field?k=${flavor}.${ctx.personInstance}.${fieldType}`)
+  setSdtText(sdt, `${fieldLabelFor(flavor, fieldType)} (${ctx.personInstance})`)
+  return true
+}
+
+/**
+ * Рекурсивно трансформує клон блоку: видаляє RepeatRowMarker, переписує
+ * FieldNode. Повертає null, якщо вузол треба прибрати.
+ */
+function transformClone(node: ONode, ctx: FieldRewriteCtx, stats: { fields: number; markers: number }): ONode | null {
+  if (node.kind === "textValue") return node
+  const tag = node.localName === "sdt" ? sdtTagValue(node) : null
+  if (tag) {
+    if (decodeRepeatMarkerTag(tag)) {
+      stats.markers += 1
+      return null
+    }
+    const key = decodeFieldTag(tag)
+    if (key && rewriteFieldSdt(node, key, ctx)) {
+      stats.fields += 1
+      return node
+    }
+  }
+  const next: ONode[] = []
+  for (const child of node.children ?? []) {
+    const transformed = transformClone(child, ctx, stats)
+    if (transformed) next.push(transformed)
+  }
+  node.children = next
+  return node
+}
+
+/** Block-level діти комірки, придатні для insertFragment (p|tbl|sdt). */
+function clonableBlocks(cell: ONode): ONode[] {
+  return elementChildren(cell).filter(
+    (child) => child.localName === "p" || child.localName === "tbl" || child.localName === "sdt"
+  )
+}
+
+function isEmptyParagraph(paragraph: ONode): boolean {
+  for (const child of paragraph.children ?? []) {
+    if (child.kind === "textValue") {
+      if ((child.value ?? "").trim().length > 0) return false
       continue
     }
-    const probed = probePosition(editor, paraId)
-    if (!probed) continue
-    // Вертикальний span чіпа — для класифікації рядка engine-кнопкою
-    const boundary = document.querySelector<HTMLElement>(
-      `.docx-content-control-chrome[data-docx-content-control="${CSS.escape(nodeId)}"] .docx-content-control-boundary`
-    )
-    const rect = boundary?.getBoundingClientRect()
-    chips.push({
-      nodeId,
-      flavor: info.flavor,
-      sourceInstance: info.instance,
-      fieldType: info.fieldType,
-      paraId,
-      rowIndex: probed.rowIndex,
-      columnIndex: probed.columnIndex,
-      top: rect?.top ?? 0,
-      bottom: rect?.bottom ?? 0,
-      docOrder,
-    })
-    docOrder += 1
+    if (child.localName === "pPr") continue
+    return false
   }
-  return chips
+  return true
 }
 
-function maxInstanceByFlavor(chips: readonly ChipSnapshot[]): {
-  staff: number
-  cadet: number
-} {
-  let staff = 0
-  let cadet = 0
-  for (const chip of chips) {
-    if (chip.flavor === "staff") staff = Math.max(staff, chip.sourceInstance)
-    else cadet = Math.max(cadet, chip.sourceInstance)
+// ── Outcomes ───────────────────────────────────────────────────────────────
+
+export type DuplicateRowOutcome =
+  | { readonly intercept: false }
+  | { readonly intercept: true; readonly ok: true }
+  | {
+      readonly intercept: true
+      readonly ok: false
+      readonly reason:
+        | "insert-refused"
+        | "no-new-row"
+        | "structure-mismatch"
+        | "no-data"
+        | "marker-no-definition"
+        | "no-template"
+    }
+
+export type CreateRepeatRowOutcome =
+  | { readonly ok: true; readonly repeatId: string }
+  | {
+      readonly ok: false
+      readonly reason: "no-custom-nodes" | "already-repeatable" | "insert-refused" | "no-paragraph"
+    }
+
+function documentRevision(editor: EditorLike): number {
+  try {
+    return editor.getDocumentHandle().revision
+  } catch {
+    return -1
   }
-  return { staff, cadet }
 }
 
-/**
- * Назва поля нового instance: дефолтні слова («ПІБ (2)»), не дані людини.
- * staff — короткі назви; cadet — COURSE_FIELD_LABELS.
- */
-function defaultLabel(flavor: "staff" | "cadet", fieldType: string, instance: number): string {
-  const label =
-    flavor === "staff"
-      ? STAFF_FIELD_LABELS[fieldType]
-      : (COURSE_FIELD_LABELS[fieldType as keyof typeof COURSE_FIELD_LABELS] ?? fieldType)
-  return `${label ?? fieldType} (${instance})`
+function findByKey(root: ONode, id: string): ONode | null {
+  if (root.id === id) return root
+  for (const child of elementChildren(root)) {
+    const found = findByKey(child, id)
+    if (found) return found
+  }
+  return null
 }
 
-/**
- * Абзаци нового рядка: орієнтир — paraId каретки (двигун ставить її в
- * перший новий абзац). Спершу DOM-обхід: [data-paragraph-id] → найближчий
- * row-контейнер; якщо пейнтований DOM не має row-контейнера — обмежений
- * caret-probe абзаців СТОРІНКИ з кареткою, без обходу всього документа.
- */
-function collectNewRowParagraphIds(editor: EditorLike, firstParaId: string): string[] {
-  const firstEl = document.querySelector<HTMLElement>(
-    `[data-paragraph-id="${CSS.escape(firstParaId)}"]`
+// ── ADMIN ──────────────────────────────────────────────────────────────────
+
+export function createRepeatRow(
+  editor: EditorLike,
+  tableId: string,
+  rowId: string
+): CreateRepeatRowOutcome {
+  if (!editor || !tableId || !rowId) return { ok: false, reason: "no-custom-nodes" }
+  const root = bodyRoot(editor)
+  if (!root) return { ok: false, reason: "no-custom-nodes" }
+
+  if (findMarkerForRow(tableId, rowId, root)) {
+    return { ok: false, reason: "already-repeatable" }
+  }
+
+  const table = findByKey(root, tableId)
+  const row = table ? directRows(table).find((candidate) => candidate.id === rowId) : null
+  if (!table || !row) return { ok: false, reason: "no-custom-nodes" }
+  const flavor = flavorOfRow(editor, row)
+  if (!flavor) return { ok: false, reason: "no-custom-nodes" }
+
+  const existingIds = new Set(
+    customNodesOf(editor, { nodes: [RepeatRowMarker] })
+      .map((node) => (node.attrs as { r?: string }).r)
+      .filter((value): value is string => typeof value === "string")
   )
-  if (!firstEl) return [firstParaId]
-
-  const rowContainer = firstEl.closest<HTMLElement>("tr, [data-table-row], [data-row-id]")
-  if (rowContainer) {
-    const ids = [...rowContainer.querySelectorAll<HTMLElement>("[data-paragraph-id]")].map(
-      (el) => el.getAttribute("data-paragraph-id") ?? ""
-    )
-    const unique = [...new Set(ids.filter(Boolean))]
-    if (unique.length > 1) return unique
+  let repeatId = generateRepeatId()
+  for (let attempt = 0; existingIds.has(repeatId) && attempt < 8; attempt += 1) {
+    repeatId = generateRepeatId()
   }
 
-  // Фолбек: обмежене опитування абзаців сторінки; каретка вже в новому
-  // рядку (двигун ставить її після insertRow) — беремо rowIndex звідти
-  const newRowIndexProbe = probePosition(editor, firstParaId)
-  const newRowIndex = newRowIndexProbe?.rowIndex ?? -1
-  if (newRowIndex < 0) return [firstParaId]
-  const page = firstEl.closest<HTMLElement>(".docx-editor-page")
-  const candidates = page ? [...page.querySelectorAll<HTMLElement>("[data-paragraph-id]")] : []
-  const collected: string[] = [firstParaId]
-  const seen = new Set([firstParaId])
-  for (const candidate of candidates) {
-    const paraId = candidate.getAttribute("data-paragraph-id") ?? ""
-    if (!paraId || seen.has(paraId)) continue
-    const probe = probePosition(editor, paraId)
-    if (!probe || probe.rowIndex !== newRowIndex) continue
-    seen.add(paraId)
-    collected.push(paraId)
+  const definition: RepeatRowDefinition = {
+    repeatId,
+    flavor,
+    markerCellIndex: 0,
+    dataSource: dataSourceForFlavor(flavor),
   }
-  return collected
+
+  suspendFieldSelect(true)
+  try {
+    if (!upsertRegistry(editor, definition)) return { ok: false, reason: "insert-refused" }
+
+    const targetCell = directCells(row)[definition.markerCellIndex]
+    const targetParagraph = targetCell ? (directParagraphs(targetCell)[0] ?? null) : null
+    if (!targetParagraph) return { ok: false, reason: "no-paragraph" }
+
+    // Thin marker БЕЗ `e` (легасі): відповідність шаблонного рядка DB-запису
+    // достовірно невідома.
+    const result = insertCustomNode(editor, RepeatRowMarker, {
+      at: { paragraphId: targetParagraph.id ?? "", offset: 0 },
+      attrs: { r: repeatId },
+      text: " ",
+      lock: false,
+    })
+    if (!result.ok) {
+      console.warn(LOG, "insertCustomNode(RepeatRowMarker) відхилено →", {
+        repeatId,
+        reason: result.reason,
+      })
+      return { ok: false, reason: "insert-refused" }
+    }
+    return { ok: true, repeatId }
+  } finally {
+    suspendFieldSelect(false)
+  }
 }
 
-/**
- * Повний user-flow: «+» ⇒ дублікат sourceRow як нового staff/cadet
- * екземпляра. Викликається ТІЛЬКИ коли рядок містить персональні чіпи
- * (класифікація band-мачем ДО вставки); контролер для рядка без чіпів
- * взагалі не викликає цю функцію.
- */
+// ── USER ───────────────────────────────────────────────────────────────────
+
 export function duplicateTableRow(
   editor: EditorLike,
   tableId: string,
   rowId: string,
-  sourceRowIndex: number
+  ctx: RepeatSourceContext
 ): DuplicateRowOutcome {
-  if (!editor) return { ok: false, reason: "no-personal-chips" }
+  if (!editor || !tableId || !rowId) return { intercept: false }
 
-  // 0) Цілісне завершення: призупинення FieldSelect під час процедури
+  const root = bodyRoot(editor)
+  if (!root) return { intercept: false }
+  const table = findByKey(root, tableId)
+  if (!table || table.localName !== "tbl") return { intercept: false }
+  const rowsBefore = directRows(table)
+  if (!rowsBefore.some((row) => row.id === rowId)) return { intercept: false }
+
+  const marker = findMarkerForRow(tableId, rowId, root)
+  if (!marker) return { intercept: false }
+  const definition = readDefinition(editor, marker.repeatId)
+  if (!definition) {
+    console.warn(LOG, "definition не знайдено в registry →", { repeatId: marker.repeatId })
+    toast.error("Структуру повторюваного рядка не знайдено.")
+    return { intercept: true, ok: false, reason: "marker-no-definition" }
+  }
+
+  const templateRow = findTemplateRow(table, marker.repeatId)
+  if (!templateRow) {
+    toast.error("Шаблонний рядок групи не знайдено.")
+    return { intercept: true, ok: false, reason: "no-template" }
+  }
+
+  // Наступний DB-запис: перший, чий entityId не використаний у групі.
+  const group = collectGroupMarkers(table, marker.repeatId)
+  const candidates = listRepeatRows(definition.dataSource, ctx)
+  let dataRow = candidates.find((candidate) => !group.usedEntityIds.has(candidate.entityId)) ?? null
+  if (!dataRow && group.usedEntityIds.size === 0) {
+    const rowIndex = group.rowOrder.findIndex((id) => id === rowId)
+    dataRow = candidates[rowIndex] ?? null
+  }
+  console.info(LOG, "dup diag: resolve →", {
+    repeatId: marker.repeatId,
+    markerEntityId: marker.entityId,
+    templateRowId: templateRow.id,
+    dataSource: definition.dataSource,
+    groupRows: group.rowOrder.length,
+    usedEntityIds: [...group.usedEntityIds],
+    candidates: candidates.length,
+    dataRowFound: Boolean(dataRow),
+  })
+  if (!dataRow) {
+    toast.warning("Немає даних для наступного рядка.")
+    return { intercept: true, ok: false, reason: "no-data" }
+  }
+
+  const flavor = definition.flavor
+  const personInstance = maxInstanceForFlavor(editor, flavor) + 1
+  const beforeRowIds = new Set(rowsBefore.map((row) => row.id))
+
   suspendFieldSelect(true)
   try {
-    // SNAPSHOT до insertRow (caret-probe змінює каретку — запам'ятовуємо)
-    const originalParaId = paraIdOfSelection(editor)
-    const chips = snapshotChips(editor)
-    if (originalParaId) {
-      editor.exec({ type: "setSelection", anchor: { paraId: originalParaId } })
+    const sourceRevision = documentRevision(editor)
+    if (sourceRevision < 0) {
+      toast.error("Не вдалося визначити редакцію документа. Спробуйте ще раз.")
+      return { intercept: true, ok: false, reason: "insert-refused" }
     }
 
-    // 1) newInstance = max(existing same flavor) + 1 — staff і cadet окремі namespaces
-    const maxInstance = maxInstanceByFlavor(chips)
-    const nextInstance = {
-      staff: maxInstance.staff + 1,
-      cadet: maxInstance.cadet + 1,
-    }
-    const sourceChips = chips
-      .filter((c) => c.rowIndex === sourceRowIndex)
-      .sort((a, b) => a.docOrder - b.docOrder)
-    if (sourceChips.length === 0) {
-      return { ok: false, reason: "no-personal-chips" }
-    }
-    const primaryFlavor: "staff" | "cadet" = sourceChips[0]!.flavor
-
-    // 2) targeted insertRow BELOW — тільки через tableId + rowId + sourceRevision
     const insertCommand = {
       type: "insertRow" as const,
       where: "below" as const,
-      target: { tableId, rowId, sourceRevision: documentRevision(editor), isHeaderRepeat: false },
+      target: { tableId, rowId, sourceRevision, isHeaderRepeat: false },
     }
     const can = editor.can(insertCommand)
     if (!can.ok) {
       console.warn(LOG, "targeted insertRow відхилено can() →", can.reason)
       toast.error("Не вдалося додати рядок після цього рядка. Спробуйте ще раз.")
-      return { ok: false, reason: "insert-refused" }
+      return { intercept: true, ok: false, reason: "insert-refused" }
     }
     const insert = editor.exec(insertCommand)
     if (!insert.ok) {
       console.warn(LOG, "targeted insertRow відхилено exec() →", insert.reason)
       toast.error("Не вдалося додати рядок. Спробуйте ще раз.")
-      return { ok: false, reason: "insert-refused" }
+      return { intercept: true, ok: false, reason: "insert-refused" }
     }
 
-    // 3) Sanity: каретка в новому рядку (двигун ставить її туди сама)
-    const firstParaId = paraIdOfSelection(editor)
-    if (!firstParaId) {
-      console.warn(LOG, "каретка після insertRow не в новому рядку — вставка чіпів неможлива")
+    const rootAfter = bodyRoot(editor)
+    const tableAfter = rootAfter ? findByKey(rootAfter, tableId) : null
+    if (!tableAfter) {
       toast.warning("Рядок вставлено, але нові поля не вдалося створити автоматично.")
-      return { ok: false, reason: "no-new-row" }
+      return { intercept: true, ok: false, reason: "no-new-row" }
     }
-    const context = editor.query({ type: "tableContext" })
-    if (context && context.rowIndex !== sourceRowIndex + 1) {
-      console.warn(LOG, "rowIndex не став source+1 →", {
-        newRowIndex: context.rowIndex,
-        sourceRowIndex,
+    const newRows = directRows(tableAfter).filter((row) => !beforeRowIds.has(row.id))
+    if (newRows.length !== 1) {
+      console.warn(LOG, "новий w:tr не визначено однозначно →", { candidates: newRows.length })
+      toast.warning("Рядок вставлено, але нові поля не вдалося створити автоматично.")
+      return { intercept: true, ok: false, reason: "no-new-row" }
+    }
+    const newRow = newRows[0]!
+    const templateCells = directCells(templateRow)
+    const newCells = directCells(newRow)
+
+    // Один insertFragment на комірку: повний клон block-вмісту template cell.
+    const rewriteCtx: FieldRewriteCtx = { personInstance }
+    const fragmentOps: Record<string, unknown>[] = []
+    let totalBlocks = 0
+    let fieldsRewritten = 0
+    let markersRemoved = 0
+    for (let i = 0; i < templateCells.length && i < newCells.length; i += 1) {
+      const blocks = clonableBlocks(templateCells[i]!)
+      if (blocks.length === 0) continue
+      const stats = { fields: 0, markers: 0 }
+      const cloned: ONode[] = []
+      for (const block of blocks) {
+        const copy = structuredClone(block) as ONode
+        const transformed = transformClone(copy, rewriteCtx, stats)
+        if (transformed) cloned.push(transformed)
+      }
+      fieldsRewritten += stats.fields
+      markersRemoved += stats.markers
+      if (cloned.length === 0) continue
+      const anchor = directParagraphs(newCells[i]!)[0]
+      if (!anchor?.id) continue
+      totalBlocks += cloned.length
+      fragmentOps.push({
+        op: "insertFragment",
+        paragraphId: anchor.id,
+        offset: 0,
+        blocks: cloned,
+        lastMarkCovered: true,
       })
     }
 
-    // 4) Абзаци нового рядка → paraId → комірка columnIndex (caret-probe)
-    const newRowParas = collectNewRowParagraphIds(editor, firstParaId)
-    const paraByColumn = new Map<number, string>()
-    for (const paraId of newRowParas) {
-      const probe = probePosition(editor, paraId)
-      if (!probe || probe.rowIndex !== sourceRowIndex + 1) continue
-      if (!paraByColumn.has(probe.columnIndex)) paraByColumn.set(probe.columnIndex, paraId)
+    const surface = editor.surface
+    if (!surface || fragmentOps.length === 0) {
+      toast.error("Не вдалося скопіювати вміст рядка.")
+      return { intercept: true, ok: false, reason: "structure-mismatch" }
     }
 
-    // 5) Вставка ре-ключених чіпів: attrs { key нового instance } БЕЗ p,
-    //    текст — дефолтна назва поля нового instance
-    for (const chip of sourceChips) {
-      const instance = nextInstance[chip.flavor]
-      const key = `${chip.flavor}.${instance}.${chip.fieldType}`
-      const targetParaId = paraByColumn.get(chip.columnIndex) ?? firstParaId
-      if (!editor.exec({ type: "setSelection", anchor: { paraId: targetParaId } }).ok) {
-        console.warn(LOG, "каретка не поставлена в нову комірку →", {
-          chipNodeId: chip.nodeId,
-          targetParaId,
-        })
-        continue
+    const inserted = surface.applyAutomationOps(() => fragmentOps as never)
+    console.info(LOG, "dup diag: insertFragment →", {
+      cells: fragmentOps.length,
+      totalBlocks,
+      fieldsRewritten,
+      markersRemoved,
+      committed: inserted.committed,
+      rejected: inserted.rejected,
+      reason: inserted.reason ?? null,
+    })
+    if (!inserted.committed) {
+      console.warn(LOG, "insertFragment відхилено →", { reason: inserted.reason })
+      toast.error("Не вдалося скопіювати вміст рядка.")
+      return { intercept: true, ok: false, reason: "structure-mismatch" }
+    }
+
+    // Прибираємо справді порожні залишкові абзаци (двигун не чистить якір).
+    const rootClean = bodyRoot(editor)
+    const tableClean = rootClean ? findByKey(rootClean, tableId) : null
+    const cleanRow = tableClean
+      ? directRows(tableClean).find((row) => row.id === newRow.id)
+      : null
+    const deleteOps: Record<string, unknown>[] = []
+    let deletedParagraphs = 0
+    if (cleanRow) {
+      for (const cell of directCells(cleanRow)) {
+        const paragraphs = directParagraphs(cell)
+        const empties = paragraphs.filter(isEmptyParagraph)
+        const deletable = Math.max(0, empties.length - Math.max(0, 1 - (paragraphs.length - empties.length)))
+        for (let i = 0; i < deletable; i += 1) {
+          const paragraph = empties[i]
+          if (!paragraph?.id) continue
+          deleteOps.push({ op: "deleteBlock", blockId: paragraph.id })
+          deletedParagraphs += 1
+        }
       }
-      const label = defaultLabel(chip.flavor, chip.fieldType, instance)
-      const result = insertCustomNode(editor, FieldNode, {
-        attrs: { key },
-        text: label,
-        alias: label,
+    }
+    if (deleteOps.length > 0) {
+      const cleaned = surface.applyAutomationOps(() => deleteOps as never)
+      console.info(LOG, "dup diag: cleanup empties →", {
+        candidates: deleteOps.length,
+        deletedParagraphs,
+        committed: cleaned.committed,
+        reason: cleaned.reason ?? null,
+      })
+    }
+
+    // Новий thin marker у marker-комірці.
+    const markerCell = directCells(cleanRow ?? newRow)[definition.markerCellIndex]
+    const markerParagraph = markerCell ? (directParagraphs(markerCell)[0] ?? null) : null
+    if (markerParagraph?.id) {
+      const markerResult = insertCustomNode(editor, RepeatRowMarker, {
+        at: { paragraphId: markerParagraph.id, offset: 0 },
+        attrs: { r: definition.repeatId, e: dataRow.entityId },
+        text: " ",
         lock: false,
       })
-      if (!result.ok) {
-        console.warn(LOG, "insertCustomNode нового чіпа відхилено →", {
-          key,
-          reason: result.reason,
-        })
-        continue
-      }
+      console.info(LOG, "dup diag: new marker →", {
+        ok: markerResult.ok,
+        reason: markerResult.ok ? undefined : markerResult.reason,
+        e: dataRow.entityId,
+      })
     }
 
-    toast.success(
-      `Додано людину №${nextInstance[primaryFlavor] ?? 1}. Прив'яжіть особу кнопкою на чіпі.`
-    )
-    return { ok: true }
+    toast.success(`Додано людину №${personInstance}.`)
+    return { intercept: true, ok: true }
   } finally {
     suspendFieldSelect(false)
   }

@@ -29,6 +29,8 @@
 
 import { customNodesModule, defineCustomNode, reviewModule } from "@docx-editor.dev/pro"
 
+import { RepeatRowMarker, RepeatRowRegistry } from "@/lib/docx-editor/repeat-row"
+
 export const FIELD_TAG_PREFIX = "acme"
 
 // Attrs чіпа після fromDocx (маютьську contract типу для читання в
@@ -80,7 +82,7 @@ export const FieldNode = defineCustomNode({
 // module»), якими placeCaretBesideField ставить каретку за нодою.
 export const DOCX_MODULES = [
   customNodesModule({
-    nodes: [FieldNode],
+    nodes: [FieldNode, RepeatRowMarker, RepeatRowRegistry],
     onDiagnostic: ({ code, name, nodeId, issues }) => {
       console.warn("[field-node]", `${name} ${nodeId}: ${code}`, issues)
     },

@@ -1,0 +1,122 @@
+[
+  {
+    "id": "table.MedicalReferral",
+    "label": "Create table \"MedicalReferral\"",
+    "summary": "Creates table \"MedicalReferral\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "MedicalReferral"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"MedicalReferral\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"MedicalReferral\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"MedicalReferral\"",
+        "sql": "CREATE TABLE \"public\".\"MedicalReferral\" (\n  \"courseRecordId\" text NOT NULL,\n  \"createdAt\" timestamp(3) DEFAULT (now()) NOT NULL,\n  \"facility\" text,\n  \"id\" text NOT NULL,\n  \"referralDate\" text,\n  \"updatedAt\" timestamp(3) NOT NULL,\n  CONSTRAINT \"MedicalReferral_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"MedicalReferral\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"MedicalReferral\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.MedicalReferral.MedicalReferral_courseRecordId_idx",
+    "label": "Create index \"MedicalReferral_courseRecordId_idx\" on \"MedicalReferral\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "MedicalReferral_courseRecordId_idx",
+        "table": "MedicalReferral"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"MedicalReferral_courseRecordId_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"MedicalReferral_courseRecordId_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"MedicalReferral_courseRecordId_idx\"",
+        "sql": "CREATE INDEX \"MedicalReferral_courseRecordId_idx\" ON \"public\".\"MedicalReferral\" (\"courseRecordId\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"MedicalReferral_courseRecordId_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"MedicalReferral_courseRecordId_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.MedicalReferral.MedicalReferral_courseRecordId_fkey",
+    "label": "Add foreign key \"MedicalReferral_courseRecordId_fkey\" on \"MedicalReferral\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "MedicalReferral_courseRecordId_fkey",
+        "table": "MedicalReferral"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"MedicalReferral_courseRecordId_fkey\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "MedicalReferral_courseRecordId_fkey",
+          "public",
+          "\"public\".\"MedicalReferral\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"MedicalReferral_courseRecordId_fkey\"",
+        "sql": "ALTER TABLE \"public\".\"MedicalReferral\"\nADD CONSTRAINT \"MedicalReferral_courseRecordId_fkey\"\nFOREIGN KEY (\"courseRecordId\")\nREFERENCES \"public\".\"CourseRecord\" (\"id\")\nON DELETE CASCADE\nON UPDATE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"MedicalReferral_courseRecordId_fkey\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "MedicalReferral_courseRecordId_fkey",
+          "public",
+          "\"public\".\"MedicalReferral\""
+        ]
+      }
+    ]
+  }
+]

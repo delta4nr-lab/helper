@@ -21,7 +21,7 @@ import { FieldEditMenu } from "@/components/documents/docx-editor/field-edit-dia
 import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
-import { TableRowDuplicate } from "@/components/documents/docx-editor/table-row-duplicate"
+import { TableRowDuplicate, RepeatRowAdmin } from "@/components/documents/docx-editor/table-row-duplicate"
 import { DocumentRuntimeBridge } from "@/components/documents/docx-editor/runtime/document-runtime-bridge"
 import {
   PersonnelPanel,
@@ -479,7 +479,18 @@ export default function DocumentWorkspace({
               )}
               {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
                   engine-кнопку рядка тільки коли рядок має персональні чіпи */}
-              {mode !== "template" ? <TableRowDuplicate /> : null}
+              {mode !== "template" ? (
+                <TableRowDuplicate
+                  sourceContext={{
+                    personnel: personnel ?? [],
+                    cadets: cadets ?? [],
+                    referrals: [],
+                  }}
+                />
+              ) : null}
+              {/* Admin: mini-кнопка «зробити рядок повторюваним» — лише
+                  template-режим; позиціонується біля engine-кнопки «+» */}
+              {mode === "template" ? <RepeatRowAdmin /> : null}
               <DocxEditor.HyperLink />
               <DocxEditor.ContextMenu>
                 {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».

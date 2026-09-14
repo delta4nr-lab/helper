@@ -24,6 +24,10 @@
       "model": "Image",
       "namespace": "public"
     },
+    "MedicalReferral": {
+      "model": "MedicalReferral",
+      "namespace": "public"
+    },
     "Personnel": {
       "model": "Personnel",
       "namespace": "public"
@@ -580,6 +584,21 @@
                   "model": "Course",
                   "namespace": "public"
                 }
+              },
+              "medicalReferrals": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "courseRecordId"
+                  ]
+                },
+                "to": {
+                  "model": "MedicalReferral",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -978,6 +997,99 @@
               },
               "namespaceId": "public",
               "table": "Image"
+            }
+          },
+          "MedicalReferral": {
+            "fields": {
+              "courseRecordId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamp-string@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "facility": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "referralDate": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "updatedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamp-string@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              }
+            },
+            "relations": {
+              "courseRecord": {
+                "cardinality": "N:1",
+                "on": {
+                  "localFields": [
+                    "courseRecordId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "CourseRecord",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "courseRecordId": {
+                  "column": "courseRecordId"
+                },
+                "createdAt": {
+                  "column": "createdAt"
+                },
+                "facility": {
+                  "column": "facility"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "referralDate": {
+                  "column": "referralDate"
+                },
+                "updatedAt": {
+                  "column": "updatedAt"
+                }
+              },
+              "namespaceId": "public",
+              "table": "MedicalReferral"
             }
           },
           "Personnel": {
@@ -2235,6 +2347,87 @@
               },
               "uniques": []
             },
+            "MedicalReferral": {
+              "columns": {
+                "courseRecordId": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "createdAt": {
+                  "codecId": "pg/timestamp-string@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamp",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                },
+                "facility": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
+                },
+                "referralDate": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "updatedAt": {
+                  "codecId": "pg/timestamp-string@1",
+                  "nativeType": "timestamp",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 3
+                  }
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "MedicalReferral_courseRecordId_fkey",
+                  "onDelete": "cascade",
+                  "onUpdate": "cascade",
+                  "source": {
+                    "columns": [
+                      "courseRecordId"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "MedicalReferral"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "CourseRecord"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "courseRecordId"
+                  ],
+                  "name": "MedicalReferral_courseRecordId_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "MedicalReferral_pkey"
+              },
+              "uniques": []
+            },
             "Personnel": {
               "columns": {
                 "createdAt": {
@@ -2720,10 +2913,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "1fb06b9b61e2e6474acd8b560cff8a8e8eaaf020d19330babe64bde6b32d1188"
+    "storageHash": "93d286b16e7e80dbab2c067507157776e1765b18d3e6b31b56008e1559359a84"
   },
   "execution": {
-    "executionHash": "7647c7a6d10e649a917288bdd9bf290047ac63e421f6254152dc132a39fc9057",
+    "executionHash": "68231aa6569579d8b30dfe02f4219c97263852d4597a6f1f0a026b7e05aa6c7c",
     "mutations": {
       "defaults": [
         {
@@ -2779,6 +2972,17 @@
             "column": "id",
             "namespace": "public",
             "table": "Image"
+          }
+        },
+        {
+          "onCreate": {
+            "id": "nanoid",
+            "kind": "generator"
+          },
+          "ref": {
+            "column": "id",
+            "namespace": "public",
+            "table": "MedicalReferral"
           }
         },
         {

@@ -159,9 +159,25 @@ namespace public {
     militaryTicket      String?
     ubdNumber           String?
     course              Course  @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "CourseRecord_courseId_fkey", index: false)
+    medicalReferrals    MedicalReferral[]
 
     @@index([courseId], map: "CourseRecord_courseId_idx")
     @@index([lastName, firstName], map: "CourseRecord_lastName_firstName_idx")
+  }
+
+  // Направлення курсанта до медичного закладу: один курсант може мати кілька
+  // направлень (різні лікарні/дати) — кожне є окремим рядком repeat-групи.
+  model MedicalReferral {
+    @@map("MedicalReferral")
+    id             String       @id(map: "MedicalReferral_pkey") @default(nanoid())
+    courseRecordId String
+    facility       String?
+    referralDate   String?
+    createdAt      TimestampString(3) @default(now())
+    updatedAt      TimestampString(3)
+    courseRecord   CourseRecord @relation(fields: [courseRecordId], references: [id], onDelete: Cascade, onUpdate: Cascade, map: "MedicalReferral_courseRecordId_fkey", index: false)
+
+    @@index([courseRecordId], map: "MedicalReferral_courseRecordId_idx")
   }
 
   model Profile {
