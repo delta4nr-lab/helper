@@ -9,16 +9,10 @@
 //   - index     — актуальні Custom Nodes (revision-guard кеш);
 //   - locator   — адреса ноди: paragraphId завжди; table/row/column
 //                 ТІЛЬКИ за підтвердженим якорем (canonical id path);
-//   - nodes     — read-only менеджер чіпів;
-//   - tables    — read-only менеджер таблиць (duplicateRow — пізніше);
-//   - transaction — обгортка майбутніх складних дій (без фейкового undo);
 //   - debug()   — dev-only діагностика (console.table з причин null-ів).
 
 import { DocumentIndex } from "./document-index"
 import { DocumentLocator } from "./document-locator"
-import { DocumentNodeManager } from "./node-manager"
-import { DocumentTableManager } from "./table-manager"
-import { RuntimeTransaction } from "./transaction"
 import type { DocxEditorInstance } from "@docx-editor.dev/core/editor"
 import type { DocumentNode, DocumentNodeDebug } from "./types"
 
@@ -27,17 +21,11 @@ export class DocumentRuntime {
 
   readonly index: DocumentIndex
   readonly locator: DocumentLocator
-  readonly nodes: DocumentNodeManager
-  readonly tables: DocumentTableManager
-  readonly transaction: RuntimeTransaction
 
   constructor(editor: DocxEditorInstance) {
     this.editor = editor
     this.index = new DocumentIndex(editor)
     this.locator = new DocumentLocator(this.index)
-    this.nodes = new DocumentNodeManager(this.index)
-    this.tables = new DocumentTableManager(this.index, this.locator)
-    this.transaction = new RuntimeTransaction(editor)
   }
 
   /** Повне перебудування індексу під актуальну редакцію документа. */

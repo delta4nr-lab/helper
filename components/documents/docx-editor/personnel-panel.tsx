@@ -229,7 +229,7 @@ export function PersonnelPanel() {
   // Спільна вставка FieldNode (чекання FieldSelect, каретка лишається в
   // редакторі): повертає результат для подальшого розміщення каретки.
   async function insertNodeIntoDocument(
-    attrs: { key: string; f?: string; i?: string },
+    attrs: { key: string },
     label: string
   ): Promise<boolean> {
     if (!editor) return false
@@ -266,15 +266,13 @@ export function PersonnelPanel() {
     return true
   }
 
-  // Вставка курсантського поля (порт insertCadetField з fbcf076): офіційні
-  // ідентифікації key/f/i в attrs → w:tag — cadet.{i}.{f}; значення з
-  // АКТИВНОГО курсу підставляється при прив'язці курсанта (p = record.id).
+  // Вставка курсантського поля: identity — лише key (cadet.{i}.{f}) →
+  // w:tag; fieldType/personInstance fromDocx виводить зі схеми key, тому
+  // legacy f/i не пишемо (їхній parser у field-node лишається для старих DOCX).
   async function insertCadetField(field: CadetFieldId) {
     if (!editor) return
     const attrs = {
       key: `cadet.${cadetInstance}.${field}`,
-      f: field,
-      i: String(cadetInstance),
     }
     const label = `${COURSE_FIELD_LABELS[field] ?? field} (${cadetInstance})`
     // Авто-виділення FieldSelect призупинено на час вставки+розміщення.

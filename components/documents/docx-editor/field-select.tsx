@@ -18,8 +18,6 @@ import { useDocxEditor } from "@docx-editor.dev/react"
 
 import { FieldNode } from "@/lib/docx-editor/field-node"
 
-const LOG = "[field-select]"
-
 // Програмна вставка поля придушує авто-виділення FieldSelect: рушій лишає
 // каретку всередині чіпа, і selectionChange від вставки/розміщення каретки
 // виглядає як «вхід у поле» — без прапорця FieldSelect перекривав би
@@ -93,23 +91,12 @@ async function placeCaretBesideFieldInner(editor: DocxEditorInstance): Promise<b
     if (!entry || entry.kind !== "custom") continue
     const itemRange = entry.item.range
     if (!itemRange) {
-      console.info(LOG, "caret: review item знайдено, але range = null", {
-        id: entry.item.id,
-        name: entry.item.name,
-      })
       return false
     }
     end = itemRange.end
-    console.info(LOG, "caret: review item →", {
-      id: entry.item.id,
-      name: entry.item.name,
-      start: itemRange.start,
-      end: itemRange.end,
-    })
     break
   }
   if (!end) {
-    console.info(LOG, "caret: review item не з'явився за 10 кадрів (review module зареєстровано?)")
     return false
   }
 
@@ -121,11 +108,6 @@ async function placeCaretBesideFieldInner(editor: DocxEditorInstance): Promise<b
     },
   })
   if (!result.ok) {
-    console.info(LOG, "caret: setSelection відхилено →", {
-      code: result.code,
-      reason: result.reason,
-      ...end,
-    })
     return false
   }
 
@@ -185,16 +167,13 @@ export function FieldSelect() {
       if (!paraId) return
       const text = customNodesOf(editor).find((node) => node.tag === tag)?.text
       if (!text) return
-      const result = editor.exec({
+      editor.exec({
         type: "setSelection",
         range: {
           from: { paraId, search: text },
           to: { paraId, search: text },
         },
       })
-      if (!result.ok) {
-        console.info(LOG, "виділення відхилено →", { code: result.code, reason: result.reason, text })
-      }
     })
   }, [editor])
 

@@ -10,14 +10,14 @@
 //
 // STRUCTURE рядка береться з LIVE template row (найверхніший рядок групи):
 // копіюємо весь вміст його комірок через insertFragment, змінюючи лише
-// FieldNode (instance/значення з БД) і переносячи RepeatRowMarker.
+// FieldNode (новий instance + плейсхолдер, unbound) і переносячи RepeatRowMarker.
 
 import { z } from "zod"
 import { defineCustomNode } from "@docx-editor.dev/pro"
 
 // ── Definition (лише метадані групи) ────────────────────────────────────────
 
-export const repeatDataSourceSchema = z.enum(["personnel", "course", "medicalReferral"])
+const repeatDataSourceSchema = z.enum(["personnel", "course", "medicalReferral"])
 
 export const repeatRowSchema = z.object({
   repeatId: z.string().min(1).max(64),
@@ -33,7 +33,7 @@ export type RepeatDataSource = z.infer<typeof repeatDataSourceSchema>
 
 export const REPEAT_ROW_TAG_PREFIX = "repeat"
 
-export type RepeatMarkerAttrs = {
+type RepeatMarkerAttrs = {
   /** repeatId */
   r: string
   /** entityId DB-запису (відсутній для legacy-рядків) */
@@ -58,8 +58,6 @@ export const RepeatRowMarker = defineCustomNode({
 export const repeatRegistrySchema = z.object({
   definitions: z.record(z.string(), repeatRowSchema),
 })
-
-export type RepeatRowRegistryData = z.infer<typeof repeatRegistrySchema>
 
 export const RepeatRowRegistry = defineCustomNode({
   name: "registry",

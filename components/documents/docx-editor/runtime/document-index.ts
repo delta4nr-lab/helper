@@ -116,30 +116,4 @@ export class DocumentIndex {
   node(nodeId: string): DocumentNode | null {
     return this.ensureFresh().find((node) => node.nodeId === nodeId) ?? null
   }
-
-  findByKey(key: string): DocumentNode | null {
-    return this.ensureFresh().find((node) => node.key === key) ?? null
-  }
-
-  findAllByKey(key: string): readonly DocumentNode[] {
-    return this.ensureFresh().filter((node) => node.key === key)
-  }
-
-  findByFlavor(flavor: NodeFlavor): readonly DocumentNode[] {
-    return this.ensureFresh().filter((node) => node.flavor === flavor)
-  }
-
-  findByInstance(flavor: NodeFlavor, instance: number): readonly DocumentNode[] {
-    return this.ensureFresh().filter(
-      (node) => node.flavor === flavor && node.instance === instance
-    )
-  }
-
-  staff(instance: number): readonly DocumentNode[] {
-    return this.findByInstance("staff", instance)
-  }
-
-  cadet(instance: number): readonly DocumentNode[] {
-    return this.findByInstance("cadet", instance)
-  }
 }

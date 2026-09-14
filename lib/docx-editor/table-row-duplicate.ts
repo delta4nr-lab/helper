@@ -4,12 +4,14 @@
 // (tableId + repeatId). Копіюємо ВЕСЬ вміст комірок (усі абзаци, переноси,
 // нумерацію, вкладені таблиці, форматування) через public insertFragment
 // (block kinds paragraph|table|contentControl), який вставляє блоки в w:tc і
-// сам перепризначає всі node id. Змінюємо у копії лише наші FieldNode
-// (новий instance + значення з БД, без p/dataBinding) і прибираємо старий
-// RepeatRowMarker.
+// сам перепризначає всі node id. У копії змінюємо лише наші FieldNode
+// (новий instance + плейсхолдер-назва, unbound, без p/dataBinding) і
+// прибираємо старий RepeatRowMarker.
 //
-// DATA (БД): значення dynamic-полів. Рядки мають `e=<entityId>` у thin marker;
-// next = перший DB-запис, чий entityId не використаний у групі (tableId+repeatId).
+// DATA (БД): entityId використовується ЛИШЕ для identity/вибору рядка.
+// Кожен рядок групи має `e=<entityId>` у thin marker; next = перший DB-запис,
+// чий entityId не використаний у групі (tableId + repeatId). Значення полів у
+// чіпи не підставляються (користувач прив'язує/заповнює сам).
 //
 // Уся робота з canonical tree — через public editor.surface.session.part();
 // зміни — через public editor.surface.applyAutomationOps (layout-safe).
@@ -163,7 +165,7 @@ function readMarkersInRow(row: ONode): MarkerHit[] {
 }
 
 function findMarkerForRow(tableId: string, rowId: string, root: ONode): MarkerHit | null {
-  const table = findByKey(root, tableId)
+  const table = findById(root, tableId)
   if (!table || table.localName !== "tbl") return null
   const row = directRows(table).find((candidate) => candidate.id === rowId)
   if (!row) return null
@@ -355,23 +357,17 @@ function rewriteFieldSdt(sdt: ONode, key: string, ctx: FieldRewriteCtx): boolean
  * Рекурсивно трансформує клон блоку: видаляє RepeatRowMarker, переписує
  * FieldNode. Повертає null, якщо вузол треба прибрати.
  */
-function transformClone(node: ONode, ctx: FieldRewriteCtx, stats: { fields: number; markers: number }): ONode | null {
+function transformClone(node: ONode, ctx: FieldRewriteCtx): ONode | null {
   if (node.kind === "textValue") return node
   const tag = node.localName === "sdt" ? sdtTagValue(node) : null
   if (tag) {
-    if (decodeRepeatMarkerTag(tag)) {
-      stats.markers += 1
-      return null
-    }
+    if (decodeRepeatMarkerTag(tag)) return null
     const key = decodeFieldTag(tag)
-    if (key && rewriteFieldSdt(node, key, ctx)) {
-      stats.fields += 1
-      return node
-    }
+    if (key && rewriteFieldSdt(node, key, ctx)) return node
   }
   const next: ONode[] = []
   for (const child of node.children ?? []) {
-    const transformed = transformClone(child, ctx, stats)
+    const transformed = transformClone(child, ctx)
     if (transformed) next.push(transformed)
   }
   node.children = next
@@ -429,10 +425,10 @@ function documentRevision(editor: EditorLike): number {
   }
 }
 
-function findByKey(root: ONode, id: string): ONode | null {
+function findById(root: ONode, id: string): ONode | null {
   if (root.id === id) return root
   for (const child of elementChildren(root)) {
-    const found = findByKey(child, id)
+    const found = findById(child, id)
     if (found) return found
   }
   return null
@@ -453,7 +449,7 @@ export function createRepeatRow(
     return { ok: false, reason: "already-repeatable" }
   }
 
-  const table = findByKey(root, tableId)
+  const table = findById(root, tableId)
   const row = table ? directRows(table).find((candidate) => candidate.id === rowId) : null
   if (!table || !row) return { ok: false, reason: "no-custom-nodes" }
   const flavor = flavorOfRow(editor, row)
@@ -517,7 +513,7 @@ export function duplicateTableRow(
 
   const root = bodyRoot(editor)
   if (!root) return { intercept: false }
-  const table = findByKey(root, tableId)
+  const table = findById(root, tableId)
   if (!table || table.localName !== "tbl") return { intercept: false }
   const rowsBefore = directRows(table)
   if (!rowsBefore.some((row) => row.id === rowId)) return { intercept: false }
@@ -545,16 +541,6 @@ export function duplicateTableRow(
     const rowIndex = group.rowOrder.findIndex((id) => id === rowId)
     dataRow = candidates[rowIndex] ?? null
   }
-  console.info(LOG, "dup diag: resolve →", {
-    repeatId: marker.repeatId,
-    markerEntityId: marker.entityId,
-    templateRowId: templateRow.id,
-    dataSource: definition.dataSource,
-    groupRows: group.rowOrder.length,
-    usedEntityIds: [...group.usedEntityIds],
-    candidates: candidates.length,
-    dataRowFound: Boolean(dataRow),
-  })
   if (!dataRow) {
     toast.warning("Немає даних для наступного рядка.")
     return { intercept: true, ok: false, reason: "no-data" }
@@ -591,7 +577,7 @@ export function duplicateTableRow(
     }
 
     const rootAfter = bodyRoot(editor)
-    const tableAfter = rootAfter ? findByKey(rootAfter, tableId) : null
+    const tableAfter = rootAfter ? findById(rootAfter, tableId) : null
     if (!tableAfter) {
       toast.warning("Рядок вставлено, але нові поля не вдалося створити автоматично.")
       return { intercept: true, ok: false, reason: "no-new-row" }
@@ -609,25 +595,17 @@ export function duplicateTableRow(
     // Один insertFragment на комірку: повний клон block-вмісту template cell.
     const rewriteCtx: FieldRewriteCtx = { personInstance }
     const fragmentOps: Record<string, unknown>[] = []
-    let totalBlocks = 0
-    let fieldsRewritten = 0
-    let markersRemoved = 0
     for (let i = 0; i < templateCells.length && i < newCells.length; i += 1) {
       const blocks = clonableBlocks(templateCells[i]!)
       if (blocks.length === 0) continue
-      const stats = { fields: 0, markers: 0 }
       const cloned: ONode[] = []
       for (const block of blocks) {
-        const copy = structuredClone(block) as ONode
-        const transformed = transformClone(copy, rewriteCtx, stats)
+        const transformed = transformClone(structuredClone(block) as ONode, rewriteCtx)
         if (transformed) cloned.push(transformed)
       }
-      fieldsRewritten += stats.fields
-      markersRemoved += stats.markers
       if (cloned.length === 0) continue
       const anchor = directParagraphs(newCells[i]!)[0]
       if (!anchor?.id) continue
-      totalBlocks += cloned.length
       fragmentOps.push({
         op: "insertFragment",
         paragraphId: anchor.id,
@@ -644,15 +622,6 @@ export function duplicateTableRow(
     }
 
     const inserted = surface.applyAutomationOps(() => fragmentOps as never)
-    console.info(LOG, "dup diag: insertFragment →", {
-      cells: fragmentOps.length,
-      totalBlocks,
-      fieldsRewritten,
-      markersRemoved,
-      committed: inserted.committed,
-      rejected: inserted.rejected,
-      reason: inserted.reason ?? null,
-    })
     if (!inserted.committed) {
       console.warn(LOG, "insertFragment відхилено →", { reason: inserted.reason })
       toast.error("Не вдалося скопіювати вміст рядка.")
@@ -661,12 +630,11 @@ export function duplicateTableRow(
 
     // Прибираємо справді порожні залишкові абзаци (двигун не чистить якір).
     const rootClean = bodyRoot(editor)
-    const tableClean = rootClean ? findByKey(rootClean, tableId) : null
+    const tableClean = rootClean ? findById(rootClean, tableId) : null
     const cleanRow = tableClean
       ? directRows(tableClean).find((row) => row.id === newRow.id)
       : null
     const deleteOps: Record<string, unknown>[] = []
-    let deletedParagraphs = 0
     if (cleanRow) {
       for (const cell of directCells(cleanRow)) {
         const paragraphs = directParagraphs(cell)
@@ -676,18 +644,11 @@ export function duplicateTableRow(
           const paragraph = empties[i]
           if (!paragraph?.id) continue
           deleteOps.push({ op: "deleteBlock", blockId: paragraph.id })
-          deletedParagraphs += 1
         }
       }
     }
     if (deleteOps.length > 0) {
-      const cleaned = surface.applyAutomationOps(() => deleteOps as never)
-      console.info(LOG, "dup diag: cleanup empties →", {
-        candidates: deleteOps.length,
-        deletedParagraphs,
-        committed: cleaned.committed,
-        reason: cleaned.reason ?? null,
-      })
+      surface.applyAutomationOps(() => deleteOps as never)
     }
 
     // Новий thin marker у marker-комірці.
@@ -700,11 +661,11 @@ export function duplicateTableRow(
         text: " ",
         lock: false,
       })
-      console.info(LOG, "dup diag: new marker →", {
-        ok: markerResult.ok,
-        reason: markerResult.ok ? undefined : markerResult.reason,
-        e: dataRow.entityId,
-      })
+      if (!markerResult.ok) {
+        console.warn(LOG, "копію RepeatRowMarker не вставлено →", {
+          reason: markerResult.reason,
+        })
+      }
     }
 
     toast.success(`Додано людину №${personInstance}.`)

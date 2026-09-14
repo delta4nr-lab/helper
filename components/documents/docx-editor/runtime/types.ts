@@ -61,29 +61,6 @@ export type TableAnchor = {
   readonly rowId: string
 }
 
-export type TableLocation = {
-  /** null, коли відомий лише rowId, а батьківська таблиця не виведена */
-  readonly tableId: string | null
-  /** Похідний префікс — рядок, до якого прив'язаний контекст якоря */
-  readonly rowId: string | null
-}
-
-export type RowLocation = {
-  /** Батьківська таблиця рядка, якщо шлях дозволяє однозначно її прочитати */
-  readonly tableId: string | null
-  readonly rowId: string
-}
-
-/** Частковий результат row-запиту: ok або точна причина неповноти. */
-export type RowLocationResult =
-  | { readonly ok: true; readonly location: RowLocation }
-  | { readonly ok: false; readonly reason: NodeLocationReason; readonly rowId: string }
-
-/** Результат table-запиту (нейтральний: без вигадування рядка). */
-export type TableLocationResult =
-  | { readonly ok: true; readonly location: TableLocation }
-  | { readonly ok: false; readonly reason: NodeLocationReason; readonly tableId: string }
-
 /** Плоска бізнес-вистава Custom Node (мінімум для роботи логіки). */
 export type DocumentNode = {
   readonly nodeId: string

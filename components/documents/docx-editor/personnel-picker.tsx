@@ -148,20 +148,17 @@ export function PersonnelChrome({
   // дубльованих груп: декілька чіпів можуть мати один і той самий key
   // (staff.{i}.signature), і кожен з них тримає власний drawing у масиві
   // карти. Матч за КЛЮЧЕМ-СХЕМОЮ (не за attrs нод), щоб не залежати від
-  // того, як рушій віддає attrs. Повертає видалені ключі (діагностика).
-  function deleteSignatureMarkersForInstance(instanceId: string): string[] {
-    if (!editor) return []
+  // того, як рушій віддає attrs.
+  function deleteSignatureMarkersForInstance(instanceId: string): void {
+    if (!editor) return
     const pattern = new RegExp(`^(staff|cadet)\\.${instanceId}\\.signature$`)
-    const deletedKeys: string[] = []
     for (const [key, markers] of sigMarkersRef.current) {
       if (!pattern.test(key)) continue
       for (const marker of markers) {
         editor.exec({ type: "deleteImage", drawingNodeId: marker.drawingId })
       }
       sigMarkersRef.current.delete(key)
-      deletedKeys.push(key)
     }
-    return deletedKeys
   }
 
   function handleNodeHover(node: ActivatedCustomNode) {
@@ -317,18 +314,7 @@ export function PersonnelChrome({
       // Мульти-видалення: прибираємо ВСІ картинки підписів цього екземпляра
       // (у т.ч. в дубльованих групах з тим самим key), ПЕРШ ніж обробляти
       // чіпи — щоб другий чіп того ж поля не зітрив картинку першого.
-      const deletedKeys = deleteSignatureMarkersForInstance(String(instanceId))
-      const signatureNodes = customNodesOf(editor).filter((node) => {
-        const attrs = node.attrs as FieldChipAttrs
-        return (
-          attrs.fieldType === "signature" && attrs.personInstance === String(instanceId)
-        )
-      })
-      console.info(LOG, "signature cleanup (bindPerson) →", {
-        instance: instanceId,
-        duplicateSignatureNodes: signatureNodes.length,
-        deletedKeys,
-      })
+      deleteSignatureMarkersForInstance(String(instanceId))
 
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
@@ -474,14 +460,10 @@ export function PersonnelChrome({
     try {
       // Мульти-видалення: знімаємо ВСІ картинки підписів екземпляра,
       // включно з дубльованими групами (той самий key).
-      const deletedKeys = deleteSignatureMarkersForInstance(String(instanceId))
+      deleteSignatureMarkersForInstance(String(instanceId))
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
         return attrs.fieldType != null && attrs.personInstance === String(instanceId)
-      })
-      console.info(LOG, "signature cleanup (unbindPerson) →", {
-        instance: instanceId,
-        deletedKeys,
       })
       for (const node of nodes) {
         const attrs = node.attrs as FieldChipAttrs
@@ -785,8 +767,7 @@ export function PersonnelChrome({
         // Невдале заповнення: прибираємо щойно вставлений drawing; слово
         // не повертаємо — контрол лишається порожнім (чистий друк/експорт)
         if (drawingId) {
-          const del = surface.deleteImage(drawingId)
-          console.info(LOG, "failure cleanup deleteImage →", { ok: del.ok })
+          surface.deleteImage(drawingId)
         }
         surface.contentControls.setValue(chipNodeId, "")
       }

@@ -20,15 +20,7 @@
 // engine вимагає окремий API (зафіксовано обмеження, не вигадуємо).
 
 import type { DocumentIndex } from "./document-index"
-import type {
-  DocumentNode,
-  NodeLocationResult,
-  RowLocation,
-  RowLocationResult,
-  TableAnchor,
-  TableLocation,
-  TableLocationResult,
-} from "./types"
+import type { DocumentNode, NodeLocationResult, TableAnchor } from "./types"
 
 /** Порядок комірки (tc) для paraId, коли відомий rowId: сегмент після рядка. */
 export function cellOrdinalUnderRow(paragraphId: string, rowId: string): number | null {
@@ -46,30 +38,6 @@ export function paragraphUnderRow(paragraphId: string, rowId: string): boolean {
   return paragraphId.startsWith(`${rowId}.`)
 }
 
-/**
- * Канонічний id рушія: `part#a.b.c.…`. Top-level рядок таблиці має РІВНО
- * 4 числові сегменти (block.block.table.row) — лише тоді батьківську
- * таблицю можна вивести однозначно; глибші шляхи (вкладені таблиці)
- * не дають змоги відрізнити tbl від tc → derivation-unsupported.
- */
-function topLevelRowTableId(rowId: string): string | null {
-  const hash = rowId.indexOf("#")
-  if (hash <= 0) return null
-  const part = rowId.slice(0, hash)
-  const segments = rowId.slice(hash + 1).split(".")
-  if (segments.length !== 4) return null
-  if (!segments.every((segment) => /^\d+$/.test(segment))) return null
-  return `${part}#${segments.slice(0, 3).join(".")}`
-}
-
-/** Чи канонічний id має форму, придатну як tableId (part#a.b.c+). */
-function isCanonicalTableId(tableId: string): boolean {
-  const hash = tableId.indexOf("#")
-  if (hash <= 0) return false
-  const segments = tableId.slice(hash + 1).split(".")
-  return segments.length >= 1 && segments.every((segment) => /^\d+$/.test(segment))
-}
-
 export class DocumentLocator {
   private readonly index: DocumentIndex
 
@@ -80,31 +48,6 @@ export class DocumentLocator {
   /** Нода з індексу (без адреси — для виклику згорнутих даних). */
   node(nodeId: string): DocumentNode | null {
     return this.index.node(nodeId)
-  }
-
-  /**
-   * Рядок за канонічним rowId. tableId виводиться лише для однозначної
-   * top-level форми (4 сегменти); інакше — частковий результат із
-   * причиною (не вигадуємо батьківську таблицю).
-   */
-  row(rowId: string): RowLocationResult {
-    const tableId = topLevelRowTableId(rowId)
-    if (tableId === null) {
-      return { ok: false, reason: "derivation-unsupported", rowId }
-    }
-    return { ok: true, location: { tableId, rowId } }
-  }
-
-  /**
-   * Таблиця за canonical tableId: повертається нейтральна адреса
-   * (rowId = null — рядок без якоря не виводиться). Наявність таблиці
-   * публічним API не перевіряється (зафіксоване обмеження).
-   */
-  table(tableId: string): TableLocationResult {
-    if (!isCanonicalTableId(tableId)) {
-      return { ok: false, reason: "derivation-unsupported", tableId }
-    }
-    return { ok: true, location: { tableId, rowId: null } }
   }
 
   /**
@@ -168,28 +111,5 @@ export class DocumentLocator {
 
     // 3) Без якоря — тільки paragraphId
     return { ok: false, reason: "no-anchor", paragraphId }
-  }
-
-  /**
-   * Рядок ноди — потребує підтвердженого якоря (рядок або таблиця),
-   * бо depth канонічного id амбіквівалентен без початку таблиці.
-   */
-  findRowForNode(nodeId: string, anchor?: Partial<TableAnchor>): RowLocation | null {
-    const located = this.nodeLocation(nodeId, anchor)
-    if (!located.ok || located.location.rowId === null) return null
-    return { tableId: located.location.tableId, rowId: located.location.rowId }
-  }
-
-  /** Таблиця ноди — також тільки з якорем (те саме обмеження). */
-  findTableForNode(nodeId: string, anchor?: Partial<TableAnchor>): TableLocation | null {
-    const located = this.nodeLocation(nodeId, anchor)
-    if (!located.ok || located.location.rowId === null) return null
-    return { tableId: located.location.tableId ?? null, rowId: located.location.rowId }
-  }
-
-  /** Порядок комірки ноди в рядку (cell ordinal). null без надійного якоря. */
-  findColumnForNode(nodeId: string, anchor?: Partial<TableAnchor>): number | null {
-    const located = this.nodeLocation(nodeId, anchor)
-    return located.ok ? located.location.columnIndex : null
   }
 }
