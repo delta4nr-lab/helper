@@ -79,4 +79,27 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   )
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+// Ковзний індикатор активної вкладки: base-ui сам виставляє CSS-змінні
+// --active-tab-left/top/width/height на цьому елементі, ми лише позиціюємо його.
+function TabsIndicator({ className, style, ...props }: TabsPrimitive.Indicator.Props) {
+  return (
+    <TabsPrimitive.Indicator
+      data-slot="tabs-indicator"
+      className={cn(
+        "pointer-events-none absolute z-0 rounded-md border border-border bg-card shadow-sm",
+        "transition-[left,width,height] duration-200 ease-out",
+        className
+      )}
+      style={{
+        left: "var(--active-tab-left)",
+        top: "var(--active-tab-top)",
+        width: "var(--active-tab-width)",
+        height: "var(--active-tab-height)",
+        ...style,
+      }}
+      {...props}
+    />
+  )
+}
+
+export { Tabs, TabsList, TabsTrigger, TabsContent, TabsIndicator, tabsListVariants }

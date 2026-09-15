@@ -54,7 +54,13 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  Tabs,
+  TabsContent,
+  TabsIndicator,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 export type PersonnelFieldType = "fullName" | "position" | "rank" | "signature"
@@ -157,7 +163,10 @@ const CADET_FIELD_ICONS: Partial<Record<CadetFieldId, LucideIcon>> = {
   workplace: Briefcase,
 }
 
-const CADET_FIELDS: readonly CadetFieldId[] = [...COURSE_RECORD_TEXT_FIELDS, "orderNumber"]
+const CADET_FIELDS: readonly CadetFieldId[] = [
+  ...COURSE_RECORD_TEXT_FIELDS,
+  "orderNumber",
+]
 
 // Схема ідентичності персональних полів: буде прочитана майбутнім
 // автозаповненням із attrs ноди (illy key у тезі FieldNode).
@@ -181,7 +190,9 @@ export function PersonnelPanel() {
 
   // Видимі поля активної вкладки (пошук фільтрує обидва джерела)
   const visibleFields = needle
-    ? fields.filter((fieldType) => PERSONNEL_FIELD_LABELS[fieldType].toLowerCase().includes(needle))
+    ? fields.filter((fieldType) =>
+        PERSONNEL_FIELD_LABELS[fieldType].toLowerCase().includes(needle)
+      )
     : fields
   const visibleCadetFields = needle
     ? CADET_FIELDS.filter((fieldId) =>
@@ -221,7 +232,9 @@ export function PersonnelPanel() {
     // Каретка одразу за нодою — той самий рушійний шлях, що й у field-insert-dialog.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        void placeCaretBesideField(editor).finally(() => suspendFieldSelect(false))
+        void placeCaretBesideField(editor).finally(() =>
+          suspendFieldSelect(false)
+        )
       })
     )
   }
@@ -245,10 +258,14 @@ export function PersonnelPanel() {
         cleared = editor.exec({ type: "cut" })
       }
       if (!cleared.ok) {
-        console.warn(LOG, "не вдалося очистити виділення перед вставкою поля →", {
-          code: cleared.code,
-          reason: cleared.reason,
-        })
+        console.warn(
+          LOG,
+          "не вдалося очистити виділення перед вставкою поля →",
+          {
+            code: cleared.code,
+            reason: cleared.reason,
+          }
+        )
       }
     }
     const result = insertCustomNode(editor, FieldNode, {
@@ -281,7 +298,9 @@ export function PersonnelPanel() {
     if (!ok) return
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        void placeCaretBesideField(editor).finally(() => suspendFieldSelect(false))
+        void placeCaretBesideField(editor).finally(() =>
+          suspendFieldSelect(false)
+        )
       })
     )
   }
@@ -290,7 +309,7 @@ export function PersonnelPanel() {
   // панелей довідників: не займає місце поруч з іншими панелями)
   if (collapsed) {
     return (
-      <aside className="flex w-9 shrink-0 flex-col items-center border-l border-border/50 bg-card py-2">
+      <aside className="flex w-9 shrink-0 flex-col items-center border-l border-border/50 bg-background py-2">
         <Button
           type="button"
           variant="ghost"
@@ -311,11 +330,12 @@ export function PersonnelPanel() {
     setInstanceNo: React.Dispatch<React.SetStateAction<number>>,
     hint: string
   ) => (
-    <div className="flex items-center justify-between gap-1 rounded-md border border-border px-1 py-0.5">
+    <div className="flex h-8 items-center justify-between gap-1 rounded-md border border-border px-1">
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
+        className="hover:border-border hover:bg-accent hover:text-foreground"
         aria-label="Попередній екземпляр"
         disabled={instanceNo <= 1}
         onClick={() => setInstanceNo((v) => Math.max(1, v - 1))}
@@ -323,7 +343,10 @@ export function PersonnelPanel() {
         <Minus className="size-4" />
       </Button>
       <span
-        className={cn("text-sm font-medium tabular-nums", !editor && "text-muted-foreground")}
+        className={cn(
+          "text-sm font-medium tabular-nums",
+          !editor && "text-muted-foreground"
+        )}
         title={hint}
       >
         {instanceNo}
@@ -332,6 +355,7 @@ export function PersonnelPanel() {
         type="button"
         variant="ghost"
         size="icon-sm"
+        className="hover:border-border hover:bg-accent hover:text-foreground"
         aria-label="Наступний екземпляр"
         disabled={instanceNo >= MAX_INSTANCE}
         onClick={() => setInstanceNo((v) => Math.min(MAX_INSTANCE, v + 1))}
@@ -342,7 +366,7 @@ export function PersonnelPanel() {
   )
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col overflow-hidden border-l border-border/50 bg-card">
+    <aside className="flex w-56 shrink-0 flex-col overflow-hidden border-l border-border/50 bg-background">
       <div className="flex items-center justify-between gap-1 border-b border-border/50 px-2.5 py-2">
         <span className="truncate text-sm font-semibold">Поля</span>
         <Button
@@ -364,28 +388,45 @@ export function PersonnelPanel() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Пошук поля"
-            className="h-8 pr-8"
+            className="h-8 pr-8 text-muted-foreground hover:bg-muted hover:text-foreground"
           />
           <Search className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
         </div>
       </div>
 
-      {/* Таби джерел: сегментований контроль (variant default) — активна
-          вкладка = контрастна «пігулка» із тінню + іконка джерела */}
+      {/* Таби джерел: сегментований контроль; активна вкладка — нейтральна
+          пігулка (як степер) з рамкою border-border, ковзний індикатор base-ui */}
       <Tabs defaultValue="personnel" className="flex min-h-0 flex-1 flex-col">
-        <TabsList variant="default" className="w-full shrink-0">
-          <TabsTrigger value="personnel" className="flex-1">
+        <TabsList
+          variant="line"
+          className="relative mt-2 grid h-9 w-full shrink-0 grid-cols-2 gap-1 rounded-lg bg-muted/40 p-1"
+        >
+          <TabsIndicator />
+          <TabsTrigger
+            value="personnel"
+            className="relative z-10 cursor-pointer after:hidden"
+          >
             <UserRound data-icon="inline-start" />
             Персонал
           </TabsTrigger>
-          <TabsTrigger value="cadets" className="flex-1">
+          <TabsTrigger
+            value="cadets"
+            className="relative z-10 cursor-pointer after:hidden"
+          >
             <GraduationCap data-icon="inline-start" />
             Курсанти
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="personnel" className="mt-0 flex min-h-0 flex-1 flex-col gap-1.5 p-2">
-          {stepper(instance, setInstance, "Поля вставляться для людини з цим номером")}
+        <TabsContent
+          value="personnel"
+          className="mt-0 flex min-h-0 flex-1 flex-col gap-1.5 p-2"
+        >
+          {stepper(
+            instance,
+            setInstance,
+            "Поля вставляться для людини з цим номером"
+          )}
 
           {visibleFields.map((fieldType) => {
             const Icon = FIELD_ICONS[fieldType]
@@ -398,30 +439,41 @@ export function PersonnelPanel() {
                 onClick={() => void insertField(fieldType)}
                 // Каретка редактора має лишитися на місці: не віддаємо фокус кнопці
                 onMouseDown={(event) => event.preventDefault()}
-                className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/50 disabled:opacity-50"
+                className="group flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card/50 px-2 py-1.5 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted disabled:opacity-50"
               >
-                <Icon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{`${label} (${instance})`}</span>
+                <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                <span className="truncate text-muted-foreground hover:bg-muted hover:text-foreground">{`${label} (${instance})`}</span>
               </button>
             )
           })}
           {visibleFields.length === 0 && (
-            <p className="py-4 text-center text-xs text-muted-foreground">Не знайдено.</p>
+            <p className="py-4 text-center text-xs text-muted-foreground">
+              Не знайдено.
+            </p>
           )}
 
           <p className="mt-1 px-1 text-xs text-muted-foreground">
-            Вставлені поля людини №{instance} прив&apos;язуються до працівника кнопкою на чіпі в
-            документі.
+            Вставлені поля людини №{instance} прив&apos;язуються до працівника
+            кнопкою на чіпі в документі.
           </p>
         </TabsContent>
 
-        <TabsContent value="cadets" className="mt-0 flex min-h-0 flex-col gap-1.5 p-2">
-          {stepper(cadetInstance, setCadetInstance, "Поля вставляться для курсанта з цим номером")}
+        <TabsContent
+          value="cadets"
+          className="mt-0 flex min-h-0 flex-col gap-1.5 p-2"
+        >
+          {stepper(
+            cadetInstance,
+            setCadetInstance,
+            "Поля вставляться для курсанта з цим номером"
+          )}
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {cadetGroups.map(({ group, fields: groupFields }) => (
               <div key={group}>
-                <h4 className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">{group}</h4>
+                <h4 className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                  {group}
+                </h4>
                 <div className="flex flex-col gap-1">
                   {groupFields.map((fieldId) => {
                     const Icon = CADET_FIELD_ICONS[fieldId] ?? Hash
@@ -433,10 +485,12 @@ export function PersonnelPanel() {
                         disabled={!editor}
                         onClick={() => void insertCadetField(fieldId)}
                         onMouseDown={(event) => event.preventDefault()}
-                        className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted/50 disabled:opacity-50"
+                        className="group flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card/50 px-2 py-1.5 text-left text-sm transition-colors hover:border-primary/50 hover:bg-muted disabled:opacity-50"
                       >
-                        <Icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{label}</span>
+                        <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                        <span className="truncate text-muted-foreground hover:bg-muted hover:text-foreground">
+                          {label}
+                        </span>
                       </button>
                     )
                   })}
@@ -444,12 +498,15 @@ export function PersonnelPanel() {
               </div>
             ))}
             {cadetGroups.length === 0 && (
-              <p className="py-4 text-center text-xs text-muted-foreground">Не знайдено.</p>
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                Не знайдено.
+              </p>
             )}
           </div>
 
           <p className="px-1 text-xs text-muted-foreground">
-            Прив&apos;язка курсанта з активного курсу — кнопкою на чіпі в документі.
+            Прив&apos;язка курсанта з активного курсу — кнопкою на чіпі в
+            документі.
           </p>
         </TabsContent>
       </Tabs>
