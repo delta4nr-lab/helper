@@ -1,8 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { CHROME_GROUPS, chromeProbeForSlot, composeFontConfiguration } from "@docx-editor.dev/core/editor"
-import { DocxEditor, LocaleProvider, useContentControl, useDocxEditor, useHyperlinkPopup } from "@docx-editor.dev/react"
+import {
+  CHROME_GROUPS,
+  chromeProbeForSlot,
+  composeFontConfiguration,
+} from "@docx-editor.dev/core/editor"
+import {
+  DocxEditor,
+  LocaleProvider,
+  useContentControl,
+  useDocxEditor,
+  useHyperlinkPopup,
+} from "@docx-editor.dev/react"
 import { CustomNodeChrome } from "@docx-editor.dev/pro/react"
 import { saveForExport } from "@docx-editor.dev/pro"
 import { Braces, Download, Loader2, Save } from "lucide-react"
@@ -22,7 +32,10 @@ import { FieldInsertDialog } from "@/components/documents/docx-editor/field-inse
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
 import { KeyboardLayoutShortcuts } from "@/components/documents/docx-editor/keyboard-layout-shortcuts"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
-import { TableRowDuplicate, RepeatRowAdmin } from "@/components/documents/docx-editor/table-row-duplicate"
+import {
+  TableRowDuplicate,
+  RepeatRowAdmin,
+} from "@/components/documents/docx-editor/table-row-duplicate"
 import {
   canReplayClipboardPaste,
   inlineClipboardCssFont,
@@ -41,7 +54,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
-const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 // Дефолтний шрифт/розмір документа (Times New Roman, 28 half-points = 14pt)
 // задає сам шаблон через w:docDefaults — рушій його читає (effectiveRunDefaults),
@@ -60,7 +74,9 @@ type WorkspaceProps = {
   /** "template": кнопка експорту зберігає шаблон через exportHandler (без завантаження) */
   mode?: "document" | "template"
   /** Серверний action збереження шаблона (FormData: file, title) */
-  exportHandler?: (formData: FormData) => Promise<{ ok: boolean; message: string }>
+  exportHandler?: (
+    formData: FormData
+  ) => Promise<{ ok: boolean; message: string }>
   /** Додаткові елементи у верхньому рядку редактора */
   titleActions?: React.ReactNode
   /** Панель праворуч від документа (усередині Root — контекст редактора доступний) */
@@ -96,8 +112,9 @@ function FormFillKeeper() {
 
 // Іконка «посилання» з публічного реєстру chrome (Material Symbols path-дані).
 const LINK_ICON_PATHS =
-  CHROME_GROUPS.find((group) => group.id === "text")?.controls.find((control) => control.id === "link")
-    ?.paths ?? null
+  CHROME_GROUPS.find((group) => group.id === "text")?.controls.find(
+    (control) => control.id === "link"
+  )?.paths ?? null
 
 // Дефолтний рядок «Вставити посилання» у контекстному меню мертвий: Slot виконує
 // команду з commandForSlot, а для text.link її в реєстрі немає (тулбар відкриває
@@ -110,7 +127,9 @@ function InsertLinkRow() {
   const canResult = editor && probe ? editor.can(probe) : null
   const disabledReason =
     canResult && !canResult.ok
-      ? (uk.disabledReason[canResult.reason as keyof typeof uk.disabledReason] ?? undefined)
+      ? (uk.disabledReason[
+          canResult.reason as keyof typeof uk.disabledReason
+        ] ?? undefined)
       : undefined
   return (
     <DocxEditor.ContextMenu.Item
@@ -120,7 +139,13 @@ function InsertLinkRow() {
       disabledReason={disabledReason}
       icon={
         LINK_ICON_PATHS ? (
-          <svg viewBox="0 -960 960 960" width={16} height={16} aria-hidden="true" focusable="false">
+          <svg
+            viewBox="0 -960 960 960"
+            width={16}
+            height={16}
+            aria-hidden="true"
+            focusable="false"
+          >
             {LINK_ICON_PATHS.map((d, i) => (
               <path key={i} d={d} fill="currentColor" />
             ))}
@@ -136,15 +161,18 @@ const InsertLinkMenuRow = Object.assign(InsertLinkRow, { docxRow: "text.link" })
 
 // Іконка «зображення» з публічного реєстру chrome (Material Symbols path-дані).
 const IMAGE_ICON_PATHS =
-  CHROME_GROUPS.find((group) => group.id === "image")?.controls.find((control) => control.id === "insert")
-    ?.paths ?? null
+  CHROME_GROUPS.find((group) => group.id === "image")?.controls.find(
+    (control) => control.id === "insert"
+  )?.paths ?? null
 
 // Закрити відкриту панель меню-бара: синтетичний Escape — панель бібліотеки
 // сама обробляє його (закриття + повернення фокуса на тригер).
 function closeOpenMenubarMenu() {
   document
     .querySelector(".docx-menubar__menu")
-    ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    ?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+    )
 }
 
 // Рядок «Зображення» в меню «Вставити»: пакетний відкриває локальний file picker
@@ -157,7 +185,13 @@ function InsertImageRow({ onOpen }: { onOpen: () => void }) {
       slot="image.insert"
       icon={
         IMAGE_ICON_PATHS ? (
-          <svg viewBox="0 -960 960 960" width={16} height={16} aria-hidden="true" focusable="false">
+          <svg
+            viewBox="0 -960 960 960"
+            width={16}
+            height={16}
+            aria-hidden="true"
+            focusable="false"
+          >
             {IMAGE_ICON_PATHS.map((d, i) => (
               <path key={i} d={d} fill="currentColor" />
             ))}
@@ -174,7 +208,9 @@ function InsertImageRow({ onOpen }: { onOpen: () => void }) {
   )
 }
 
-const InsertImageMenuRow = Object.assign(InsertImageRow, { docxSlot: "image.insert" })
+const InsertImageMenuRow = Object.assign(InsertImageRow, {
+  docxSlot: "image.insert",
+})
 
 // DnD і Ctrl+V зображень на документ: перехоплюємо capture-фазу до обробників
 // пакета — файл спочатку зберігається в бібліотеку користувача (та сама папка
@@ -194,7 +230,13 @@ function findImageFile(source: DataTransfer | null): File | null {
   return null
 }
 
-function ViewportImageDrop({ className, children }: { className?: string; children: React.ReactNode }) {
+function ViewportImageDrop({
+  className,
+  children,
+}: {
+  className?: string
+  children: React.ReactNode
+}) {
   const editor = useDocxEditor()
   // Захист від рекурсії: перевідправлений paste знову пройде через цей capture.
   const replayingPaste = React.useRef(false)
@@ -285,7 +327,9 @@ function ExportButton({
 }: {
   templateId: string
   title: string
-  saveHandler?: (formData: FormData) => Promise<{ ok: boolean; message: string }>
+  saveHandler?: (
+    formData: FormData
+  ) => Promise<{ ok: boolean; message: string }>
 }) {
   const editor = useDocxEditor()
   const [pending, setPending] = React.useState(false)
@@ -293,16 +337,25 @@ function ExportButton({
   async function handleExport() {
     if (!editor || pending) return
     setPending(true)
-    toast.loading(saveHandler ? "Збереження шаблону..." : "Формування DOCX...", { id: EXPORT_TOAST_ID })
+    toast.loading(
+      saveHandler ? "Збереження шаблону..." : "Формування DOCX...",
+      { id: EXPORT_TOAST_ID }
+    )
     try {
       if (saveHandler) {
         // Копія, яку зберігаємо: editor.save() лишає чіпи полів у шаблоні.
         const buffer = await editor.save()
         const form = new FormData()
-        form.set("file", new Blob([buffer], { type: DOCX_MIME }), "document.docx")
+        form.set(
+          "file",
+          new Blob([buffer], { type: DOCX_MIME }),
+          "document.docx"
+        )
         form.set("title", title)
         const result = await saveHandler(form)
-        toast[result.ok ? "success" : "error"](result.message, { id: EXPORT_TOAST_ID })
+        toast[result.ok ? "success" : "error"](result.message, {
+          id: EXPORT_TOAST_ID,
+        })
         return
       }
 
@@ -310,20 +363,37 @@ function ExportButton({
       // визначень (задокументований шлях для зовнішніх копій).
       const outgoing = await saveForExport(editor)
       if (!outgoing.ok) {
-        toast.error("Не вдалося сформувати документ для завантаження.", { id: EXPORT_TOAST_ID })
+        toast.error("Не вдалося сформувати документ для завантаження.", {
+          id: EXPORT_TOAST_ID,
+        })
         return
       }
       const form = new FormData()
-      form.set("file", new Blob([new Uint8Array(outgoing.bytes)], { type: DOCX_MIME }), "document.docx")
+      form.set(
+        "file",
+        new Blob([new Uint8Array(outgoing.bytes)], { type: DOCX_MIME }),
+        "document.docx"
+      )
       form.set("title", title)
       form.set("templateId", templateId)
-      const response = await fetch("/api/exports", { method: "POST", body: form })
-      const result = (await response.json()) as { message?: string; downloadUrl?: string }
+      const response = await fetch("/api/exports", {
+        method: "POST",
+        body: form,
+      })
+      const result = (await response.json()) as {
+        message?: string
+        downloadUrl?: string
+      }
       if (!response.ok) {
-        toast.error(result.message ?? "Не вдалося зберегти документ.", { id: EXPORT_TOAST_ID })
+        toast.error(result.message ?? "Не вдалося зберегти документ.", {
+          id: EXPORT_TOAST_ID,
+        })
         return
       }
-      toast.success("DOCX збережено у вашому профілі. Завантаження розпочато.", { id: EXPORT_TOAST_ID })
+      toast.success(
+        "DOCX збережено у вашому профілі. Завантаження розпочато.",
+        { id: EXPORT_TOAST_ID }
+      )
       if (result.downloadUrl) {
         const link = window.document.createElement("a")
         link.href = result.downloadUrl
@@ -331,7 +401,9 @@ function ExportButton({
         link.click()
       }
     } catch {
-      toast.error("Не вдалося підключитися до сервера. Спробуйте ще раз.", { id: EXPORT_TOAST_ID })
+      toast.error("Не вдалося підключитися до сервера. Спробуйте ще раз.", {
+        id: EXPORT_TOAST_ID,
+      })
     } finally {
       setPending(false)
     }
@@ -392,7 +464,9 @@ export default function DocumentWorkspace({
     fetch(docxUrl ?? `/api/templates/${templateId}/docx`)
       .then(async (response) => {
         if (!response.ok) {
-          const result = (await response.json().catch(() => null)) as { message?: string } | null
+          const result = (await response.json().catch(() => null)) as {
+            message?: string
+          } | null
           throw new Error(result?.message ?? "Не вдалося завантажити шаблон.")
         }
         return response.arrayBuffer()
@@ -401,7 +475,12 @@ export default function DocumentWorkspace({
         if (!cancelled) setBytes(new Uint8Array(buffer))
       })
       .catch((error: unknown) => {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : "Не вдалося завантажити шаблон.")
+        if (!cancelled)
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Не вдалося завантажити шаблон."
+          )
       })
     return () => {
       cancelled = true
@@ -434,132 +513,154 @@ export default function DocumentWorkspace({
     >
       {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>
-      <FieldSelect />
-      <KeyboardLayoutShortcuts />
-      <FormFillKeeper />
-      {/* Document Runtime v1: індексація/locator (editor — джерело істини,
+        <FieldSelect />
+        <KeyboardLayoutShortcuts />
+        <FormFillKeeper />
+        {/* Document Runtime v1: індексація/locator (editor — джерело істини,
           dev-only debug через window.__docxRuntimeDebug) */}
-      <DocumentRuntimeBridge />
-      <div className={cn("app-docx docx-editor flex min-h-0 flex-1 flex-col", resolvedTheme === "dark" && "dark")}>
-      <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
-        <Input
-          value={docTitle}
-          onChange={(event) => setDocTitle(event.target.value)}
-          className="mr-auto h-7 w-72 max-w-full border-transparent bg-transparent px-1.5 font-semibold hover:border-input focus-visible:border-input"
-          placeholder="Назва документа"
-          aria-label="Назва документа"
-        />
-        {titleActions}
-      </div>
+        <DocumentRuntimeBridge />
+        <div
+          className={cn(
+            "app-docx docx-editor flex min-h-0 flex-1 flex-col",
+            resolvedTheme === "dark" && "dark"
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
+            <Input
+              value={docTitle}
+              onChange={(event) => setDocTitle(event.target.value)}
+              className="mr-auto h-7 w-72 max-w-full border-transparent bg-transparent px-1.5 font-semibold hover:border-input focus-visible:border-input"
+              placeholder="Назва документа"
+              aria-label="Назва документа"
+            />
+            {titleActions}
+          </div>
 
-      {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
+          {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
           Comments/EditingMode приховано: коментарі й правки — Pro, режим змін не використовується.
           Review/Help приховано: рецензування не використовується, «Повідомити про проблему» — ні до чого.
           onPageSetup вмикає пакетний пункт «Параметри сторінки» у меню «Файл» */}
-      <DocxEditor.Menu onPageSetup={() => setPageSetupOpen(true)}>
-        <DocxEditor.Menu.Review hidden />
-        <DocxEditor.Menu.Help hidden />
-        {/* Зображення: діалог із табами «Завантаження» (файл на сервер) і
+          <DocxEditor.Menu onPageSetup={() => setPageSetupOpen(true)}>
+            <DocxEditor.Menu.Review hidden />
+            <DocxEditor.Menu.Help hidden />
+            {/* Зображення: діалог із табами «Завантаження» (файл на сервер) і
             «Бібліотека» (вибір раніше завантажених), замість пакетного file picker */}
-        <DocxEditor.Menu.Insert>
-          <InsertImageMenuRow onOpen={() => setImageDialogOpen(true)} />
-        </DocxEditor.Menu.Insert>
-      </DocxEditor.Menu>
+            <DocxEditor.Menu.Insert>
+              <InsertImageMenuRow onOpen={() => setImageDialogOpen(true)} />
+            </DocxEditor.Menu.Insert>
+          </DocxEditor.Menu>
 
-      <DocxEditor.Toolbar>
-        <DocxEditor.Toolbar.Comments hidden />
-        <DocxEditor.Toolbar.EditingMode hidden />
-        {/* Стилі абзацу не використовуються у військових документах */}
-        <DocxEditor.Toolbar.StylePicker hidden />
-        {/* Зображення вставляються з меню «Вставити»; властивості обраної
-            картинки (розмір/обтікання/позиція) — вбудований контрол */}
-        <DocxEditor.Toolbar.ImageInsert hidden />
-        <DocxEditor.Toolbar.ImageProperties />
-        <DocxEditor.Toolbar.ImageAltText hidden />
-        {/* Кастомні поля (custom nodes): вставка в режимі шаблона */}
-        {mode === "template" && (
-          <DocxEditor.Toolbar.Action
-            label="Додати кастомне поле"
-            icon={<Braces className="size-4" />}
-            onSelect={() => setFieldInsertOpen(true)}
-          />
-        )}
-        {/* Режим заповнення (двигунний): каретка живе лише в полях */}
-        <DocxEditor.Toolbar.ContentControlFormFill />
-        {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
+          <DocxEditor.Toolbar>
+            <DocxEditor.Toolbar.Comments hidden />
+            <DocxEditor.Toolbar.EditingMode hidden />
+            {/* Стилі абзацу не використовуються у військових документах */}
+            <DocxEditor.Toolbar.StylePicker hidden />
+            {/* Зображення вставляються з меню «Вставити»; властивості обраної
+                картинки (розмір/обтікання/позиція) — вбудований контрол. Кнопка
+                «Властивості зображення» (alt/межа) не працює в цій збірці — hidden */}
+            <DocxEditor.Toolbar.ImageInsert hidden />
+            <DocxEditor.Toolbar.ImageProperties hidden />
+            <DocxEditor.Toolbar.ImageAltText hidden />
+            {/* Кастомні поля (custom nodes): вставка в режимі шаблона */}
+            {mode === "template" && (
+              <DocxEditor.Toolbar.Action
+                label="Додати кастомне поле"
+                icon={<Braces className="size-4" />}
+                onSelect={() => setFieldInsertOpen(true)}
+              />
+            )}
+            {/* Режим заповнення (двигунний): каретка живе лише в полях */}
+            <DocxEditor.Toolbar.ContentControlFormFill />
+            {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
             Режим "template": exportHandler зберігає байти в Template.docxData */}
-        <ExportButton
-          templateId={templateId}
-          title={docTitle.trim() || title}
-          saveHandler={mode === "template" ? exportHandler : undefined}
-        />
-      </DocxEditor.Toolbar>
+            <ExportButton
+              templateId={templateId}
+              title={docTitle.trim() || title}
+              saveHandler={mode === "template" ? exportHandler : undefined}
+            />
+          </DocxEditor.Toolbar>
 
-      {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
+          {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
           батька, а відступи центрування бібліотека рахує від ширини viewport. */}
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <DocxEditor.HorizontalRuler />
-          <ViewportImageDrop className="relative min-h-0 flex-1">
-            <DocxEditor.Viewport className="h-full">
-              <DocxEditor.VerticalRuler />
-              <DocxEditor.HeaderFooterChrome />
-              <DocxEditor.NotesChrome />
-              <DocxEditor.Content />
-              {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <DocxEditor.HorizontalRuler />
+              <ViewportImageDrop className="relative min-h-0 flex-1">
+                <DocxEditor.Viewport className="h-full">
+                  <DocxEditor.VerticalRuler />
+                  <DocxEditor.HeaderFooterChrome />
+                  <DocxEditor.NotesChrome />
+                  <DocxEditor.Content />
+                  {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
                   порядок з прикладу документації). У template-режимі з
                   персональними нодами — хром із hover-кнопками прив'язки персоналу */}
-              {/* Хром чіпів + прив'язка: у документ-режимі (заповнення) —
+                  {/* Хром чіпів + прив'язка: у документ-режимі (заповнення) —
                   PersonnelChrome з hover-кнопкою вибору людини;
                   у template-режимі адмін лише вставляє маркери — прив'язки
                   там немає */}
-              {mode !== "template" && (personnel?.length || cadets?.length) ? (
-                <PersonnelChrome personnel={personnel ?? []} cadets={cadets ?? []} />
-              ) : (
-                // Приховуємо внутрішні metadata-ноди (RepeatRowMarker/
-                // RepeatRowRegistry) — малюємо чіпи лише для FieldNode.
-                <CustomNodeChrome nodes={[FieldNode]} />
-              )}
-              {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
+                  {mode !== "template" &&
+                  (personnel?.length || cadets?.length) ? (
+                    <PersonnelChrome
+                      personnel={personnel ?? []}
+                      cadets={cadets ?? []}
+                    />
+                  ) : (
+                    // Приховуємо внутрішні metadata-ноди (RepeatRowMarker/
+                    // RepeatRowRegistry) — малюємо чіпи лише для FieldNode.
+                    <CustomNodeChrome nodes={[FieldNode]} />
+                  )}
+                  {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
                   engine-кнопку рядка тільки коли рядок має персональні чіпи */}
-              {mode !== "template" ? (
-                <TableRowDuplicate
-                  sourceContext={{
-                    personnel: personnel ?? [],
-                    cadets: cadets ?? [],
-                    referrals: [],
-                  }}
-                />
-              ) : null}
-              {/* Admin: mini-кнопка «зробити рядок повторюваним» — лише
+                  {mode !== "template" ? (
+                    <TableRowDuplicate
+                      sourceContext={{
+                        personnel: personnel ?? [],
+                        cadets: cadets ?? [],
+                        referrals: [],
+                      }}
+                    />
+                  ) : null}
+                  {/* Admin: mini-кнопка «зробити рядок повторюваним» — лише
                   template-режим; позиціонується біля engine-кнопки «+» */}
-              {mode === "template" ? <RepeatRowAdmin /> : null}
-              <DocxEditor.HyperLink />
-              <DocxEditor.ContextMenu>
-                {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
+                  {mode === "template" ? <RepeatRowAdmin /> : null}
+                  <DocxEditor.HyperLink />
+                  <DocxEditor.ContextMenu>
+                    {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
                     «Вставити посилання»: дефолтний рядок мертвий — замінюємо робочим.
                     «Edit {label}»: канонічний edit-вхід кастомних ручних полів */}
-                <DocxEditor.ContextMenu.Slot slot="review.comments" hidden />
-                <InsertLinkMenuRow />
-                <FieldEditMenu />
-              </DocxEditor.ContextMenu>
-              {/* Boundary-хром контентів: потрібний для читання офсетів чіпа
+                    <DocxEditor.ContextMenu.Slot
+                      slot="review.comments"
+                      hidden
+                    />
+                    <InsertLinkMenuRow />
+                    <FieldEditMenu />
+                  </DocxEditor.ContextMenu>
+                  {/* Boundary-хром контентів: потрібний для читання офсетів чіпа
                   (каретка після вставки) і показує межі активного контрола */}
-              <DocxEditor.ContentControl />
-            </DocxEditor.Viewport>
-            <DocxEditor.Loading overlay />
-          </ViewportImageDrop>
+                  <DocxEditor.ContentControl />
+                </DocxEditor.Viewport>
+                <DocxEditor.Loading overlay />
+              </ViewportImageDrop>
+            </div>
+            {sidePanel}
+            {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
+            {/* Панель вставки полів (template-режим): степери + кнопки полів */}
+            {mode === "template" ? <PersonnelPanel /> : null}
+          </div>
         </div>
-        {sidePanel}
-        {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
-        {/* Панель вставки полів (template-режим): степери + кнопки полів */}
-        {mode === "template" ? <PersonnelPanel /> : null}
-      </div>
-      </div>
 
-      <DocxEditor.PageSetupDialog open={pageSetupOpen} onClose={() => setPageSetupOpen(false)} />
-      <ImageInsertDialog open={imageDialogOpen} onOpenChange={setImageDialogOpen} />
-      <FieldInsertDialog open={fieldInsertOpen} onOpenChange={setFieldInsertOpen} />
+        <DocxEditor.PageSetupDialog
+          open={pageSetupOpen}
+          onClose={() => setPageSetupOpen(false)}
+        />
+        <ImageInsertDialog
+          open={imageDialogOpen}
+          onOpenChange={setImageDialogOpen}
+        />
+        <FieldInsertDialog
+          open={fieldInsertOpen}
+          onOpenChange={setFieldInsertOpen}
+        />
       </LocaleProvider>
     </DocxEditor.Root>
   )

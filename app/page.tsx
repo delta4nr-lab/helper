@@ -21,7 +21,7 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -33,6 +33,15 @@ import {
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { SiteHeader } from "@/components/site-header"
+import { PreviewDoc } from "@/components/site/preview-doc"
+import { TemplateCard } from "@/components/templates/template-card"
+import { getPreviewDoc, type TemplatePreviewDoc } from "@/lib/templates/preview"
+import {
+  getCategory,
+  templates as fallbackTemplates,
+  type TemplateDefinition,
+} from "@/lib/documents/catalog"
+import { orm } from "@/lib/db"
 import { cn } from "@/lib/utils"
 
 // ——————————————————————————————————————————————
@@ -71,15 +80,6 @@ const features = [
   },
 ]
 
-const templates = [
-  {
-    title: "Рапорт на відпустку",
-    fields: 6,
-    popular: true,
-    desc: "Щорічна, соціальна, за сімейними обставинами — єдиний рапорт у фундаменті",
-  },
-]
-
 const personnelPreview = [
   {
     name: "Петренко І. В.",
@@ -111,7 +111,71 @@ const personnelPreview = [
   },
 ]
 
-export default function Page() {
+// Випадковий шаблон обирається на кожен запит — сторінку не можна
+// пререндерити статично (інакше вибір застигне на етапі білда).
+export const dynamic = "force-dynamic"
+
+export default async function Page() {
+  // Прев'ю реального DOCX-шаблону (один випадковий активний, на кожне
+  // завантаження сторінки) + живі лічильники для мікро-метрик.
+  // Будь-яка помилка (БД недоступна) → фолбеки: null / 0.
+  let previewDoc: TemplatePreviewDoc | null = null
+  let templatesCount = 0
+  let exportsCount = 0
+  let dbTemplates: TemplateDefinition[] = []
+  const categoryTitleBySlug = new Map<string, string>()
+  try {
+    previewDoc = await getPreviewDoc()
+    const [
+      templatesAggregate,
+      exportsAggregate,
+      latestTemplates,
+      dbCategories,
+    ] = await Promise.all([
+      orm.Template.where({ isActive: true }).aggregate((agg) => ({
+        count: agg.count(),
+      })),
+      orm.ExportedFile.aggregate((agg) => ({ count: agg.count() })),
+      // Останні додані шаблони (без docxData — легкий запит) для каталогу.
+      orm.Template.select(
+        "id",
+        "categorySlug",
+        "title",
+        "description",
+        "fields",
+        "popular",
+        "paper",
+        "tags",
+        "updatedAt"
+      )
+        .where({ isActive: true })
+        .orderBy((t) => t.updatedAt.desc())
+        .limit(6)
+        .all(),
+      // Мапа slug → title для бейджа категорії (на майбутні категорії).
+      orm.Category.where({ isActive: true }).select("slug", "title").all(),
+    ])
+    templatesCount = templatesAggregate.count
+    exportsCount = exportsAggregate.count
+    for (const c of dbCategories) categoryTitleBySlug.set(c.slug, c.title)
+    dbTemplates = latestTemplates.map((t) => ({
+      id: t.id,
+      categorySlug: t.categorySlug,
+      title: t.title,
+      description: t.description,
+      fields: t.fields,
+      popular: t.popular,
+      paper: t.paper === "А4 альбом" ? "А4 альбом" : "А4",
+      tags: [...t.tags],
+      updatedAt: String(t.updatedAt),
+    }))
+  } catch (error) {
+    console.warn("[home] не вдалося отримати дані для головної", error)
+  }
+  // Фолбек: статичний каталог, якщо в БД немає активних шаблонів.
+  const catalogItems: TemplateDefinition[] =
+    dbTemplates.length > 0 ? dbTemplates : fallbackTemplates
+
   return (
     <div className="flex min-h-svh flex-col bg-background">
       <SiteHeader />
@@ -228,7 +292,9 @@ export default function Page() {
                 <div className="text-[11px] font-medium tracking-widest text-muted-foreground">
                   ШАБЛОНІВ
                 </div>
-                <div className="mt-1 text-xl leading-none font-semibold">1</div>
+                <div className="mt-1 text-xl leading-none font-semibold">
+                  {templatesCount}
+                </div>
                 <div className="text-xs text-muted-foreground">
                   з валідацією Zod
                 </div>
@@ -238,7 +304,8 @@ export default function Page() {
                   ЕКСПОРТ
                 </div>
                 <div className="mt-1 flex items-center gap-1 text-xl leading-none font-semibold">
-                  <FileSpreadsheet className="size-4 text-primary" /> 3
+                  <FileSpreadsheet className="size-4 text-primary" />{" "}
+                  {exportsCount}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Excel · PDF · Word
@@ -268,7 +335,7 @@ export default function Page() {
           <div className="relative lg:pl-4">
             <div className="absolute -top-6 -right-6 hidden size-28 rounded-full bg-primary/10 blur-3xl lg:block" />
             <Card className="overflow-hidden rounded-2xl border shadow-lg">
-              <CardHeader className="flex-row items-center justify-between gap-2 border-b bg-muted/40 py-3">
+              <CardHeader className="flex-row items-center justify-between border-b">
                 <div className="flex items-center gap-2">
                   <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
                     <FileCheck className="size-4" />
@@ -282,68 +349,64 @@ export default function Page() {
                     </CardDescription>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge
-                    variant="secondary"
-                    className="rounded-full text-[11px]"
-                  >
-                    <Eye className="size-3" />
-                    Live
-                  </Badge>
-                  <Button size="icon-xs" variant="outline" aria-label="Експорт">
-                    <Download className="size-3.5" />
-                  </Button>
-                </div>
               </CardHeader>
 
               <CardContent className="bg-white p-0 dark:bg-zinc-900">
-                {/* імітація аркуша А4 */}
-                <div className="mx-auto max-w-130 bg-white p-6 text-zinc-900 shadow-inner dark:bg-zinc-900 dark:text-zinc-100">
-                  <div className="space-y-4 text-[12px] leading-relaxed">
-                    <div className="text-right text-[11px] leading-none text-zinc-500">
-                      Командиру військової частини А1234
-                      <br />
-                      полковнику ІВАНЕНКУ І.І.
-                    </div>
-                    <div className="text-center text-[11px] tracking-widest text-zinc-500">
-                      РАПОРТ
-                    </div>
-                    <p>
-                      Прошу Вашого клопотання перед вищим командуванням щодо
-                      надання мені щорічної основної відпустки з{" "}
-                      <span className="rounded bg-amber-100 px-1">
-                        12.05.2026
-                      </span>{" "}
-                      тривалістю{" "}
-                      <span className="rounded bg-amber-100 px-1">15 діб</span>{" "}
-                      з виїздом до м. Львів.
-                    </p>
-                    <div className="grid grid-cols-2 gap-3 rounded-lg border border-dashed p-3 text-[11px]">
-                      <div>
-                        <div className="text-zinc-500">Військовослужбовець</div>
-                        <div className="font-medium">
-                          Петренко І.В., капітан
-                        </div>
-                        <div className="text-zinc-500">командир роти</div>
+                {previewDoc ? (
+                  <PreviewDoc item={previewDoc} />
+                ) : (
+                  /* імітація аркуша А4 (фолбек, якщо немає активних DOCX) */
+                  <div className="mx-auto max-w-130 bg-white text-zinc-900 shadow-inner dark:bg-zinc-900 dark:text-zinc-100">
+                    <div className="text-[12px] leading-relaxed">
+                      <div className="text-right text-[11px] leading-none text-zinc-500">
+                        Командиру військової частини А1234
+                        <br />
+                        полковнику ІВАНЕНКУ І.І.
                       </div>
-                      <div className="text-right">
-                        <div className="text-zinc-500">Дата</div>
-                        <div className="font-medium">28.08.2026</div>
-                        <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">
-                          <BadgeCheck className="size-3" /> валідно
+                      <div className="text-center text-[11px] tracking-widest text-zinc-500">
+                        РАПОРТ
+                      </div>
+                      <p>
+                        Прошу Вашого клопотання перед вищим командуванням щодо
+                        надання мені щорічної основної відпустки з{" "}
+                        <span className="rounded bg-amber-100 px-1">
+                          12.05.2026
+                        </span>{" "}
+                        тривалістю{" "}
+                        <span className="rounded bg-amber-100 px-1">
+                          15 діб
+                        </span>{" "}
+                        з виїздом до м. Львів.
+                      </p>
+                      <div className="grid grid-cols-2 gap-3 rounded-lg border border-dashed p-3 text-[11px]">
+                        <div>
+                          <div className="text-zinc-500">
+                            Військовослужбовець
+                          </div>
+                          <div className="font-medium">
+                            Петренко І.В., капітан
+                          </div>
+                          <div className="text-zinc-500">командир роти</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-zinc-500">Дата</div>
+                          <div className="font-medium">28.08.2026</div>
+                          <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                            <BadgeCheck className="size-3" /> валідно
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center justify-between border-t pt-3 text-[11px]">
-                      <span className="text-zinc-500">
-                        Підпис _________________
-                      </span>
-                      <span className="rounded border bg-zinc-50 px-2 py-1 dark:bg-zinc-800">
-                        Експорт: XLSX · PDF · DOCX
-                      </span>
+                      <div className="flex items-center justify-between border-t pt-3 text-[11px]">
+                        <span className="text-zinc-500">
+                          Підпис _________________
+                        </span>
+                        <span className="rounded border bg-zinc-50 px-2 py-1 dark:bg-zinc-800">
+                          Експорт: XLSX · PDF · DOCX
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </CardContent>
 
               <CardFooter className="justify-between gap-2 bg-muted/30 text-xs">
@@ -355,8 +418,8 @@ export default function Page() {
               </CardFooter>
             </Card>
 
-            {/* плаваючі міні-картки */}
-            <div className="pointer-events-none absolute -bottom-3 -left-3 hidden gap-2 lg:flex">
+            {/* міні-картки під прев'ю */}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-xl border bg-card px-3 py-2 shadow-md">
                 <div className="flex items-center gap-2 text-xs font-medium">
                   <Table2 className="size-3.5 text-primary" /> Таблиці збережено
@@ -380,56 +443,60 @@ export default function Page() {
       </section>
 
       {/* FEATURES */}
-      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-12">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <Badge variant="outline" className="rounded-full">
-              Можливості
-            </Badge>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">
-              Все для швидкого діловодства
-            </h2>
-            <p className="mt-1 max-w-[60ch] text-sm text-muted-foreground">
-              Заповніть просту форму — отримайте готовий документ для друку. Без
-              ручного набору в Word, без помилок у даних та без зайвої паперової
-              тяганини.
-            </p>
+      <section className="border-y bg-muted/30">
+        <div className="mx-auto w-full max-w-7xl px-4 py-2 sm:px-6 lg:px-8 lg:py-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <Badge variant="outline" className="rounded-full">
+                Можливості
+              </Badge>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight">
+                Все для швидкого діловодства
+              </h2>
+              <p className="mt-1 max-w-[60ch] text-sm text-muted-foreground">
+                Заповніть просту форму — отримайте готовий документ для друку.
+                Без ручного набору в Word, без помилок у даних та без зайвої
+                паперової тяганини.
+              </p>
+            </div>
+            <Link
+              href="#templates"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Переглянути шаблони
+              <ArrowRight className="size-4" />
+            </Link>
           </div>
-          <Link
-            href="#templates"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            Переглянути шаблони
-            <ArrowRight className="size-4" />
-          </Link>
-        </div>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((f) => (
-            <Card key={f.title} className="gap-3 py-4">
-              <CardHeader className="gap-3">
-                <span className="flex size-9 items-center justify-center rounded-xl border bg-muted">
-                  <f.icon className="size-4" />
-                </span>
-                <CardTitle className="text-[15px]">{f.title}</CardTitle>
-                <CardDescription className="text-sm leading-relaxed">
-                  {f.desc}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          ))}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <Card key={f.title} className="gap-3 py-4">
+                <CardHeader className="gap-3">
+                  <span className="flex size-9 items-center justify-center rounded-xl border bg-muted">
+                    <f.icon className="size-4" />
+                  </span>
+                  <CardTitle className="text-[15px]">{f.title}</CardTitle>
+                  <CardDescription className="text-sm leading-relaxed">
+                    {f.desc}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* TEMPLATES — хаб, зараз 1 категорія рапорти */}
-      <section id="templates" className="border-y bg-muted/30">
+      {/* TEMPLATES — каталог, останні додані шаблони з БД */}
+      <section id="templates" className="border-y">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-12">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-semibold tracking-tight">
               Каталог шаблонів
             </h2>
             <div className="flex items-center gap-2">
-              <Badge className="rounded-full">1 базовий</Badge>
+              <Badge className="rounded-full">
+                {templatesCount || catalogItems.length} шаблонів
+              </Badge>
               <span className="text-xs text-muted-foreground">
                 + категорії додасть адмін
               </span>
@@ -437,210 +504,18 @@ export default function Page() {
           </div>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {templates.map((t) => (
-              <Card
-                key={t.title}
-                className="group relative overflow-hidden py-0"
-              >
-                <div className="absolute inset-x-0 top-0 h-0.5 bg-primary opacity-0 transition-opacity group-hover:opacity-100" />
-                <CardHeader className="pt-4 pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <FileText className="size-4" />
-                      </span>
-                      <div>
-                        <CardTitle className="text-sm">{t.title}</CardTitle>
-                        <div className="text-xs text-muted-foreground">
-                          {t.fields} полів
-                        </div>
-                      </div>
-                    </div>
-                    {t.popular && (
-                      <Badge
-                        variant="secondary"
-                        className="rounded-full text-[11px]"
-                      >
-                        Популярний
-                      </Badge>
-                    )}
-                  </div>
-                  <CardDescription className="pt-1 text-sm leading-relaxed">
-                    {t.desc}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex items-center gap-2 pb-3">
-                  <Badge variant="outline" className="text-[11px]">
-                    Zod · валідація
-                  </Badge>
-                  <Badge variant="outline" className="text-[11px]">
-                    А4
-                  </Badge>
-                </CardContent>
-                <CardFooter className="gap-2">
-                  <Link
-                    href="#hero"
-                    className={cn(buttonVariants({ size: "sm" }), "flex-1")}
-                  >
-                    Створити
-                    <ArrowRight className="size-3.5" />
-                  </Link>
-                  <Button size="sm" variant="outline" className="flex-1">
-                    <Eye className="size-3.5" />
-                    Перегляд
-                  </Button>
-                </CardFooter>
-              </Card>
+            {catalogItems.map((item) => (
+              <TemplateCard
+                key={item.id}
+                template={item}
+                categoryTitle={
+                  categoryTitleBySlug.get(item.categorySlug) ??
+                  getCategory(item.categorySlug)?.title ??
+                  null
+                }
+              />
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* PERSONNEL + EXPORT */}
-      <section
-        id="personnel"
-        className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:grid-cols-[1.2fr_0.8fr] lg:px-8 lg:py-12"
-      >
-        <Card className="overflow-hidden">
-          <CardHeader className="flex-row items-center justify-between gap-4 border-b bg-card py-4">
-            <div className="flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Users className="size-4" />
-              </span>
-              <div>
-                <CardTitle className="text-sm">Особовий склад</CardTitle>
-                <CardDescription className="text-xs">
-                  Пошук, фільтри, пагінація — серверні
-                </CardDescription>
-              </div>
-            </div>
-            <Link
-              href="#personnel"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              Відкрити
-              <ChevronRight className="size-4" />
-            </Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Пошук за ПІБ, званням, посадою..."
-                  className="h-8 pl-7 text-sm"
-                />
-              </div>
-              <Badge variant="outline" className="hidden sm:inline-flex">
-                4 показано
-              </Badge>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">ПІБ</th>
-                    <th className="px-3 py-2 text-left font-medium">Звання</th>
-                    <th className="px-3 py-2 text-left font-medium">Посада</th>
-                    <th className="px-3 py-2 text-left font-medium">Статус</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {personnelPreview.map((p) => (
-                    <tr key={p.name} className="hover:bg-muted/30">
-                      <td className="px-3 py-2.5">
-                        <div className="leading-none font-medium">{p.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {p.unit}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {p.rank}
-                      </td>
-                      <td className="px-3 py-2.5">{p.pos}</td>
-                      <td className="px-3 py-2.5">
-                        <Badge
-                          variant={
-                            p.status === "в строю" ? "default" : "secondary"
-                          }
-                          className="rounded-full text-[11px]"
-                        >
-                          {p.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-          <CardFooter className="justify-between text-xs text-muted-foreground">
-            <span>
-              Окремі поля: прізвище / імʼя / по батькові — форматування в одному
-              місці (lib/names).
-            </span>
-            <span className="hidden sm:inline">
-              Дати — як Date, формат лише для відображення.
-            </span>
-          </CardFooter>
-        </Card>
-
-        <div id="export" className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Download className="size-4 text-primary" />
-                Експорт — незалежно від UI
-              </CardTitle>
-              <CardDescription className="text-sm leading-relaxed">
-                Document Data → Exporter → File. Зберігає структуру,
-                форматування, таблиці та підписи.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border bg-emerald-50 p-3 text-center dark:bg-emerald-950/30">
-                <FileSpreadsheet className="mx-auto size-6 text-emerald-600" />
-                <div className="mt-1 text-xs font-semibold">Excel</div>
-                <div className="text-[11px] text-muted-foreground">exceljs</div>
-              </div>
-              <div className="rounded-xl border bg-red-50 p-3 text-center dark:bg-red-950/30">
-                <FileText className="mx-auto size-6 text-red-600" />
-                <div className="mt-1 text-xs font-semibold">PDF</div>
-                <div className="text-[11px] text-muted-foreground">
-                  server-side
-                </div>
-              </div>
-              <div className="rounded-xl border bg-blue-50 p-3 text-center dark:bg-blue-950/30">
-                <FileText className="mx-auto size-6 text-blue-600" />
-                <div className="mt-1 text-xs font-semibold">Word</div>
-                <div className="text-[11px] text-muted-foreground">docx</div>
-              </div>
-            </CardContent>
-            <CardFooter className="flex-col items-start gap-2 text-xs text-muted-foreground">
-              <Separator />
-              <span>
-                Імена файлів зрозумілі: Рапорт_Петренко_2026-05-12.docx
-              </span>
-            </CardFooter>
-          </Card>
-
-          <Card className="border-dashed">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm">
-                Для слабких ПК та серверів
-              </CardTitle>
-              <CardDescription className="text-sm">
-                Server Components, серверна фільтрація та пагінація, кеш
-                довідників, lazy для важких бібліотек.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              <Badge variant="secondary">Server Components</Badge>
-              <Badge variant="secondary">Prisma + PostgreSQL</Badge>
-              <Badge variant="secondary">Zod</Badge>
-              <Badge variant="secondary">React Hook Form</Badge>
-            </CardContent>
-          </Card>
         </div>
       </section>
 

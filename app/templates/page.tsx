@@ -29,9 +29,19 @@ export default async function TemplatesPage() {
   try {
     const dbCategories = await orm.Category.where({ isActive: true })
       .orderBy((c) => c.sortOrder.asc())
-      .include("templates", (t) => t.where({ isActive: true }).count())
       .all()
-    const { count: dbTemplatesCount } = await orm.Template.where({ isActive: true }).aggregate((agg) => ({ count: agg.count() }))
+    // Легкий список: тільки slug активних шаблонів — за ним рахуємо
+    // лічильник категорії (categoryId може бути null — не джерело істини).
+    const tplRows = await orm.Template.select("categorySlug")
+      .where({ isActive: true })
+      .all()
+    const countBySlug = new Map<string, number>()
+    for (const row of tplRows) {
+      countBySlug.set(
+        row.categorySlug,
+        (countBySlug.get(row.categorySlug) ?? 0) + 1
+      )
+    }
     if (dbCategories.length > 0) {
       categories = dbCategories.map((c) => ({
         slug: c.slug,
@@ -40,9 +50,9 @@ export default async function TemplatesPage() {
         longDescription: c.longDescription ?? c.description,
         countLabel: c.countLabel,
         icon: c.icon as "raporty",
-        count: c.templates,
+        count: countBySlug.get(c.slug) ?? 0,
       }))
-      total = dbTemplatesCount
+      total = tplRows.length
     } else {
       throw new Error("no categories in DB")
     }
@@ -93,7 +103,9 @@ export default async function TemplatesPage() {
                       {categories.length === 1 ? "категорія" : "категорій"}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {categories.length === 1 ? "Тільки рапорти" : "Від рапортів до листування"}
+                      {categories.length === 1
+                        ? "Тільки рапорти"
+                        : "Від рапортів до листування"}
                     </div>
                   </div>
                   <Separator orientation="vertical" className="h-8" />
