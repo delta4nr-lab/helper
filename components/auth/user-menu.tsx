@@ -1,12 +1,14 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { LayoutDashboard, LogOut, User2 } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { useAuthSession } from "@/components/auth/auth-provider"
+import { getInitials } from "@/lib/names"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,17 +19,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-function avatarFallback(username: string): string {
-  return username.trim().charAt(0).toUpperCase() || "?"
-}
-
 export function UserMenu() {
+  const router = useRouter()
   const { user } = useAuthSession()
   if (!user) return null
 
   const username = user.username ?? user.name ?? "?"
   const role = user.role
-  const initial = avatarFallback(username)
+  const initial = getInitials(username)
 
   return (
     <DropdownMenu>
@@ -36,37 +35,45 @@ export function UserMenu() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 cursor-pointer gap-2 rounded-full pl-1 pr-2.5"
+            className="h-8 cursor-pointer gap-2 rounded-full pr-2.5 pl-1"
           />
         }
       >
         <Avatar size="sm" className="size-7 border">
-          <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+          <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">
             {initial}
           </AvatarFallback>
         </Avatar>
-        <span className="hidden max-w-[120px] truncate text-sm font-medium sm:inline-flex">{username}</span>
+        <span className="hidden max-w-[120px] truncate text-sm font-medium sm:inline-flex">
+          {username}
+        </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8} className="min-w-48">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="flex flex-col gap-0.5">
             <span className="flex items-center gap-2">
               <Avatar size="sm" className="size-6">
-                <AvatarFallback className="bg-muted text-xs font-semibold">{initial}</AvatarFallback>
+                <AvatarFallback className="bg-muted text-xs font-semibold">
+                  {initial}
+                </AvatarFallback>
               </Avatar>
               <span className="truncate font-medium">{username}</span>
             </span>
-            {role && <span className="text-xs font-normal text-muted-foreground">{role === "ADMIN" ? "Адміністратор" : "Користувач"}</span>}
+            {role && (
+              <span className="text-xs font-normal text-muted-foreground">
+                {role === "ADMIN" ? "Адміністратор" : "Користувач"}
+              </span>
+            )}
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => (window.location.href = "/profile")}>
+          <DropdownMenuItem onClick={() => router.push("/profile")}>
             <User2 />
             Профіль
           </DropdownMenuItem>
           {role === "ADMIN" && (
-            <DropdownMenuItem onClick={() => (window.location.href = "/admin")}>
+            <DropdownMenuItem onClick={() => router.push("/admin")}>
               <LayoutDashboard />
               Адмін панель
             </DropdownMenuItem>

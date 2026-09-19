@@ -1,14 +1,11 @@
 import { TemplateManager } from "@/components/admin/template-manager"
-import { AdminSidebar } from "@/components/admin/admin-sidebar"
-import { SiteFooter } from "@/components/site-footer"
-import { SiteHeader } from "@/components/site-header"
 import { orm } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 
 export default async function AdminTemplatesPage() {
-  const templates = await orm.Template
-    .select(
+  const [templates, categories] = await Promise.all([
+    orm.Template.select(
       "id",
       "title",
       "categorySlug",
@@ -19,12 +16,12 @@ export default async function AdminTemplatesPage() {
       "popular",
       "updatedAt"
     )
-    .orderBy((template) => template.updatedAt.desc())
-    .all()
-
-  const categories = await orm.Category.select("slug", "title")
-    .orderBy((category) => category.title.asc())
-    .all()
+      .orderBy((template) => template.updatedAt.desc())
+      .all(),
+    orm.Category.select("slug", "title")
+      .orderBy((category) => category.title.asc())
+      .all(),
+  ])
 
   const rows = templates.map((template) => ({
     id: template.id,
@@ -39,19 +36,15 @@ export default async function AdminTemplatesPage() {
   }))
 
   return (
-    <div className="min-h-svh bg-muted/20">
-      <SiteHeader />
-      <div className="mx-auto flex max-w-[1440px] items-start">
-        <AdminSidebar />
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Шаблони документів</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Створення шаблонів у редакторі, керування метаданими, полями заповнення та видимістю на сайті.
-          </p>
-          <TemplateManager templates={rows} categories={categories} />
-        </main>
-      </div>
-      <SiteFooter />
-    </div>
+    <>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        Шаблони документів
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Створення шаблонів у редакторі, керування метаданими, полями заповнення
+        та видимістю на сайті.
+      </p>
+      <TemplateManager templates={rows} categories={categories} />
+    </>
   )
 }

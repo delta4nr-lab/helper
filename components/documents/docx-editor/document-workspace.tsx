@@ -77,10 +77,6 @@ type WorkspaceProps = {
   exportHandler?: (
     formData: FormData
   ) => Promise<{ ok: boolean; message: string }>
-  /** Додаткові елементи у верхньому рядку редактора */
-  titleActions?: React.ReactNode
-  /** Панель праворуч від документа (усередині Root — контекст редактора доступний) */
-  sidePanel?: React.ReactNode
   /** Довідник персоналу для персональних полів (template-режим) */
   personnel?: PersonnelEntry[]
   /** Курсанти з активного курсу (template-режим, cadet.{i}.{f}-ноди) */
@@ -440,8 +436,6 @@ export default function DocumentWorkspace({
   docxUrl,
   mode = "document",
   exportHandler,
-  titleActions,
-  sidePanel,
   personnel,
   cadets,
 }: WorkspaceProps) {
@@ -533,7 +527,6 @@ export default function DocumentWorkspace({
               placeholder="Назва документа"
               aria-label="Назва документа"
             />
-            {titleActions}
           </div>
 
           {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
@@ -642,7 +635,6 @@ export default function DocumentWorkspace({
                 <DocxEditor.Loading overlay />
               </ViewportImageDrop>
             </div>
-            {sidePanel}
             {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
             {/* Панель вставки полів (template-режим): степери + кнопки полів */}
             {mode === "template" ? <PersonnelPanel /> : null}

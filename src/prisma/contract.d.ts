@@ -33,7 +33,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'93d286b16e7e80dbab2c067507157776e1765b18d3e6b31b56008e1559359a84'>;
+  StorageHashBase<'9f6f849b656bacbcfbf7f4ad11645e2aa356e8ea1c3bdbe0e2e3faa720328702'>;
 export type ExecutionHash =
   ExecutionHashBase<'68231aa6569579d8b30dfe02f4219c97263852d4597a6f1f0a026b7e05aa6c7c'>;
 export type ProfileHash =
@@ -1198,6 +1198,11 @@ type ContractBase = Omit<
                   readonly unique: false;
                 },
                 {
+                  readonly name: 'CourseRecord_courseId_lastName_firstName_idx';
+                  readonly columns: readonly ['courseId', 'lastName', 'firstName'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'CourseRecord_lastName_firstName_idx';
                   readonly columns: readonly ['lastName', 'firstName'];
                   readonly unique: false;
@@ -1708,6 +1713,16 @@ type ContractBase = Omit<
                 {
                   readonly name: 'Template_categoryId_isActive_idx';
                   readonly columns: readonly ['categoryId', 'isActive'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'Template_categorySlug_isActive_idx';
+                  readonly columns: readonly ['categorySlug', 'isActive'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'Template_isActive_updatedAt_idx';
+                  readonly columns: readonly ['isActive', 'updatedAt'];
                   readonly unique: false;
                 },
                 {

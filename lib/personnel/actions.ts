@@ -5,7 +5,7 @@ import path from "node:path"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { auth } from "@/auth"
+import { getAdminId } from "@/lib/auth"
 import { orm, nowTimestamp } from "@/lib/db"
 
 const personnelSchema = z.object({
@@ -15,23 +15,32 @@ const personnelSchema = z.object({
   rank: z.string().trim().min(1, "Вкажіть звання"),
   position: z.string().trim().min(1, "Вкажіть посаду"),
   status: z.string().trim().default("в строю"),
-  signaturePath: z.string().trim().optional(),
+  signaturePath: z
+    .string()
+    .trim()
+    .refine(
+      (value) => value === "" || /^\/signature\/[A-Za-z0-9._-]+$/.test(value),
+      "Некоректний шлях підпису"
+    )
+    .optional(),
 })
 
-async function requireAdmin() {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  return session?.user?.id && session.user.role === "ADMIN" ? session.user.id : null
-}
-
-// Видаляє файл підпису з public/signature (за шляхом /signature/...)
+// Видаляє файл підпису з public/signature (за шляхом /signature/...).
+// Дозволено лише файли безпосередньо в public/signature — без виходу з теки.
 async function removeSignatureFile(signaturePath?: string | null) {
   if (!signaturePath || !signaturePath.startsWith("/signature/")) return
-  const fileName = signaturePath.replace("/signature/", "")
-  await unlink(path.join(process.cwd(), "public", "signature", fileName)).catch(() => {})
+  const fileName = path.basename(signaturePath)
+  if (!fileName || fileName === "." || fileName === "..") return
+  const dir = path.join(process.cwd(), "public", "signature")
+  const target = path.resolve(dir, fileName)
+  if (!target.startsWith(dir + path.sep)) return
+  await unlink(target).catch(() => {})
 }
 
-export async function createPersonnelAction(input: unknown): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+export async function createPersonnelAction(
+  input: unknown
+): Promise<{ ok: boolean; message: string }> {
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав" }
   try {
     const data = personnelSchema.parse(input)
@@ -48,12 +57,21 @@ export async function createPersonnelAction(input: unknown): Promise<{ ok: boole
     revalidatePath("/admin/personnel")
     return { ok: true, message: "Людину додано до штату" }
   } catch (error) {
-    return { ok: false, message: error instanceof z.ZodError ? "Перевірте дані форми" : "Не вдалося зберегти. Спробуйте ще раз." }
+    return {
+      ok: false,
+      message:
+        error instanceof z.ZodError
+          ? "Перевірте дані форми"
+          : "Не вдалося зберегти. Спробуйте ще раз.",
+    }
   }
 }
 
-export async function updatePersonnelAction(id: string, input: unknown): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+export async function updatePersonnelAction(
+  id: string,
+  input: unknown
+): Promise<{ ok: boolean; message: string }> {
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав" }
   try {
     const data = personnelSchema.parse(input)
@@ -69,18 +87,29 @@ export async function updatePersonnelAction(id: string, input: unknown): Promise
       updatedAt: nowTimestamp(),
     })
     // Старий підпис замінено новим або видалено — прибираємо файл
-    if (existing?.signaturePath && existing.signaturePath !== data.signaturePath) {
+    if (
+      existing?.signaturePath &&
+      existing.signaturePath !== data.signaturePath
+    ) {
       await removeSignatureFile(existing.signaturePath)
     }
     revalidatePath("/admin/personnel")
     return { ok: true, message: "Дані оновлено" }
   } catch (error) {
-    return { ok: false, message: error instanceof z.ZodError ? "Перевірте дані форми" : "Не вдалося зберегти. Спробуйте ще раз." }
+    return {
+      ok: false,
+      message:
+        error instanceof z.ZodError
+          ? "Перевірте дані форми"
+          : "Не вдалося зберегти. Спробуйте ще раз.",
+    }
   }
 }
 
-export async function deletePersonnelAction(id: string): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+export async function deletePersonnelAction(
+  id: string
+): Promise<{ ok: boolean; message: string }> {
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав" }
   try {
     const existing = await orm.Personnel.select("signaturePath").first({ id })
@@ -89,6 +118,10 @@ export async function deletePersonnelAction(id: string): Promise<{ ok: boolean; 
     revalidatePath("/admin/personnel")
     return { ok: true, message: "Видалено зі штату" }
   } catch {
-    return { ok: false, message: "Не вдалося видалити. Можливо, людина використовується в документах." }
+    return {
+      ok: false,
+      message:
+        "Не вдалося видалити. Можливо, людина використовується в документах.",
+    }
   }
 }

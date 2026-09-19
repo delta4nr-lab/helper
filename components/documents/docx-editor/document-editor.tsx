@@ -25,11 +25,9 @@ type Props = {
   /** "template": кнопка збереження пише байти в Template через exportHandler */
   mode?: "document" | "template"
   /** Серверний action збереження шаблона */
-  exportHandler?: (formData: FormData) => Promise<{ ok: boolean; message: string }>
-  /** Додаткові елементи у верхньому рядку редактора */
-  titleActions?: React.ReactNode
-  /** Панель праворуч від документа (усередині Root — контекст редактора доступний) */
-  sidePanel?: React.ReactNode
+  exportHandler?: (
+    formData: FormData
+  ) => Promise<{ ok: boolean; message: string }>
   /** Довідник персоналу для персональних полів (template-режим) */
   personnel?: PersonnelEntry[]
   /** Курсанти з активного курсу (template-режим, cadet.{i}.{f}-ноди) */
@@ -42,8 +40,6 @@ export function DocumentEditor({
   docxUrl,
   mode,
   exportHandler,
-  titleActions,
-  sidePanel,
   personnel,
   cadets,
 }: Props) {
@@ -55,8 +51,6 @@ export function DocumentEditor({
         docxUrl={docxUrl}
         mode={mode}
         exportHandler={exportHandler}
-        titleActions={titleActions}
-        sidePanel={sidePanel}
         personnel={personnel}
         cadets={cadets}
       />

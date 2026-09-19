@@ -1,5 +1,3 @@
-"use client"
-
 import Link from "next/link"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
 import { buttonVariants } from "@/components/ui/button"
@@ -24,7 +22,8 @@ export function TemplateEditorScreen({
           ← До шаблонів
         </Link>
         <span className="text-xs text-muted-foreground">
-          Зміни документа зберігаються кнопкою «Зберегти шаблон» у тулбарі редактора
+          Зміни документа зберігаються кнопкою «Зберегти шаблон» у тулбарі
+          редактора
         </span>
       </div>
       <div className="flex items-stretch gap-4">

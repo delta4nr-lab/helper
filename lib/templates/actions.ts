@@ -3,17 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { auth } from "@/auth"
+import { getAdminId } from "@/lib/auth"
 import { orm, nowTimestamp } from "@/lib/db"
 import { generateBlankDocx } from "@/lib/templates/blank-docx"
 import { PAPERS } from "@/lib/templates/types"
 
 const MAX_DOCX_SIZE = 25 * 1024 * 1024 // 25 МБ
-
-async function requireAdmin() {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  return session?.user?.id && session.user.role === "ADMIN" ? session.user.id : null
-}
 
 function revalidateTemplates() {
   revalidatePath("/admin/templates")
@@ -32,7 +27,9 @@ const templateMetaSchema = z.object({
   paper: z.enum(PAPERS).default("А4"),
 })
 
-async function readDocxFile(file: File | null): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
+async function readDocxFile(
+  file: File | null
+): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; message: string }> {
   if (!file || file.size === 0) {
     const bytes = await generateBlankDocx()
     return { ok: true, bytes }
@@ -49,7 +46,7 @@ async function readDocxFile(file: File | null): Promise<{ ok: true; bytes: Uint8
 export async function createTemplateAction(
   formData: FormData
 ): Promise<{ ok: boolean; message: string; id?: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   const meta = templateMetaSchema.safeParse({
@@ -63,13 +60,20 @@ export async function createTemplateAction(
     paper: formData.get("paper") ?? "А4",
   })
   if (!meta.success) {
-    return { ok: false, message: meta.error.issues[0]?.message ?? "Некоректні дані." }
+    return {
+      ok: false,
+      message: meta.error.issues[0]?.message ?? "Некоректні дані.",
+    }
   }
 
-  const category = await orm.Category.select("slug").first({ slug: meta.data.categorySlug })
+  const category = await orm.Category.select("slug").first({
+    slug: meta.data.categorySlug,
+  })
   if (!category) return { ok: false, message: "Категорію не знайдено." }
 
-  const docx = await readDocxFile(formData.get("file") instanceof File ? (formData.get("file") as File) : null)
+  const docx = await readDocxFile(
+    formData.get("file") instanceof File ? (formData.get("file") as File) : null
+  )
   if (!docx.ok) return { ok: false, message: docx.message }
 
   try {
@@ -99,19 +103,27 @@ export async function updateTemplateAction(
   id: string,
   input: unknown
 ): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
-  const meta = templateMetaSchema.extend({
-    popular: z.boolean().default(false),
-    isActive: z.boolean().default(false),
-  }).safeParse(input)
+  const meta = templateMetaSchema
+    .extend({
+      popular: z.boolean().default(false),
+      isActive: z.boolean().default(false),
+    })
+    .safeParse(input)
   if (!meta.success) {
-    return { ok: false, message: meta.error.issues[0]?.message ?? "Некоректні дані." }
+    return {
+      ok: false,
+      message: meta.error.issues[0]?.message ?? "Некоректні дані.",
+    }
   }
 
   try {
-    await orm.Template.where({ id }).update({ ...meta.data, updatedAt: nowTimestamp() })
+    await orm.Template.where({ id }).update({
+      ...meta.data,
+      updatedAt: nowTimestamp(),
+    })
   } catch {
     return { ok: false, message: "Не вдалося зберегти шаблон." }
   }
@@ -119,13 +131,15 @@ export async function updateTemplateAction(
   return { ok: true, message: "Шаблон збережено." }
 }
 
-export async function deleteTemplateAction(id: string): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+export async function deleteTemplateAction(
+  id: string
+): Promise<{ ok: boolean; message: string }> {
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
-  const exportsAggregate = await orm.ExportedFile
-    .where({ templateId: id })
-    .aggregate((agg) => ({ count: agg.count() }))
+  const exportsAggregate = await orm.ExportedFile.where({
+    templateId: id,
+  }).aggregate((agg) => ({ count: agg.count() }))
   if (exportsAggregate.count > 0) {
     return {
       ok: false,
@@ -147,7 +161,7 @@ export async function saveTemplateDocxAction(
   templateId: string,
   formData: FormData
 ): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   const file = formData.get("file")
@@ -160,11 +174,16 @@ export async function saveTemplateDocxAction(
 
   const title = String(formData.get("title") ?? "").trim()
   if (!title || title.length > 200) {
-    return { ok: false, message: "Вкажіть коректну назву шаблону (до 200 символів)." }
+    return {
+      ok: false,
+      message: "Вкажіть коректну назву шаблону (до 200 символів).",
+    }
   }
 
   try {
-    const bytes: Uint8Array<ArrayBufferLike> = new Uint8Array(await file.arrayBuffer())
+    const bytes: Uint8Array<ArrayBufferLike> = new Uint8Array(
+      await file.arrayBuffer()
+    )
 
     await orm.Template.where({ id: templateId }).update({
       docxData: bytes,

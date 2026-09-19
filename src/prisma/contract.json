@@ -2113,6 +2113,15 @@
                 },
                 {
                   "columns": [
+                    "courseId",
+                    "lastName",
+                    "firstName"
+                  ],
+                  "name": "CourseRecord_courseId_lastName_firstName_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "lastName",
                     "firstName"
                   ],
@@ -2787,9 +2796,25 @@
                 },
                 {
                   "columns": [
+                    "categorySlug",
+                    "isActive"
+                  ],
+                  "name": "Template_categorySlug_isActive_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "createdById"
                   ],
                   "name": "Template_createdById_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "isActive",
+                    "updatedAt"
+                  ],
+                  "name": "Template_isActive_updatedAt_idx",
                   "unique": false
                 },
                 {
@@ -2913,7 +2938,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "93d286b16e7e80dbab2c067507157776e1765b18d3e6b31b56008e1559359a84"
+    "storageHash": "9f6f849b656bacbcfbf7f4ad11645e2aa356e8ea1c3bdbe0e2e3faa720328702"
   },
   "execution": {
     "executionHash": "68231aa6569579d8b30dfe02f4219c97263852d4597a6f1f0a026b7e05aa6c7c",

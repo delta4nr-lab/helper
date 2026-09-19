@@ -14,6 +14,7 @@ import {
   updateCourseRecordAction,
 } from "@/lib/courses/actions"
 import {
+  COURSE_FIELD_LABELS,
   COURSE_RECORD_TEXT_FIELDS,
   type CourseListItem,
   type CourseRecordData,
@@ -33,69 +34,68 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 
-// Діалог редагування: усі 37 полів по секціях
-const EDIT_SECTIONS: Array<{ title: string; fields: Array<{ name: CourseRecordTextField; label: string }> }> = [
-  {
-    title: "Основне",
-    fields: [
-      { name: "rank", label: "Звання" },
-      { name: "unitNumber", label: "№ частини" },
-      { name: "platoon", label: "№ взводу" },
-      { name: "position", label: "Посада" },
-      { name: "weaponNumber", label: "№ зброї" },
-      { name: "presence", label: "Наявність (у строю)" },
-      { name: "sick", label: "Хворі" },
-      { name: "attentionGroup", label: "Група посиленої уваги" },
-      { name: "statusDate", label: "Дата статусу" },
-    ],
-  },
-  {
-    title: "Контакти та документи",
-    fields: [
-      { name: "phone", label: "№ телефону" },
-      { name: "relativesPhone", label: "№ телефону близьких" },
-      { name: "taxId", label: "ІПН" },
-      { name: "passport", label: "№ та серія паспорту" },
-      { name: "militaryTicket", label: "№ військового квитка" },
-      { name: "ubdNumber", label: "№ УБД" },
-    ],
-  },
-  {
-    title: "Адреси",
-    fields: [
-      { name: "registrationAddress", label: "Місце прописки" },
-      { name: "residenceAddress", label: "Місце проживання" },
-    ],
-  },
-  {
-    title: "Особисті дані",
-    fields: [
-      { name: "birthDate", label: "Дата народження" },
-      { name: "birthPlace", label: "Місце народження" },
-      { name: "conscribedBy", label: "Ким призваний ТЦК" },
-      { name: "education", label: "Освіта" },
-      { name: "drivingCategories", label: "Водійські категорії" },
-      { name: "maritalStatus", label: "Сімейний стан" },
-      { name: "workplace", label: "Місце роботи" },
-    ],
-  },
-  {
-    title: "Здоровʼя та служба",
-    fields: [
-      { name: "bloodType", label: "Група крові" },
-      { name: "healthState", label: "Загальний стан здоровʼя" },
-      { name: "healthComplaints", label: "Скарги на стан здоровʼя" },
-      { name: "allergies", label: "Алергічні реакції" },
-      { name: "injuries", label: "Перенесені травми" },
-      { name: "vlcConclusion", label: "Висновок ВЛК" },
-      { name: "serviceExperience", label: "Попередній досвід ВС" },
-      { name: "combatExperience", label: "Досвід участі в БД" },
-      { name: "distinctiveFeatures", label: "Особливі прикмети" },
-      { name: "debts", label: "Борги" },
-      { name: "convictions", label: "Судимості / адміністративні" },
-    ],
-  },
-]
+// Діалог редагування: усі поля по секціях. Лейбли — з COURSE_FIELD_LABELS
+// (єдине джерело локалізації).
+const EDIT_SECTIONS: Array<{ title: string; fields: CourseRecordTextField[] }> =
+  [
+    {
+      title: "Основне",
+      fields: [
+        "rank",
+        "unitNumber",
+        "platoon",
+        "position",
+        "weaponNumber",
+        "presence",
+        "sick",
+        "attentionGroup",
+        "statusDate",
+      ],
+    },
+    {
+      title: "Контакти та документи",
+      fields: [
+        "phone",
+        "relativesPhone",
+        "taxId",
+        "passport",
+        "militaryTicket",
+        "ubdNumber",
+      ],
+    },
+    {
+      title: "Адреси",
+      fields: ["registrationAddress", "residenceAddress"],
+    },
+    {
+      title: "Особисті дані",
+      fields: [
+        "birthDate",
+        "birthPlace",
+        "conscribedBy",
+        "education",
+        "drivingCategories",
+        "maritalStatus",
+        "workplace",
+      ],
+    },
+    {
+      title: "Здоровʼя та служба",
+      fields: [
+        "bloodType",
+        "healthState",
+        "healthComplaints",
+        "allergies",
+        "injuries",
+        "vlcConclusion",
+        "serviceExperience",
+        "combatExperience",
+        "distinctiveFeatures",
+        "debts",
+        "convictions",
+      ],
+    },
+  ]
 
 type EditState = {
   orderNumber: string
@@ -112,27 +112,44 @@ export function CourseManager({
   records: CourseRecordData[]
 }) {
   const router = useRouter()
-  const [importLabel, setImportLabel] = React.useState(() => new Date().toLocaleDateString("uk-UA"))
+  const [importLabel, setImportLabel] = React.useState(() =>
+    new Date().toLocaleDateString("uk-UA")
+  )
   const [importFile, setImportFile] = React.useState<File | null>(null)
   const [importing, setImporting] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
-  const [editRecord, setEditRecord] = React.useState<CourseRecordData | null>(null)
+  const [editRecord, setEditRecord] = React.useState<CourseRecordData | null>(
+    null
+  )
   const [editState, setEditState] = React.useState<EditState | null>(null)
-  const [renameCourse, setRenameCourse] = React.useState<CourseListItem | null>(null)
+  const [renameCourse, setRenameCourse] = React.useState<CourseListItem | null>(
+    null
+  )
   const [renameLabel, setRenameLabel] = React.useState("")
-  const [confirmDeleteCourseId, setConfirmDeleteCourseId] = React.useState<string | null>(null)
-  const [confirmDeleteRecordId, setConfirmDeleteRecordId] = React.useState<string | null>(null)
+  const [confirmDeleteCourseId, setConfirmDeleteCourseId] = React.useState<
+    string | null
+  >(null)
+  const [confirmDeleteRecordId, setConfirmDeleteRecordId] = React.useState<
+    string | null
+  >(null)
 
-  const selectedCourse = courses.find((course) => course.id === selectedId) ?? null
+  const selectedCourse =
+    courses.find((course) => course.id === selectedId) ?? null
 
   const filteredRecords = React.useMemo(() => {
     const needle = search.trim().toLowerCase()
     if (!needle) return records
     return records.filter((record) =>
-      [record.fullName, record.lastName, record.firstName, record.rank, record.position, record.weaponNumber]
-        .some((value) => (value ?? "").toLowerCase().includes(needle))
+      [
+        record.fullName,
+        record.lastName,
+        record.firstName,
+        record.rank,
+        record.position,
+        record.weaponNumber,
+      ].some((value) => (value ?? "").toLowerCase().includes(needle))
     )
   }, [records, search])
 
@@ -151,7 +168,9 @@ export function CourseManager({
     }
   }
 
-  async function runAction(action: () => Promise<{ ok: boolean; message: string }>) {
+  async function runAction(
+    action: () => Promise<{ ok: boolean; message: string }>
+  ) {
     const result = await action()
     toast[result.ok ? "success" : "error"](result.message)
     if (result.ok) router.refresh()
@@ -161,7 +180,8 @@ export function CourseManager({
   function openEdit(record: CourseRecordData) {
     setEditRecord(record)
     setEditState({
-      orderNumber: record.orderNumber === null ? "" : String(record.orderNumber),
+      orderNumber:
+        record.orderNumber === null ? "" : String(record.orderNumber),
       texts: Object.fromEntries(
         COURSE_RECORD_TEXT_FIELDS.map((field) => [field, record[field] ?? ""])
       ) as Record<CourseRecordTextField, string>,
@@ -175,7 +195,10 @@ export function CourseManager({
     const payload = {
       orderNumber: orderText === "" ? null : Number(orderText),
       ...Object.fromEntries(
-        COURSE_RECORD_TEXT_FIELDS.map((field) => [field, editState.texts[field].trim() || null])
+        COURSE_RECORD_TEXT_FIELDS.map((field) => [
+          field,
+          editState.texts[field].trim() || null,
+        ])
       ),
     }
     const result = await updateCourseRecordAction(editRecord.id, payload)
@@ -194,7 +217,8 @@ export function CourseManager({
       <section className="rounded-lg border bg-card p-4">
         <h2 className="text-sm font-semibold">Імпорт з Excel</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Файл .xlsx зі списком курсантів (дані з 2-го рядка). Записи можна редагувати після імпорту.
+          Файл .xlsx зі списком курсантів (дані з 2-го рядка). Записи можна
+          редагувати після імпорту.
         </p>
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <div className="grid gap-1.5">
@@ -204,7 +228,9 @@ export function CourseManager({
               type="file"
               accept=".xlsx"
               className="w-64"
-              onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+              onChange={(event) =>
+                setImportFile(event.target.files?.[0] ?? null)
+              }
             />
           </div>
           <div className="grid gap-1.5">
@@ -217,7 +243,11 @@ export function CourseManager({
               placeholder="28.09.2026"
             />
           </div>
-          <Button type="button" onClick={() => void handleImport()} disabled={importing || !importFile}>
+          <Button
+            type="button"
+            onClick={() => void handleImport()}
+            disabled={importing || !importFile}
+          >
             {importing ? <Loader2 className="size-4 animate-spin" /> : null}
             Імпортувати
           </Button>
@@ -228,7 +258,9 @@ export function CourseManager({
       <section className="rounded-lg border bg-card">
         <div className="border-b px-4 py-3 text-sm font-semibold">Курси</div>
         {courses.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-muted-foreground">Ще немає жодного імпорту.</p>
+          <p className="px-4 py-6 text-sm text-muted-foreground">
+            Ще немає жодного імпорту.
+          </p>
         ) : (
           <ul className="divide-y">
             {courses.map((course) => (
@@ -243,12 +275,15 @@ export function CourseManager({
                   type="button"
                   className="min-w-0 flex-1 truncate text-left font-medium hover:underline"
                   title="Показати записи курсу"
-                  onClick={() => router.push(`/admin/courses?course=${course.id}`)}
+                  onClick={() =>
+                    router.push(`/admin/courses?course=${course.id}`)
+                  }
                 >
                   {course.label}
                 </button>
                 <span className="text-xs text-muted-foreground">
-                  {course.recordCount} запис(ів) · {course.createdAt.slice(0, 10)}
+                  {course.recordCount} запис(ів) ·{" "}
+                  {course.createdAt.slice(0, 10)}
                 </span>
                 {course.isActive ? (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
@@ -261,7 +296,9 @@ export function CourseManager({
                     variant="ghost"
                     size="icon-sm"
                     title="Зробити активним"
-                    onClick={() => void runAction(() => activateCourseAction(course.id))}
+                    onClick={() =>
+                      void runAction(() => activateCourseAction(course.id))
+                    }
                   >
                     <Star className="size-4" />
                   </Button>
@@ -341,18 +378,26 @@ export function CourseManager({
               <tbody className="divide-y">
                 {filteredRecords.map((record) => (
                   <tr key={record.id} className="hover:bg-muted/40">
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{record.orderNumber ?? "—"}</td>
-                    <td className="max-w-56 truncate px-3 py-2 font-medium" title={record.fullName ?? ""}>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {record.orderNumber ?? "—"}
+                    </td>
+                    <td
+                      className="max-w-56 truncate px-3 py-2 font-medium"
+                      title={record.fullName ?? ""}
+                    >
                       {record.fullName ?? "—"}
                     </td>
                     <td className="px-3 py-2">{record.rank ?? "—"}</td>
-                    <td className="max-w-40 truncate px-3 py-2" title={record.position ?? ""}>
+                    <td
+                      className="max-w-40 truncate px-3 py-2"
+                      title={record.position ?? ""}
+                    >
                       {record.position ?? "—"}
                     </td>
                     <td className="px-3 py-2">{record.platoon ?? "—"}</td>
                     <td className="px-3 py-2">{record.weaponNumber ?? "—"}</td>
                     <td className="px-3 py-2">{record.presence ?? "—"}</td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
                       <Button
                         type="button"
                         variant="ghost"
@@ -369,7 +414,9 @@ export function CourseManager({
                           size="sm"
                           onClick={() => {
                             setConfirmDeleteRecordId(null)
-                            void runAction(() => deleteCourseRecordAction(record.id))
+                            void runAction(() =>
+                              deleteCourseRecordAction(record.id)
+                            )
                           }}
                         >
                           Точно?
@@ -390,7 +437,10 @@ export function CourseManager({
                 ))}
                 {filteredRecords.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                    <td
+                      colSpan={8}
+                      className="px-3 py-8 text-center text-muted-foreground"
+                    >
                       Записів не знайдено.
                     </td>
                   </tr>
@@ -401,7 +451,8 @@ export function CourseManager({
         </section>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Оберіть курс у списку вище, щоб переглянути й відредагувати його записи.
+          Оберіть курс у списку вище, щоб переглянути й відредагувати його
+          записи.
         </p>
       )}
 
@@ -428,27 +479,41 @@ export function CourseManager({
                   <Input
                     value={editState.orderNumber}
                     onChange={(event) =>
-                      setEditState({ ...editState, orderNumber: event.target.value })
+                      setEditState({
+                        ...editState,
+                        orderNumber: event.target.value,
+                      })
                     }
                     inputMode="numeric"
                   />
                 </div>
                 {EDIT_SECTIONS.map((section) => (
-                  <fieldset key={section.title} className="rounded-lg border p-3">
+                  <fieldset
+                    key={section.title}
+                    className="rounded-lg border p-3"
+                  >
                     <legend className="px-1 text-xs font-medium text-muted-foreground">
                       {section.title}
                     </legend>
                     <div className="grid gap-3 sm:grid-cols-2">
                       {section.fields.map((field) => (
-                        <div key={field.name} className="grid gap-1.5 sm:col-span-2 lg:col-span-1">
-                          <Label htmlFor={`record-${field.name}`}>{field.label}</Label>
+                        <div
+                          key={field}
+                          className="grid gap-1.5 sm:col-span-2 lg:col-span-1"
+                        >
+                          <Label htmlFor={`record-${field}`}>
+                            {COURSE_FIELD_LABELS[field]}
+                          </Label>
                           <Input
-                            id={`record-${field.name}`}
-                            value={editState.texts[field.name]}
+                            id={`record-${field}`}
+                            value={editState.texts[field]}
                             onChange={(event) =>
                               setEditState({
                                 ...editState,
-                                texts: { ...editState.texts, [field.name]: event.target.value },
+                                texts: {
+                                  ...editState.texts,
+                                  [field]: event.target.value,
+                                },
                               })
                             }
                           />
@@ -471,7 +536,11 @@ export function CourseManager({
             >
               Скасувати
             </Button>
-            <Button type="button" onClick={() => void handleSaveRecord()} disabled={saving}>
+            <Button
+              type="button"
+              onClick={() => void handleSaveRecord()}
+              disabled={saving}
+            >
               {saving ? <Loader2 className="size-4 animate-spin" /> : null}
               Зберегти
             </Button>
@@ -480,11 +549,16 @@ export function CourseManager({
       </Dialog>
 
       {/* Діалог перейменування курсу */}
-      <Dialog open={renameCourse !== null} onOpenChange={(open) => !open && setRenameCourse(null)}>
+      <Dialog
+        open={renameCourse !== null}
+        onOpenChange={(open) => !open && setRenameCourse(null)}
+      >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Перейменувати курс</DialogTitle>
-            <DialogDescription>Назва показується в списку курсів.</DialogDescription>
+            <DialogDescription>
+              Назва показується в списку курсів.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-1.5">
             <Label htmlFor="rename-course">Назва курсу</Label>
@@ -495,14 +569,20 @@ export function CourseManager({
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setRenameCourse(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRenameCourse(null)}
+            >
               Скасувати
             </Button>
             <Button
               type="button"
               onClick={() => {
                 if (!renameCourse) return
-                void runAction(() => renameCourseAction(renameCourse.id, renameLabel)).then((ok) => {
+                void runAction(() =>
+                  renameCourseAction(renameCourse.id, renameLabel)
+                ).then((ok) => {
                   if (ok) setRenameCourse(null)
                 })
               }}

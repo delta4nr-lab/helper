@@ -4,20 +4,15 @@ import {
   BadgeCheck,
   Clock3,
   Database,
-  Download,
   Eye,
   FileCheck,
   FileSpreadsheet,
-  FileText,
   Files,
   Search,
   ShieldCheck,
-  Sparkles,
-  Users,
   Table2,
   LayoutTemplate,
   FileOutput,
-  ChevronRight,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -30,7 +25,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { SiteHeader } from "@/components/site-header"
 import { PreviewDoc } from "@/components/site/preview-doc"
 import { HomeSearch } from "@/components/templates/home-search"
@@ -81,37 +75,6 @@ const features = [
   },
 ]
 
-const personnelPreview = [
-  {
-    name: "Петренко І. В.",
-    rank: "капітан",
-    pos: "командир роти",
-    unit: "А1234",
-    status: "в строю",
-  },
-  {
-    name: "Ковальчук О. М.",
-    rank: "ст. лейтенант",
-    pos: "заступник",
-    unit: "А1234",
-    status: "відрядження",
-  },
-  {
-    name: "Шевченко А. Ю.",
-    rank: "солдат",
-    pos: "водій",
-    unit: "А1234/2",
-    status: "в строю",
-  },
-  {
-    name: "Мельник Т. О.",
-    rank: "мл. сержант",
-    pos: "діловод",
-    unit: "Штаб",
-    status: "відпустка",
-  },
-]
-
 // Випадковий шаблон обирається на кожен запит — сторінку не можна
 // пререндерити статично (інакше вибір застигне на етапі білда).
 export const dynamic = "force-dynamic"
@@ -131,13 +94,14 @@ export default async function Page() {
   let dbTemplates: TemplateDefinition[] = []
   const categoryTitleBySlug = new Map<string, string>()
   try {
-    previewDoc = await getPreviewDoc()
     const [
+      preview,
       templatesAggregate,
       exportsAggregate,
       latestTemplates,
       dbCategories,
     ] = await Promise.all([
+      getPreviewDoc(),
       orm.Template.where({ isActive: true }).aggregate((agg) => ({
         count: agg.count(),
       })),
@@ -161,6 +125,7 @@ export default async function Page() {
       // Мапа slug → title для бейджа категорії (на майбутні категорії).
       orm.Category.where({ isActive: true }).select("slug", "title").all(),
     ])
+    previewDoc = preview
     templatesCount = templatesAggregate.count
     exportsCount = exportsAggregate.count
     for (const c of dbCategories) categoryTitleBySlug.set(c.slug, c.title)
@@ -207,7 +172,6 @@ export default async function Page() {
                 <span className="size-2 rounded-full bg-emerald-500" />
                 Для стройової та кадрової служб
               </Badge>
-              
             </div>
 
             <div className="space-y-3">
@@ -223,17 +187,13 @@ export default async function Page() {
                 Створюйте документи з форм і шаблонів, перевикористовуйте дані
                 особового складу, валідуйте, переглядайте перед друком та
                 експортуйте в{" "}
-                <span className="font-medium text-foreground">
-                  Word
-                </span>{" "}
-                — швидко та без помилок.
+                <span className="font-medium text-foreground">Word</span> —
+                швидко та без помилок.
               </p>
             </div>
 
             {/* пошук по всьому каталогу (усі категорії) з живими підказками */}
             <HomeSearch />
-
-            
 
             {/* мікро-метрики */}
             <div className="grid grid-cols-3 gap-3 pt-2">
@@ -256,9 +216,7 @@ export default async function Page() {
                   <FileSpreadsheet className="size-4 text-primary" />{" "}
                   {exportsCount}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                   Word
-                </div>
+                <div className="text-xs text-muted-foreground">Word</div>
               </div>
               <div className="rounded-xl border bg-card p-3">
                 <div className="text-[11px] font-medium tracking-widest text-muted-foreground">

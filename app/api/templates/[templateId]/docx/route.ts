@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import JSZip from "jszip"
 
-import { auth } from "@/auth"
+import { getSessionUser } from "@/lib/auth"
 import { orm } from "@/lib/db"
 
 type Params = { templateId: string }
@@ -16,22 +16,38 @@ type Params = { templateId: string }
 // впізнавати такі поля — каретка «відскакує» в перше поле, редагувати можна
 // тільки його.
 function withPlaceholderFields(xml: string): string {
-  return xml.replace(/<w:sdtPr>(?:(?!<\/w:sdtPr>)[\s\S])*?<\/w:sdtPr>/g, (sdtPr) => {
-    if (sdtPr.includes("showingPlcHdr") || !sdtPr.includes("<w:tag")) return sdtPr
-    return sdtPr.replace("</w:sdtPr>", "<w:showingPlcHdr/></w:sdtPr>")
-  })
+  return xml.replace(
+    /<w:sdtPr>(?:(?!<\/w:sdtPr>)[\s\S])*?<\/w:sdtPr>/g,
+    (sdtPr) => {
+      if (sdtPr.includes("showingPlcHdr") || !sdtPr.includes("<w:tag"))
+        return sdtPr
+      return sdtPr.replace("</w:sdtPr>", "<w:showingPlcHdr/></w:sdtPr>")
+    }
+  )
 }
 
-export async function GET(request: Request, { params }: { params: Promise<Params> }) {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string } } | null>)()
-  if (!session?.user?.id) {
-    return NextResponse.json({ message: "Не авторизовано. Увійдіть у систему." }, { status: 401 })
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<Params> }
+) {
+  const user = await getSessionUser()
+  if (!user) {
+    return NextResponse.json(
+      { message: "Не авторизовано. Увійдіть у систему." },
+      { status: 401 }
+    )
   }
 
   const { templateId } = await params
-  const template = await orm.Template.select("docxData").first({ id: templateId, isActive: true })
+  const template = await orm.Template.select("docxData").first({
+    id: templateId,
+    isActive: true,
+  })
   if (!template?.docxData) {
-    return NextResponse.json({ message: "Шаблон не знайдено або для нього немає DOCX-файлу." }, { status: 404 })
+    return NextResponse.json(
+      { message: "Шаблон не знайдено або для нього немає DOCX-файлу." },
+      { status: 404 }
+    )
   }
 
   // ?word=1 — роздача шаблона для Word з плейсхолдерами; редактор отримує сирий файл
@@ -47,7 +63,8 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     const bytes = await zip.generateAsync({ type: "uint8array" })
     return new NextResponse(Buffer.from(bytes), {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": 'inline; filename="template.docx"',
         "Cache-Control": "private, no-store",
       },
@@ -56,11 +73,11 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     // Некоректний архів — віддаємо як є, редактор покаже помилку парсинга
     return new NextResponse(Buffer.from(template.docxData), {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "Content-Disposition": 'inline; filename="template.docx"',
         "Cache-Control": "private, no-store",
       },
     })
   }
 }
-

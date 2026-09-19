@@ -58,6 +58,8 @@ namespace public {
     createdBy      User?           @relation(fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "Template_createdById_fkey")
 
     @@index([categoryId, isActive], map: "Template_categoryId_isActive_idx")
+    @@index([categorySlug, isActive], map: "Template_categorySlug_isActive_idx")
+    @@index([isActive, updatedAt], map: "Template_isActive_updatedAt_idx")
     @@index([categorySlug], map: "Template_categorySlug_idx")
     @@index([createdById], map: "Template_createdById_idx")
     @@index([popular], map: "Template_popular_idx")
@@ -162,6 +164,7 @@ namespace public {
     medicalReferrals    MedicalReferral[]
 
     @@index([courseId], map: "CourseRecord_courseId_idx")
+    @@index([courseId, lastName, firstName], map: "CourseRecord_courseId_lastName_firstName_idx")
     @@index([lastName, firstName], map: "CourseRecord_lastName_firstName_idx")
   }
 

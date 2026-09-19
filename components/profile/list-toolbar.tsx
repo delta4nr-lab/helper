@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { ListQuery, SortOption } from "@/components/profile/types"
+import { buildProfileHref } from "@/lib/profile/query"
 
 export function ListToolbar({
   tab,
@@ -43,23 +44,15 @@ export function ListToolbar({
   React.useEffect(() => {
     if (value.trim() === initialQ.trim()) return
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ tab })
-      params.set("page", "1")
-      const clean = value.trim()
-      if (clean) params.set("q", clean)
-      if (sort) params.set("sort", sort)
-      router.replace(`/profile?${params.toString()}`)
+      router.replace(buildProfileHref({ tab, q: value.trim(), sort }, 1))
     }, 350)
     return () => clearTimeout(timer)
   }, [value, initialQ, sort, tab, router])
 
   function changeSort(next: string | null) {
-    const params = new URLSearchParams({ tab })
-    params.set("page", "1")
-    const clean = value.trim()
-    if (clean) params.set("q", clean)
-    if (next) params.set("sort", next)
-    router.replace(`/profile?${params.toString()}`)
+    router.replace(
+      buildProfileHref({ tab, q: value.trim(), sort: next ?? "" }, 1)
+    )
   }
 
   return (

@@ -4,7 +4,7 @@ import ExcelJS from "exceljs"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
-import { auth } from "@/auth"
+import { getAdminId } from "@/lib/auth"
 import { db, orm } from "@/lib/db"
 import {
   COURSE_RECORD_TEXT_FIELDS,
@@ -14,11 +14,6 @@ import {
 } from "@/lib/courses/types"
 
 const MAX_IMPORT_SIZE = 15 * 1024 * 1024 // 15 МБ
-
-async function requireAdmin() {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  return session?.user?.id && session.user.role === "ADMIN" ? session.user.id : null
-}
 
 function revalidateCourses() {
   revalidatePath("/admin/courses")
@@ -51,10 +46,15 @@ function plainText(value: unknown): string | null {
   if (typeof value === "object") {
     if ("richText" in value) {
       const rich = (value as { richText: Array<{ text: string }> }).richText
-      const text = rich.map((part) => part.text).join("").replace(/\s+/g, " ").trim()
+      const text = rich
+        .map((part) => part.text)
+        .join("")
+        .replace(/\s+/g, " ")
+        .trim()
       return text === "" ? null : text
     }
-    if ("result" in value) return plainText((value as { result: unknown }).result)
+    if ("result" in value)
+      return plainText((value as { result: unknown }).result)
     if ("text" in value) return plainText((value as { text: unknown }).text)
     if ("error" in value) return null
     return null
@@ -94,7 +94,10 @@ function parseCourseSheet(worksheet: ExcelJS.Worksheet): CourseRecordDraft[] {
         draft[config.field] = plainText(cellValue)
       }
     }
-    drafts.push({ ...draft, ...splitFullName(fullName) } as unknown as CourseRecordDraft)
+    drafts.push({
+      ...draft,
+      ...splitFullName(fullName),
+    } as unknown as CourseRecordDraft)
   }
   return drafts
 }
@@ -104,16 +107,21 @@ function parseCourseSheet(worksheet: ExcelJS.Worksheet): CourseRecordDraft[] {
 export async function importCourseAction(
   formData: FormData
 ): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   const label = String(formData.get("label") ?? "").trim()
-  if (!label || label.length > 120) return { ok: false, message: "Вкажіть назву курсу (до 120 символів)." }
+  if (!label || label.length > 120)
+    return { ok: false, message: "Вкажіть назву курсу (до 120 символів)." }
 
   const file = formData.get("file")
-  if (!(file instanceof File)) return { ok: false, message: "Оберіть файл Excel (.xlsx)." }
+  if (!(file instanceof File))
+    return { ok: false, message: "Оберіть файл Excel (.xlsx)." }
   if (file.size === 0 || file.size > MAX_IMPORT_SIZE) {
-    return { ok: false, message: "Файл порожній або завеликий (максимум 15 МБ)." }
+    return {
+      ok: false,
+      message: "Файл порожній або завеликий (максимум 15 МБ).",
+    }
   }
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
     return { ok: false, message: "Підтримуються лише файли .xlsx." }
@@ -124,13 +132,21 @@ export async function importCourseAction(
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(await file.arrayBuffer())
     const worksheet = workbook.worksheets[0]
-    if (!worksheet) return { ok: false, message: "У файлі немає жодного аркуша." }
+    if (!worksheet)
+      return { ok: false, message: "У файлі немає жодного аркуша." }
     records = parseCourseSheet(worksheet)
   } catch {
-    return { ok: false, message: "Не вдалося прочитати файл Excel. Перевірте формат." }
+    return {
+      ok: false,
+      message: "Не вдалося прочитати файл Excel. Перевірте формат.",
+    }
   }
   if (records.length === 0) {
-    return { ok: false, message: "У файлі не знайдено записів (очікуються дані з 2-го рядка з заповненим ПІБ)." }
+    return {
+      ok: false,
+      message:
+        "У файлі не знайдено записів (очікуються дані з 2-го рядка з заповненим ПІБ).",
+    }
   }
 
   try {
@@ -141,27 +157,42 @@ export async function importCourseAction(
         isActive: false,
       })
       for (const record of records) {
-        await tx.orm.public.CourseRecord.create({ ...record, courseId: course.id })
+        await tx.orm.public.CourseRecord.create({
+          ...record,
+          courseId: course.id,
+        })
       }
     })
   } catch (error) {
     console.error("[CourseImport] failed:", error)
-    return { ok: false, message: "Не вдалося імпортувати курс. Спробуйте ще раз." }
+    return {
+      ok: false,
+      message: "Не вдалося імпортувати курс. Спробуйте ще раз.",
+    }
   }
 
   revalidateCourses()
-  return { ok: true, message: `Імпортовано курс «${label}»: ${records.length} записів.` }
+  return {
+    ok: true,
+    message: `Імпортовано курс «${label}»: ${records.length} записів.`,
+  }
 }
 
-export async function activateCourseAction(id: string): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+export async function activateCourseAction(
+  id: string
+): Promise<{ ok: boolean; message: string }> {
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   try {
     await db.transaction(async (tx) => {
-      const previous = await tx.orm.public.Course.select("id").where({ isActive: true }).all()
+      const previous = await tx.orm.public.Course.select("id")
+        .where({ isActive: true })
+        .all()
       for (const course of previous) {
-        await tx.orm.public.Course.where({ id: course.id }).update({ isActive: false })
+        await tx.orm.public.Course.where({ id: course.id }).update({
+          isActive: false,
+        })
       }
       await tx.orm.public.Course.where({ id }).update({ isActive: true })
     })
@@ -176,11 +207,20 @@ export async function renameCourseAction(
   id: string,
   label: string
 ): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
-  const parsed = z.string().trim().min(1, "Вкажіть назву курсу.").max(120).safeParse(label)
-  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Некоректна назва." }
+  const parsed = z
+    .string()
+    .trim()
+    .min(1, "Вкажіть назву курсу.")
+    .max(120)
+    .safeParse(label)
+  if (!parsed.success)
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Некоректна назва.",
+    }
 
   try {
     await orm.Course.where({ id }).update({ label: parsed.data })
@@ -191,8 +231,10 @@ export async function renameCourseAction(
   return { ok: true, message: "Курс перейменовано." }
 }
 
-export async function deleteCourseAction(id: string): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+export async function deleteCourseAction(
+  id: string
+): Promise<{ ok: boolean; message: string }> {
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   try {
@@ -218,12 +260,15 @@ export async function updateCourseRecordAction(
   id: string,
   input: unknown
 ): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   const parsed = courseRecordSchema.safeParse(input)
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "Некоректні дані запису." }
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Некоректні дані запису.",
+    }
   }
 
   // Оновлюємо лише передані поля — решта запису лишається як є.
@@ -231,7 +276,8 @@ export async function updateCourseRecordAction(
   const patch = Object.fromEntries(
     Object.entries(parsed.data).filter(([, value]) => value !== undefined)
   )
-  if (Object.keys(patch).length === 0) return { ok: true, message: "Немає змін." }
+  if (Object.keys(patch).length === 0)
+    return { ok: true, message: "Немає змін." }
   if (typeof patch.fullName === "string") {
     Object.assign(patch, splitFullName(patch.fullName))
   }
@@ -248,7 +294,7 @@ export async function updateCourseRecordAction(
 export async function deleteCourseRecordAction(
   id: string
 ): Promise<{ ok: boolean; message: string }> {
-  const adminId = await requireAdmin()
+  const adminId = await getAdminId()
   if (!adminId) return { ok: false, message: "Недостатньо прав." }
 
   try {

@@ -1,6 +1,3 @@
-import Link from "next/link"
-import { Shield, FileText } from "lucide-react"
-
 export function SiteFooter() {
   return (
     <footer className="border-t bg-muted/30">

@@ -1,9 +1,6 @@
 import { notFound } from "next/navigation"
 
 import { TemplateEditorScreen } from "@/components/admin/template-editor-screen"
-import { AdminSidebar } from "@/components/admin/admin-sidebar"
-import { SiteFooter } from "@/components/site-footer"
-import { SiteHeader } from "@/components/site-header"
 import { orm } from "@/lib/db"
 import { saveTemplateDocxAction } from "@/lib/templates/actions"
 
@@ -16,31 +13,26 @@ export default async function AdminTemplateEditorPage({
 }) {
   const { templateId } = await params
 
-  const template = await orm.Template
-    .where({ id: templateId })
-    .first()
+  const template = await orm.Template.select("id", "title").first({
+    id: templateId,
+  })
   if (!template) notFound()
 
   return (
-    <div className="min-h-svh bg-muted/20">
-      <SiteHeader />
-      <div className="mx-auto flex max-w-[1440px] items-start">
-        <AdminSidebar />
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Редактор шаблона</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Редагуйте документ та зберігайте шаблон.
-          </p>
-          <div className="mt-4">
-            <TemplateEditorScreen
-              templateId={template.id}
-              title={template.title}
-              saveHandler={saveTemplateDocxAction.bind(null, template.id)}
-            />
-          </div>
-        </main>
+    <>
+      <h1 className="text-2xl font-semibold tracking-tight">
+        Редактор шаблона
+      </h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Редагуйте документ та зберігайте шаблон.
+      </p>
+      <div className="mt-4">
+        <TemplateEditorScreen
+          templateId={template.id}
+          title={template.title}
+          saveHandler={saveTemplateDocxAction.bind(null, template.id)}
+        />
       </div>
-      <SiteFooter />
-    </div>
+    </>
   )
 }

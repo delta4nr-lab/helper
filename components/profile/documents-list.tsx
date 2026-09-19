@@ -1,10 +1,17 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Download, Eye, FileText, Loader2, Pencil, SearchX, Trash2 } from "lucide-react"
+import {
+  Download,
+  Eye,
+  FileText,
+  Loader2,
+  Pencil,
+  SearchX,
+  Trash2,
+} from "lucide-react"
 
 import { deleteExportAction, renameExportAction } from "@/app/profile/actions"
 import { Badge } from "@/components/ui/badge"
@@ -20,57 +27,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { DocumentPreviewDialog } from "@/components/profile/document-preview-dialog"
 import { ProfilePagination } from "@/components/profile/profile-pagination"
+import { EmptyState } from "@/components/shared/empty-state"
 import { getFileType } from "@/components/profile/file-type"
+import { buildProfileHref } from "@/lib/profile/query"
 import { cn } from "@/lib/utils"
 import type { DocumentItem, ListQuery } from "@/components/profile/types"
-
-function resultsHref(query: ListQuery, page: number): string {
-  const params = new URLSearchParams({ tab: query.tab, page: String(page) })
-  if (query.q) params.set("q", query.q)
-  if (query.sort) params.set("sort", query.sort)
-  return `/profile?${params.toString()}`
-}
-
-function EmptyState({ query }: { query: ListQuery }) {
-  if (query.q) {
-    return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-16 text-center">
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-          <SearchX className="size-6" />
-        </span>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Нічого не знайдено</p>
-          <p className="text-sm text-muted-foreground">
-            За запитом «{query.q}» збігів немає.
-          </p>
-        </div>
-        <Link
-          href={`/profile?tab=documents${query.sort ? `&sort=${query.sort}` : ""}`}
-          className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-        >
-          Очистити пошук
-        </Link>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-16 text-center">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-        <FileText className="size-6" />
-      </span>
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Ще немає документів</p>
-        <p className="max-w-[42ch] text-sm text-muted-foreground">
-          Створіть перший документ із шаблону — він одразу з&apos;явиться тут.
-        </p>
-      </div>
-      <Link href="/templates" className={cn(buttonVariants({ size: "sm" }))}>
-        До каталогу шаблонів
-      </Link>
-    </div>
-  )
-}
 
 function DocumentCard({
   item,
@@ -228,7 +189,7 @@ export function DocumentsList({
       setTarget(null)
       // Останній елемент на сторінці → повертаємось на попередню.
       if (items.length === 1 && query.page > 1) {
-        router.replace(resultsHref(query, query.page - 1))
+        router.replace(buildProfileHref(query, query.page - 1))
       } else {
         router.refresh()
       }
@@ -270,7 +231,33 @@ export function DocumentsList({
       </div>
 
       {items.length === 0 ? (
-        <EmptyState query={query} />
+        query.q ? (
+          <EmptyState
+            icon={SearchX}
+            iconClassName="bg-muted text-muted-foreground"
+            title="Нічого не знайдено"
+            description={<>За запитом «{query.q}» збігів немає.</>}
+            action={{
+              href: buildProfileHref({
+                tab: "documents",
+                q: "",
+                sort: query.sort,
+              }),
+              label: "Очистити пошук",
+            }}
+          />
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="Ще немає документів"
+            description="Створіть перший документ із шаблону — він одразу з'явиться тут."
+            action={{
+              href: "/templates",
+              label: "До каталогу шаблонів",
+              variant: "default",
+            }}
+          />
+        )
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {items.map((item) => (

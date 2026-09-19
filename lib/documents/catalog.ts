@@ -25,7 +25,8 @@ export const categories: TemplateCategory[] = [
     slug: "raporty",
     title: "Рапорти",
     description: "Відпустки, відрядження, заохочення, переміщення",
-    longDescription: "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
+    longDescription:
+      "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
     countLabel: "шаблонів",
     icon: "raporty",
   },
@@ -39,7 +40,8 @@ export const templates: TemplateDefinition[] = [
     categorySlug: "raporty",
     fields: 6,
     popular: true,
-    description: "Щорічна, соціальна, за сімейними обставинами. Розрахунок діб, місце проведення.",
+    description:
+      "Щорічна, соціальна, за сімейними обставинами. Розрахунок діб, місце проведення.",
     tags: ["відпустка", "дати", "наказ"],
     paper: "А4",
     updatedAt: "2026-08-29",
@@ -52,10 +54,6 @@ export function getCategory(slug: string) {
 
 export function getTemplatesByCategory(slug: string) {
   return templates.filter((t) => t.categorySlug === slug)
-}
-
-export function getTemplate(categorySlug: string, templateId: string) {
-  return templates.find((t) => t.categorySlug === categorySlug && t.id === templateId)
 }
 
 export function getCategoryCounts() {

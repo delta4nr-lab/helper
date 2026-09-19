@@ -10,7 +10,6 @@ import { buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { CategoryTemplatesClient } from "@/components/templates/category-templates-client"
 import {
-  categories as fallbackCategories,
   getCategory as getFallbackCategory,
   getTemplatesByCategory as getFallbackTemplatesByCategory,
 } from "@/lib/documents/catalog"
@@ -20,10 +19,6 @@ import { orm } from "@/lib/db"
 type Params = { category: string }
 
 export const dynamic = "force-dynamic"
-
-export function generateStaticParams() {
-  return fallbackCategories.map((c) => ({ category: c.slug }))
-}
 
 export async function generateMetadata({
   params,
@@ -79,10 +74,26 @@ export default async function CategoryPage({
         longDescription: dbCat.longDescription,
         countLabel: dbCat.countLabel,
       }
-      const dbTemplates = await orm.Template.where({ categorySlug: category, isActive: true }).orderBy((t) => t.title.asc()).all()
+      const dbTemplates = await orm.Template.select(
+        "id",
+        "title",
+        "categorySlug",
+        "fields",
+        "popular",
+        "description",
+        "tags",
+        "paper",
+        "updatedAt"
+      )
+        .where({ categorySlug: category, isActive: true })
+        .all()
       items = dbTemplates
         .slice()
-        .sort((a, b) => Number(b.popular) - Number(a.popular))
+        .sort(
+          (a, b) =>
+            Number(b.popular) - Number(a.popular) ||
+            String(b.updatedAt).localeCompare(String(a.updatedAt))
+        )
         .map((t) => ({
           id: t.id,
           title: t.title,

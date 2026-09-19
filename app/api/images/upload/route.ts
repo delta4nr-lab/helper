@@ -3,16 +3,27 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
 
-import { auth } from "@/auth"
+import { getSessionUser } from "@/lib/auth"
 import { orm, nowTimestamp } from "@/lib/db"
 
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"])
+const ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+])
 const MAX_SIZE = 10 * 1024 * 1024 // 10 МБ
 
 // Визначення розмірів зображення (px) без завантаження сторонніх бібліотек.
 function imageDimensions(buffer: Buffer): { width: number; height: number } {
   // PNG: signature + length + "IHDR" + width/height (big-endian)
-  if (buffer.length > 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+  if (
+    buffer.length > 24 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47
+  ) {
     return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
   }
   // JPEG: шукаємо SOF-маркер
@@ -24,15 +35,28 @@ function imageDimensions(buffer: Buffer): { width: number; height: number } {
         continue
       }
       const marker = buffer[i + 1]
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        return { width: buffer.readUInt16BE(i + 7), height: buffer.readUInt16BE(i + 5) }
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        return {
+          width: buffer.readUInt16BE(i + 7),
+          height: buffer.readUInt16BE(i + 5),
+        }
       }
       const length = buffer.readUInt16BE(i + 2)
       i += 2 + length
     }
   }
   // WEBP: RIFF....WEBP
-  if (buffer.length > 30 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+  if (
+    buffer.length > 30 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
     const chunk = buffer.toString("ascii", 12, 16)
     if (chunk === "VP8 " && buffer.length >= 30) {
       const w = buffer.readUInt16LE(26) & 0x3fff
@@ -55,25 +79,50 @@ function imageDimensions(buffer: Buffer): { width: number; height: number } {
 // Upload зображення в бібліотеку поточного користувача.
 // userId визначається server-side з сесії — жодних userId з тіла запиту.
 export async function POST(request: Request) {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string } } | null>)()
-  const userId = session?.user?.id
-  if (!userId) return NextResponse.json({ message: "Не авторизовано. Увійдіть у систему." }, { status: 401 })
+  const user = await getSessionUser()
+  const userId = user?.id
+  if (!userId)
+    return NextResponse.json(
+      { message: "Не авторизовано. Увійдіть у систему." },
+      { status: 401 }
+    )
 
   const formData = await request.formData()
   const file = formData.get("file")
-  if (!(file instanceof File)) return NextResponse.json({ message: "Файл не отримано" }, { status: 400 })
+  if (!(file instanceof File))
+    return NextResponse.json({ message: "Файл не отримано" }, { status: 400 })
 
   if (!ALLOWED_MIME.has(file.type)) {
-    return NextResponse.json({ message: "Дозволені лише JPG, PNG, GIF, WEBP." }, { status: 400 })
+    return NextResponse.json(
+      { message: "Дозволені лише JPG, PNG, GIF, WEBP." },
+      { status: 400 }
+    )
   }
   if (file.size > MAX_SIZE) {
-    return NextResponse.json({ message: "Файл завеликий (максимум 10 МБ)." }, { status: 400 })
+    return NextResponse.json(
+      { message: "Файл завеликий (максимум 10 МБ)." },
+      { status: 400 }
+    )
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const ext = file.type === "image/jpeg" ? "jpg" : file.type === "image/png" ? "png" : file.type === "image/gif" ? "gif" : "webp"
+  const ext =
+    file.type === "image/jpeg"
+      ? "jpg"
+      : file.type === "image/png"
+        ? "png"
+        : file.type === "image/gif"
+          ? "gif"
+          : "webp"
   const filename = `${randomUUID()}.${ext}`
-  const dir = path.join(process.cwd(), "public", "uploads", "users", userId, "images")
+  const dir = path.join(
+    process.cwd(),
+    "public",
+    "uploads",
+    "users",
+    userId,
+    "images"
+  )
   await mkdir(dir, { recursive: true })
   const filePath = path.join(dir, filename)
   await writeFile(filePath, buffer)
@@ -82,7 +131,12 @@ export async function POST(request: Request) {
   const imagePath = `/uploads/users/${userId}/images/${filename}`
 
   try {
-    const image = await orm.Image.select("id", "path", "width", "height").create({
+    const image = await orm.Image.select(
+      "id",
+      "path",
+      "width",
+      "height"
+    ).create({
       userId,
       filename,
       originalFilename: file.name,
@@ -93,10 +147,18 @@ export async function POST(request: Request) {
       height,
       createdAt: nowTimestamp(),
     })
-    return NextResponse.json({ id: image.id, path: image.path, width: image.width, height: image.height })
+    return NextResponse.json({
+      id: image.id,
+      path: image.path,
+      width: image.width,
+      height: image.height,
+    })
   } catch (error) {
     console.error("[ImageUpload] create failed:", error)
     await rm(filePath, { force: true }).catch(() => {})
-    return NextResponse.json({ message: "Не вдалося зберегти зображення." }, { status: 500 })
+    return NextResponse.json(
+      { message: "Не вдалося зберегти зображення." },
+      { status: 500 }
+    )
   }
 }

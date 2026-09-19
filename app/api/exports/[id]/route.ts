@@ -1,20 +1,25 @@
 import { NextResponse } from "next/server"
 
-import { auth } from "@/auth"
+import { getSessionUser } from "@/lib/auth"
 import { orm } from "@/lib/db"
 import { extractAnchorPositions } from "@/lib/documents/anchors"
 
 type Params = { id: string }
 
-export async function GET(request: Request, { params }: { params: Promise<Params> }) {
-  const session = await (auth as unknown as () => Promise<{ user?: { id?: string; role?: string } } | null>)()
-  const userId = session?.user?.id
-  if (!userId) return NextResponse.json({ message: "Не авторизовано." }, { status: 401 })
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<Params> }
+) {
+  const user = await getSessionUser()
+  const userId = user?.id
+  if (!userId)
+    return NextResponse.json({ message: "Не авторизовано." }, { status: 401 })
 
   const { id } = await params
   const file = await orm.ExportedFile.first({ id })
-  if (!file) return NextResponse.json({ message: "Файл не знайдено." }, { status: 404 })
-  if (file.userId !== userId && session?.user?.role !== "ADMIN") {
+  if (!file)
+    return NextResponse.json({ message: "Файл не знайдено." }, { status: 404 })
+  if (file.userId !== userId && user?.role !== "ADMIN") {
     return NextResponse.json({ message: "Недостатньо прав." }, { status: 403 })
   }
 

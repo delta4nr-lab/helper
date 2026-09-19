@@ -7,6 +7,8 @@ import { SiteHeader } from "@/components/site-header"
 import { SiteFooter } from "@/components/site-footer"
 import { getCategory } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
+import { getSessionUser } from "@/lib/auth"
+import { getFullName } from "@/lib/names"
 import { getActiveCourseRecords } from "@/lib/courses/queries"
 import type { CourseRecordData } from "@/lib/courses/types"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
@@ -51,10 +53,10 @@ export default async function TemplateDetailPage({
     const dbCat = await orm.Category.select("title").first({ slug: category })
     if (dbCat) categoryTitle = dbCat.title
 
-    const dbTpl = await orm.Template.where({
+    const dbTpl = await orm.Template.select("title").first({
       id: templateId,
       isActive: true,
-    }).first()
+    })
     if (!dbTpl) notFound()
 
     title = dbTpl.title
@@ -64,6 +66,9 @@ export default async function TemplateDetailPage({
 
   // Довідники для прив'язки персональних/курсантських полів у документі:
   // користувач заповнює маркери, вставлені адміном у шаблоні.
+  // ПІБ/підписи та курсанти — це чутливі дані, тому анонімному відвідувачу
+  // вони не передаються (сторінка лишається публічною для перегляду шаблону).
+  const viewer = await getSessionUser()
   let personnel: {
     id: string
     fullName: string
@@ -73,34 +78,34 @@ export default async function TemplateDetailPage({
   }[] = []
   let cadets: CourseRecordData[] = []
 
-  try {
-    personnel = await orm.Personnel.select(
-      "id",
-      "lastName",
-      "firstName",
-      "middleName",
-      "rank",
-      "position",
-      "signaturePath"
-    )
-      .orderBy((p) => p.lastName.asc())
-      .limit(500)
-      .all()
-      .then((rows) =>
-        rows.map((p) => ({
-          id: p.id,
-          fullName: [p.lastName, p.firstName, p.middleName]
-            .filter(Boolean)
-            .join(" "),
-          rank: p.rank,
-          position: p.position,
-          signaturePath: p.signaturePath ?? null,
-        }))
+  if (viewer) {
+    try {
+      personnel = await orm.Personnel.select(
+        "id",
+        "lastName",
+        "firstName",
+        "middleName",
+        "rank",
+        "position",
+        "signaturePath"
       )
+        .orderBy((p) => p.lastName.asc())
+        .limit(500)
+        .all()
+        .then((rows) =>
+          rows.map((p) => ({
+            id: p.id,
+            fullName: getFullName(p),
+            rank: p.rank,
+            position: p.position,
+            signaturePath: p.signaturePath ?? null,
+          }))
+        )
 
-    cadets = await getActiveCourseRecords()
-  } catch {
-    // Довідники несуттєві для відкриття документа — редагування без прив'язки
+      cadets = await getActiveCourseRecords()
+    } catch {
+      // Довідники несуттєві для відкриття документа — редагування без прив'язки
+    }
   }
 
   return (

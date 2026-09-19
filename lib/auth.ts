@@ -1,20 +1,6 @@
 import "server-only"
 
-import bcrypt from "bcrypt"
-import { db } from "@/lib/db"
-
-// Простий session через cookies/JWT буде додано пізніше — зараз базові хелпери
-// Використовується тільки на сервері (AGENTS: Security)
-
-const SALT_ROUNDS = 10
-
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, SALT_ROUNDS)
-}
-
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash)
-}
+import { auth } from "@/auth"
 
 export type SessionUser = {
   id: string
@@ -23,22 +9,9 @@ export type SessionUser = {
   isActive: boolean
 }
 
-export function requireAdmin(session: SessionUser | null) {
-  if (!session) throw new Error("Не авторизовано")
-  if (!session.isActive) throw new Error("Акаунт деактивовано")
-  if (session.role !== "ADMIN") throw new Error("Недостатньо прав: тільки для адміністратора")
-}
+// --- Канонічні server helpers (auth() з @/auth) ---
 
-export function requireAuth(session: SessionUser | null) {
-  if (!session) throw new Error("Не авторизовано")
-  if (!session.isActive) throw new Error("Акаунт деактивовано")
-}
-
-// --- Server helpers для App Router (auth() з @/auth) ---
-
-import { auth } from "@/auth"
-
-/** Отримати типізовану сесію або null, без кастів у сторінках */
+/** Типізована сесія або null, без кастів у сторінках. */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth()
   const u = session?.user as unknown as SessionUser | undefined
@@ -51,32 +24,16 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   }
 }
 
-/** Викидає redirect/forbidden на рівні Server Component, якщо не ADMIN */
-export async function requireAdminSession(): Promise<SessionUser> {
+/** ID адміністратора або null. Перевіряє роль і isActive на сервері. */
+export async function getAdminId(): Promise<string | null> {
   const user = await getSessionUser()
-  requireAdmin(user)
-  return user!
+  if (!user || !user.isActive || user.role !== "ADMIN") return null
+  return user.id
 }
 
-export async function requireAuthSession(): Promise<SessionUser> {
-  const user = await getSessionUser()
-  requireAuth(user)
-  return user!
-}
-
-// Хелпер для аватара — перша літера логіну (вимога: без файлу)
-export function avatarFallback(username: string): string {
-  return username.trim().charAt(0).toUpperCase() || "?"
-}
-
-// Валідація імені користувача (юзернейм без email)
-export function validateUsername(username: string): string | null {
-  const u = username.trim()
-  if (u.length < 3 || u.length > 20) return "Логін має бути 3–20 символів"
-  if (!/^[a-z0-9_]+$/.test(u)) return "Логін: тільки латиниця, цифри та _"
-  return null
-}
-
-export async function getUserByUsername(username: string) {
-  return db.orm.public.User.where({ username: username.trim().toLowerCase() }).include("profile", (p) => p).first()
+/** Як getAdminId, але кидає помилку (для дій, що очікують try/catch). */
+export async function requireAdminId(): Promise<string> {
+  const id = await getAdminId()
+  if (!id) throw new Error("Недостатньо прав")
+  return id
 }

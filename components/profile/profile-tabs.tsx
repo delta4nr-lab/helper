@@ -6,6 +6,7 @@ import { FileText, ImageIcon } from "lucide-react"
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import { buildProfileHref } from "@/lib/profile/query"
 import type { ListQuery } from "@/components/profile/types"
 
 function CountPill({
@@ -31,12 +32,16 @@ function CountPill({
 
 export function ProfileTabs({
   tab,
+  q,
+  sort,
   documentsCount,
   mediaCount,
   documents,
   media,
 }: {
   tab: ListQuery["tab"]
+  q: string
+  sort: string
   documentsCount: number
   mediaCount: number
   documents: React.ReactNode
@@ -50,7 +55,8 @@ export function ProfileTabs({
       label: "Документи",
       icon: FileText,
       count: documentsCount,
-      description: "Збережені вами документи: перегляд, завантаження та видалення.",
+      description:
+        "Збережені вами документи: перегляд, завантаження та видалення.",
     },
     {
       value: "media" as const,
@@ -65,7 +71,11 @@ export function ProfileTabs({
   return (
     <Tabs
       value={tab}
-      onValueChange={(next) => router.replace(`/profile?tab=${next}`)}
+      onValueChange={(next) =>
+        router.replace(
+          buildProfileHref({ tab: next as ListQuery["tab"], q, sort })
+        )
+      }
     >
       <TabsList className="h-10! w-full rounded-xl p-1 sm:w-auto">
         {items.map((item) => {
@@ -74,7 +84,7 @@ export function ProfileTabs({
             <TabsTrigger
               key={item.value}
               value={item.value}
-              className="gap-2 px-4 text-sm text-foreground/70 dark:text-foreground/70 sm:flex-none"
+              className="gap-2 px-4 text-sm text-foreground/70 sm:flex-none dark:text-foreground/70"
             >
               <Icon className="size-4" />
               <span>{item.label}</span>

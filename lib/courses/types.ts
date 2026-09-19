@@ -109,7 +109,10 @@ export const EXCEL_COLUMN_FIELDS = {
   37: { field: "ubdNumber", kind: "text" },
 } as const satisfies Record<
   number,
-  { field: CourseRecordTextField | "orderNumber"; kind: "text" | "date" | "int" }
+  {
+    field: CourseRecordTextField | "orderNumber"
+    kind: "text" | "date" | "int"
+  }
 >
 
 // Розбір ПІБ («АЛАДІН Вадим Андрійович») на частини для пікера й сортування
@@ -128,7 +131,10 @@ export function splitFullName(fullName: string | null): {
 }
 
 // Людські назви полів курсу — для редактора полів шаблонів і майбутнього пікера
-export const COURSE_FIELD_LABELS: Record<CourseRecordTextField | "orderNumber", string> = {
+export const COURSE_FIELD_LABELS: Record<
+  CourseRecordTextField | "orderNumber",
+  string
+> = {
   orderNumber: "№ п/п",
   weaponNumber: "№ зброї",
   rank: "Звання",
@@ -166,16 +172,4 @@ export const COURSE_FIELD_LABELS: Record<CourseRecordTextField | "orderNumber", 
   injuries: "Перенесені травми",
   militaryTicket: "№ військового квитка",
   ubdNumber: "№ УБД",
-}
-
-// Типи полів автопідстановки з активного курсу (у TemplateField._type — з префіксом "course:")
-export const COURSE_FIELD_TYPES = [
-  ...COURSE_RECORD_TEXT_FIELDS.map((field) => `course:${field}`),
-  "course:orderNumber",
-] as const
-
-export type CourseFieldType = (typeof COURSE_FIELD_TYPES)[number]
-
-export function courseFieldLabel(type: CourseFieldType): string {
-  return COURSE_FIELD_LABELS[type.slice("course:".length) as CourseRecordTextField | "orderNumber"] ?? type
 }

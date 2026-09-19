@@ -3,14 +3,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { buildProfileHref } from "@/lib/profile/query"
 import type { ListQuery } from "@/components/profile/types"
-
-function buildHref(page: number, query: ListQuery): string {
-  const params = new URLSearchParams({ tab: query.tab, page: String(page) })
-  if (query.q) params.set("q", query.q)
-  if (query.sort) params.set("sort", query.sort)
-  return `/profile?${params.toString()}`
-}
 
 // Компактний ряд сторінок: 1 … N-1 N N+1 … last
 function pageWindow(page: number, totalPages: number): (number | "ellipsis")[] {
@@ -53,7 +47,7 @@ export function ProfilePagination({
       className="flex flex-wrap items-center justify-center gap-1.5 pt-2"
     >
       <Link
-        href={buildHref(Math.max(1, query.page - 1), query)}
+        href={buildProfileHref(query, Math.max(1, query.page - 1))}
         aria-disabled={query.page <= 1}
         tabIndex={query.page <= 1 ? -1 : undefined}
         className={navClass(query.page <= 1)}
@@ -72,7 +66,7 @@ export function ProfilePagination({
         ) : (
           <Link
             key={item}
-            href={buildHref(item, query)}
+            href={buildProfileHref(query, item)}
             aria-current={item === query.page ? "page" : undefined}
             className={cn(
               buttonVariants({
@@ -88,7 +82,7 @@ export function ProfilePagination({
       )}
 
       <Link
-        href={buildHref(Math.min(totalPages, query.page + 1), query)}
+        href={buildProfileHref(query, Math.min(totalPages, query.page + 1))}
         aria-disabled={query.page >= totalPages}
         tabIndex={query.page >= totalPages ? -1 : undefined}
         className={navClass(query.page >= totalPages)}
