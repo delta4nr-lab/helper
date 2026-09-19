@@ -42,6 +42,7 @@ import {
   type TemplateDefinition,
 } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
+import { getSessionUser } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 
 // ——————————————————————————————————————————————
@@ -116,6 +117,11 @@ const personnelPreview = [
 export const dynamic = "force-dynamic"
 
 export default async function Page() {
+  // Роль для адмін-доступних елементів (навігація/CTA). Це лише UI —
+  // сторінки /admin/* перевіряють доступ на сервері.
+  const sessionUser = await getSessionUser()
+  const isAdmin = sessionUser?.role === "ADMIN"
+
   // Прев'ю реального DOCX-шаблону (один випадковий активний, на кожне
   // завантаження сторінки) + живі лічильники для мікро-метрик.
   // Будь-яка помилка (БД недоступна) → фолбеки: null / 0.
@@ -498,15 +504,17 @@ export default async function Page() {
                   Створити перший документ
                   <ArrowRight className="size-4" />
                 </Link>
-                <Link
-                  href="#personnel"
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "lg" }),
-                    "w-full sm:w-auto lg:w-full"
-                  )}
-                >
-                  Додати особовий склад
-                </Link>
+                {isAdmin && (
+                  <Link
+                    href="/admin/personnel"
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "lg" }),
+                      "w-full sm:w-auto lg:w-full"
+                    )}
+                  >
+                    Додати особовий склад
+                  </Link>
+                )}
               </div>
             </CardContent>
           </Card>

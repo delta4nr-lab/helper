@@ -6,6 +6,8 @@ import { revalidatePath } from "next/cache"
 import { auth } from "@/auth"
 import { orm, nowTimestamp } from "@/lib/db"
 import { validateUsername } from "@/lib/auth"
+import { deleteExport, renameExport } from "@/lib/db/exports"
+import { deleteImage } from "@/lib/db/images"
 
 type ActionResult = { ok: boolean; message: string; field?: string }
 
@@ -101,4 +103,69 @@ export async function updateProfileDetailsAction(_prev: ActionResult | null, for
 
   revalidatePath("/profile")
   return { ok: true, message: "Дані профілю збережено" }
+}
+
+export async function deleteExportAction(id: string): Promise<ActionResult> {
+  const session = await getSession()
+  const userId = getSessionUserId(session)
+  if (!userId) return { ok: false, message: "Не авторизовано" }
+  if (!id) return { ok: false, message: "Невірний документ" }
+
+  let deleted: boolean
+  try {
+    // Власник перевіряється безпосередньо у запиті WHERE id + userId.
+    deleted = await deleteExport({ id, userId })
+  } catch (error) {
+    console.error("[ExportDelete] failed:", error)
+    return { ok: false, message: "Не вдалося видалити документ. Спробуйте ще раз." }
+  }
+  if (!deleted) return { ok: false, message: "Документ не знайдено" }
+
+  revalidatePath("/profile")
+  return { ok: true, message: "Документ видалено" }
+}
+
+export async function renameExportAction(id: string, title: string): Promise<ActionResult> {
+  const session = await getSession()
+  const userId = getSessionUserId(session)
+  if (!userId) return { ok: false, message: "Не авторизовано" }
+
+  const clean = title.trim()
+  if (!clean) return { ok: false, message: "Введіть назву документа", field: "title" }
+  if (clean.length > 200) {
+    return { ok: false, message: "Назва занадто довга (максимум 200 символів)", field: "title" }
+  }
+
+  let result: { fileName: string } | null
+  try {
+    // Власник перевіряється безпосередньо у запиті WHERE id + userId.
+    result = await renameExport({ id, userId, title: clean })
+  } catch (error) {
+    console.error("[ExportRename] failed:", error)
+    return { ok: false, message: "Не вдалося перейменувати документ. Спробуйте ще раз." }
+  }
+  if (!result) return { ok: false, message: "Документ не знайдено" }
+
+  revalidatePath("/profile")
+  return { ok: true, message: "Документ перейменовано" }
+}
+
+export async function deleteImageAction(id: string): Promise<ActionResult> {
+  const session = await getSession()
+  const userId = getSessionUserId(session)
+  if (!userId) return { ok: false, message: "Не авторизовано" }
+  if (!id) return { ok: false, message: "Невірний файл" }
+
+  let deleted: boolean
+  try {
+    // Власник перевіряється у запитах; файл з диска видаляється лише з public/uploads.
+    deleted = await deleteImage({ id, userId })
+  } catch (error) {
+    console.error("[ImageDelete] failed:", error)
+    return { ok: false, message: "Не вдалося видалити файл. Спробуйте ще раз." }
+  }
+  if (!deleted) return { ok: false, message: "Файл не знайдено" }
+
+  revalidatePath("/profile")
+  return { ok: true, message: "Файл видалено" }
 }

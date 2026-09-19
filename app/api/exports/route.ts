@@ -2,14 +2,11 @@ import { NextResponse } from "next/server"
 
 import { auth } from "@/auth"
 import { orm } from "@/lib/db"
+import { safeDocxFileName } from "@/lib/documents/filename"
 import { sanitizeExportedDocx } from "@/lib/documents/sanitize-docx"
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 const MAX_FILE_SIZE = 25 * 1024 * 1024
-
-function safeFileName(value: string): string {
-  return `${value.replace(/[^\p{L}\p{N}\s-]/gu, "").trim() || "document"}.docx`
-}
 
 // Зберігає DOCX, згенерований редактором у браузері, до історії експортів користувача.
 // Приймає FormData: templateId, title, file (DOCX-байти).
@@ -42,7 +39,7 @@ export async function POST(request: Request) {
   // без полів заповнення, а Word — без схемно-некоректних SDT-структур
   // (попередження «непридатний для читання вміст» зникає)
   const data = await sanitizeExportedDocx(new Uint8Array(await file.arrayBuffer()))
-  const fileName = safeFileName(title)
+  const fileName = safeDocxFileName(title)
 
   const exported = await orm.ExportedFile.select("id").create({
     userId,

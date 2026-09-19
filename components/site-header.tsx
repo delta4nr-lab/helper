@@ -12,10 +12,13 @@ import { AuthModal } from "@/components/auth/auth-modal"
 import { UserMenu } from "@/components/auth/user-menu"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 
-const nav = [
+const baseNav = [
   { label: "Шаблони", href: "/templates" },
-  { label: "Особовий склад", href: "/#personnel" },
-  { label: "Як це працює", href: "/#how" },
+]
+
+const adminNav = [
+  { label: "Особовий склад", href: "/admin/personnel" },
+  { label: "Створити шаблон", href: "/admin/templates" },
 ]
 
 export function SiteHeader() {
@@ -23,6 +26,17 @@ export function SiteHeader() {
   const [authOpen, setAuthOpen] = React.useState(false)
   const { user, status } = useAuthSession()
   const isAuthed = status === "authenticated" && !!user
+  const isAdmin = isAuthed && user?.role === "ADMIN"
+
+  // Адмін-пункти показуємо лише адміністратору (доступи до /admin/* все одно
+  // перевіряються на сервері).
+  const nav = isAdmin
+    ? [
+        baseNav[0],
+        ...adminNav,
+        ...baseNav.slice(1),
+      ]
+    : baseNav
 
   return (
     <>
