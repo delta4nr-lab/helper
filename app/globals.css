@@ -212,5 +212,13 @@
   content: none;
 }
 
+/* docx-preview обгортає плаваючі зображення (wp:anchor + wrapNone) у div із
+   width:0; height:0. Tailwind-preflight `img { max-width: 100% }` тоді стискає
+   зображення до нульової ширини (100% від 0) — підпис у прев'ю невидимий.
+   Знімаємо кламп лише для таких обгорток; явні розміри docx (a:ext) лишаються. */
+.docx-wrapper div[style*="width: 0px"][style*="height: 0px"] img {
+  max-width: none;
+}
+
 
 
