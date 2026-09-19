@@ -20,6 +20,13 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 export type TemplateRow = {
@@ -262,18 +269,27 @@ export function TemplateManager({
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="create-category">Категорія</Label>
-              <select
-                id="create-category"
+              <Select
+                items={categories.map((category) => ({
+                  value: category.slug,
+                  label: category.title,
+                }))}
                 value={createForm.categorySlug}
-                onChange={(event) => setCreateForm({ ...createForm, categorySlug: event.target.value })}
-                className="border-input bg-background flex h-8 w-full rounded-md border px-2 text-sm"
+                onValueChange={(value) =>
+                  setCreateForm({ ...createForm, categorySlug: value ?? "" })
+                }
               >
-                {categories.map((category) => (
-                  <option key={category.slug} value={category.slug}>
-                    {category.title}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="create-category" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.slug} value={category.slug}>
+                      {category.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="create-description">Опис</Label>
@@ -294,18 +310,24 @@ export function TemplateManager({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="create-paper">Папір</Label>
-                <select
-                  id="create-paper"
+                <Select
+                  items={PAPERS.map((paper) => ({ value: paper, label: paper }))}
                   value={createForm.paper}
-                  onChange={(event) => setCreateForm({ ...createForm, paper: event.target.value })}
-                  className="border-input bg-background flex h-8 w-full rounded-md border px-2 text-sm"
+                  onValueChange={(value) =>
+                    setCreateForm({ ...createForm, paper: value ?? PAPERS[0] })
+                  }
                 >
-                  {PAPERS.map((paper) => (
-                    <option key={paper} value={paper}>
-                      {paper}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="create-paper" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAPERS.map((paper) => (
+                      <SelectItem key={paper} value={paper}>
+                        {paper}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="grid gap-1.5">
@@ -348,18 +370,27 @@ export function TemplateManager({
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="edit-category">Категорія</Label>
-              <select
-                id="edit-category"
+              <Select
+                items={categories.map((category) => ({
+                  value: category.slug,
+                  label: category.title,
+                }))}
                 value={editForm.categorySlug}
-                onChange={(event) => setEditForm({ ...editForm, categorySlug: event.target.value })}
-                className="border-input bg-background flex h-8 w-full rounded-md border px-2 text-sm"
+                onValueChange={(value) =>
+                  setEditForm({ ...editForm, categorySlug: value ?? "" })
+                }
               >
-                {categories.map((category) => (
-                  <option key={category.slug} value={category.slug}>
-                    {category.title}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="edit-category" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.slug} value={category.slug}>
+                      {category.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="edit-description">Опис</Label>
@@ -380,18 +411,24 @@ export function TemplateManager({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="edit-paper">Папір</Label>
-                <select
-                  id="edit-paper"
+                <Select
+                  items={PAPERS.map((paper) => ({ value: paper, label: paper }))}
                   value={editForm.paper}
-                  onChange={(event) => setEditForm({ ...editForm, paper: event.target.value })}
-                  className="border-input bg-background flex h-8 w-full rounded-md border px-2 text-sm"
+                  onValueChange={(value) =>
+                    setEditForm({ ...editForm, paper: value ?? PAPERS[0] })
+                  }
                 >
-                  {PAPERS.map((paper) => (
-                    <option key={paper} value={paper}>
-                      {paper}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="edit-paper" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAPERS.map((paper) => (
+                      <SelectItem key={paper} value={paper}>
+                        {paper}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="flex items-center gap-4">
