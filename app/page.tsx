@@ -30,10 +30,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { SiteHeader } from "@/components/site-header"
 import { PreviewDoc } from "@/components/site/preview-doc"
+import { HomeSearch } from "@/components/templates/home-search"
 import { TemplateCard } from "@/components/templates/template-card"
 import { getPreviewDoc, type TemplatePreviewDoc } from "@/lib/templates/preview"
 import {
@@ -181,10 +181,14 @@ export default async function Page() {
       <SiteHeader />
 
       {/* HERO */}
-      <section id="hero" className="relative overflow-hidden border-b">
-        {/* декоративна сітка */}
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] mask-[radial-gradient(ellipse_80%_60%_at_50%_0%,#000_70%,transparent_110%)] bg-size-[32px_32px] opacity-[0.35]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-120 bg-linear-to-b from-primary/10 via-primary/4 to-transparent" />
+      <section id="hero" className="relative border-b">
+        {/* декоративні елементи обрізаємо в межах hero, щоб вони не
+            перекривали випадаючий список пошуку */}
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          {/* декоративна сітка */}
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,var(--color-border)_1px,transparent_1px),linear-gradient(to_bottom,var(--color-border)_1px,transparent_1px)] mask-[radial-gradient(ellipse_80%_60%_at_50%_0%,#000_70%,transparent_110%)] bg-size-[32px_32px] opacity-[0.35]" />
+          <div className="absolute inset-x-0 top-0 h-120 bg-linear-to-b from-primary/10 via-primary/4 to-transparent" />
+        </div>
 
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10 lg:px-8 lg:py-14">
           {/* left */}
@@ -197,10 +201,7 @@ export default async function Page() {
                 <span className="size-2 rounded-full bg-emerald-500" />
                 Для стройової та кадрової служб
               </Badge>
-              <Badge variant="outline" className="rounded-full text-xs">
-                <Sparkles className="size-3" />
-                Нові шаблони щотижня
-              </Badge>
+              
             </div>
 
             <div className="space-y-3">
@@ -217,74 +218,16 @@ export default async function Page() {
                 особового складу, валідуйте, переглядайте перед друком та
                 експортуйте в{" "}
                 <span className="font-medium text-foreground">
-                  Excel, PDF і Word
+                  Word
                 </span>{" "}
                 — швидко та без помилок.
               </p>
             </div>
 
-            {/* пошук-бар як у адмінці */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2 rounded-xl border bg-card p-1.5 shadow-sm">
-                <div className="relative flex-1">
-                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    placeholder="Пошук: рапорт на відпустку, наказ, довідка..."
-                    className="h-9 border-0 bg-transparent pl-9 shadow-none focus-visible:ring-0"
-                  />
-                </div>
-                <Link
-                  href="#templates"
-                  className={cn(buttonVariants({ size: "sm" }), "shrink-0")}
-                >
-                  Знайти шаблон
-                  <ArrowRight className="size-4" />
-                </Link>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>Популярне:</span>
-                <Link
-                  href="#templates"
-                  className="rounded-full border bg-muted px-2.5 py-1 hover:bg-muted/80"
-                >
-                  Рапорт
-                </Link>
-                <Link
-                  href="#templates"
-                  className="rounded-full border bg-muted px-2.5 py-1 hover:bg-muted/80"
-                >
-                  Наказ
-                </Link>
-                <Link
-                  href="#templates"
-                  className="rounded-full border bg-muted px-2.5 py-1 hover:bg-muted/80"
-                >
-                  Довідка
-                </Link>
-                <span className="hidden sm:inline">
-                  • українською • формат А4
-                </span>
-              </div>
-            </div>
+            {/* пошук по всьому каталогу (усі категорії) з живими підказками */}
+            <HomeSearch />
 
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Link
-                href="#templates"
-                className={cn(buttonVariants({ size: "lg" }))}
-              >
-                <FileText className="size-4" />
-                Створити документ
-              </Link>
-              <Link
-                href="#how"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "lg" })
-                )}
-              >
-                Як це працює
-                <ChevronRight className="size-4" />
-              </Link>
-            </div>
+            
 
             {/* мікро-метрики */}
             <div className="grid grid-cols-3 gap-3 pt-2">
@@ -308,7 +251,7 @@ export default async function Page() {
                   {exportsCount}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Excel · PDF · Word
+                   Word
                 </div>
               </div>
               <div className="rounded-xl border bg-card p-3">

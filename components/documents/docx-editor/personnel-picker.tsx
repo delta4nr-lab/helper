@@ -148,10 +148,11 @@ export function PersonnelChrome({
   // дубльованих груп: декілька чіпів можуть мати один і той самий key
   // (staff.{i}.signature), і кожен з них тримає власний drawing у масиві
   // карти. Матч за КЛЮЧЕМ-СХЕМОЮ (не за attrs нод), щоб не залежати від
-  // того, як рушій віддає attrs.
-  function deleteSignatureMarkersForInstance(instanceId: string): void {
+  // того, як рушій віддає attrs. Flavor обов'язковий: staff-номер N і
+  // cadet-номер N — різні люди, чужу схему чіпати не можна.
+  function deleteSignatureMarkersForInstance(instanceId: string, flavor: ChipFlavor): void {
     if (!editor) return
-    const pattern = new RegExp(`^(staff|cadet)\\.${instanceId}\\.signature$`)
+    const pattern = new RegExp(`^${flavor}\\.${instanceId}\\.signature$`)
     for (const [key, markers] of sigMarkersRef.current) {
       if (!pattern.test(key)) continue
       for (const marker of markers) {
@@ -314,12 +315,16 @@ export function PersonnelChrome({
       // Мульти-видалення: прибираємо ВСІ картинки підписів цього екземпляра
       // (у т.ч. в дубльованих групах з тим самим key), ПЕРШ ніж обробляти
       // чіпи — щоб другий чіп того ж поля не зітрив картинку першого.
-      deleteSignatureMarkersForInstance(String(instanceId))
+      deleteSignatureMarkersForInstance(String(instanceId), "staff")
 
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
         return (
-          attrs.fieldType != null && attrs.personInstance === String(instanceId)
+          attrs.fieldType != null &&
+          attrs.personInstance === String(instanceId) &&
+          // НЕ чіпаємо курсантські ноди: flavor фіксується схемою key
+          // (staff.{N} і cadet.{N} — різні люди з однаковим номером)
+          attrs.key?.startsWith("cadet.") !== true
         )
       })
       if (nodes.length === 0) {
@@ -459,11 +464,18 @@ export function PersonnelChrome({
     suspendFieldSelect(true)
     try {
       // Мульти-видалення: знімаємо ВСІ картинки підписів екземпляра,
-      // включно з дубльованими групами (той самий key).
-      deleteSignatureMarkersForInstance(String(instanceId))
+      // включно з дубльованими групами (той самий key) — лише свого flavor.
+      deleteSignatureMarkersForInstance(String(instanceId), flavor)
       const nodes = customNodesOf(editor).filter((node) => {
         const attrs = node.attrs as FieldChipAttrs
-        return attrs.fieldType != null && attrs.personInstance === String(instanceId)
+        // Строго свій flavor: staff.{N} і cadet.{N} — різні люди з однаковим
+        // номером (legacy-ноди без cadet. префікса лишаються персоналом)
+        const isCadetKey = attrs.key?.startsWith("cadet.") === true
+        return (
+          attrs.fieldType != null &&
+          attrs.personInstance === String(instanceId) &&
+          (flavor === "cadet" ? isCadetKey : !isCadetKey)
+        )
       })
       for (const node of nodes) {
         const attrs = node.attrs as FieldChipAttrs
