@@ -13,6 +13,11 @@ export function getFullName(parts: PersonNameParts): string {
     .join(" ")
 }
 
+/** Скорочене ім'я: «Прізвище Ім'я» (без по батькові). */
+export function getShortName(parts: PersonNameParts): string {
+  return [parts.lastName, parts.firstName].filter(Boolean).join(" ")
+}
+
 /** Перша літера логіну для аватара (без файлу). */
 export function getInitials(username: string): string {
   return username.trim().charAt(0).toUpperCase() || "?"

@@ -36,6 +36,7 @@ import {
   Plus,
   Search,
   Shield,
+  User,
   UserRound,
   type LucideIcon,
 } from "lucide-react"
@@ -63,11 +64,13 @@ import {
 } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
-export type PersonnelFieldType = "fullName" | "position" | "rank" | "signature"
+export type PersonnelFieldType =
+  "fullName" | "fullNameShort" | "position" | "rank" | "signature"
 
 export type PersonnelEntry = {
   id: string
   fullName: string
+  shortName: string
   rank: string
   position: string
   signaturePath: string | null
@@ -75,6 +78,7 @@ export type PersonnelEntry = {
 
 export const PERSONNEL_FIELD_LABELS: Record<PersonnelFieldType, string> = {
   fullName: "ПІБ",
+  fullNameShort: "Прізвище та ім'я",
   position: "Посада",
   rank: "Звання",
   signature: "Підпис",
@@ -83,6 +87,7 @@ export const PERSONNEL_FIELD_LABELS: Record<PersonnelFieldType, string> = {
 // Іконки кнопок полів у панелі (старий стиль панелей довідників)
 const FIELD_ICONS: Record<PersonnelFieldType, LucideIcon> = {
   fullName: UserRound,
+  fullNameShort: User,
   position: Briefcase,
   rank: Shield,
   signature: PenLine,

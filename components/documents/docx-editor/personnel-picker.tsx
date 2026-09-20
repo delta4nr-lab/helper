@@ -86,11 +86,13 @@ function fieldLabel(flavor: ChipFlavor, fieldType: string): string {
   return PERSONNEL_FIELD_LABELS[fieldType as keyof typeof PERSONNEL_FIELD_LABELS] ?? "Поле"
 }
 
-// значення текстових полів із вибраної людини (ПІБ/Посада/Звання)
+// значення текстових полів із вибраної людини (ПІБ/ПІБ скорочено/Посада/Звання)
 function textForField(fieldType: string, person: PersonnelEntry): string {
   switch (fieldType) {
     case "fullName":
       return person.fullName
+    case "fullNameShort":
+      return person.shortName
     case "position":
       return person.position
     case "rank":
@@ -276,8 +278,9 @@ export function PersonnelChrome({
             field != null &&
             field.flavor === activeFlavor &&
             field.instance === activeInstance &&
-            // Позицію кнопки ведемо біля ПІБ-чіпа групи (як і раніше)
-            field.fieldType === "fullName"
+            // Позицію кнопки ведемо біля ПІБ-чіпа групи (повного або скороченого)
+            (field.fieldType === "fullName" ||
+              field.fieldType === "fullNameShort")
         )
       const rect = personNode
         ? document

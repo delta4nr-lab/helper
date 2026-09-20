@@ -8,7 +8,7 @@ import { SiteFooter } from "@/components/site-footer"
 import { getCategory } from "@/lib/documents/catalog"
 import { orm } from "@/lib/db"
 import { getSessionUser } from "@/lib/auth"
-import { getFullName } from "@/lib/names"
+import { getFullName, getShortName } from "@/lib/names"
 import { getActiveCourseRecords } from "@/lib/courses/queries"
 import type { CourseRecordData } from "@/lib/courses/types"
 import { DocumentEditor } from "@/components/documents/docx-editor/document-editor"
@@ -72,6 +72,7 @@ export default async function TemplateDetailPage({
   let personnel: {
     id: string
     fullName: string
+    shortName: string
     rank: string
     position: string
     signaturePath: string | null
@@ -96,6 +97,7 @@ export default async function TemplateDetailPage({
           rows.map((p) => ({
             id: p.id,
             fullName: getFullName(p),
+            shortName: getShortName(p),
             rank: p.rank,
             position: p.position,
             signaturePath: p.signaturePath ?? null,
