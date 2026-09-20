@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@bprogress/next/app"
 import { toast } from "sonner"
 import { ExternalLink, ImageOff, Loader2, SearchX, Trash2 } from "lucide-react"
 

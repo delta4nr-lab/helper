@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { Geist_Mono, Roboto } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/components/auth/auth-provider"
+import { AppProgressProvider } from "@/components/shared/app-progress-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { cn } from "@/lib/utils"
 
@@ -62,7 +64,11 @@ export default function RootLayout({
       <body>
         <AuthProvider>
           <ThemeProvider>
-            {children}
+            <Suspense fallback={null}>
+              <AppProgressProvider>
+                {children}
+              </AppProgressProvider>
+            </Suspense>
             <Toaster />
           </ThemeProvider>
         </AuthProvider>

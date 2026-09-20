@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@bprogress/next/app"
 import { FileEdit, Loader2, Pencil, Plus, Search, Star, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@bprogress/next/app"
 import { ArrowRight, Loader2, Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
