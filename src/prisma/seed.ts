@@ -12,7 +12,7 @@ async function main() {
   const users = [
     {
       username: "admin",
-      password: process.env.ADMIN_PASSWORD || "Admin123",
+      password: process.env.ADMIN_PASSWORD || "Admin123!",
       role: "ADMIN" as const,
       profile: {
         lastName: "Адміністратор",
@@ -23,7 +23,7 @@ async function main() {
     },
     {
       username: "user",
-      password: process.env.USER_PASSWORD || "User123",
+      password: process.env.USER_PASSWORD || "User123!",
       role: "USER" as const,
       profile: {
         lastName: "Петренко",
@@ -34,7 +34,7 @@ async function main() {
     },
     {
       username: "kovalchuk",
-      password: "Koval123",
+      password: "Koval123!",
       role: "USER" as const,
       profile: {
         lastName: "Ковальчук",
