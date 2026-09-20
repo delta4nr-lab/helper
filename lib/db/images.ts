@@ -4,6 +4,7 @@ import { rm } from "node:fs/promises"
 import path from "node:path"
 
 import { orm } from "@/lib/db"
+import { IMAGES_ROOT } from "@/lib/storage/paths"
 
 export type MediaSort = "newest" | "oldest" | "name"
 
@@ -92,17 +93,14 @@ export async function deleteImage(params: {
   return true
 }
 
-const PUBLIC_ROOT = path.join(process.cwd(), "public")
-const UPLOADS_ROOT = path.join(PUBLIC_ROOT, "uploads")
-
-// Видаляємо лише файли всередині public/uploads — з захистом від path traversal.
+// Видаляємо лише файли всередині storage/uploads — з захистом від path traversal.
+// `path` у БД має вигляд /uploads/users/{userId}/images/{file}.
 async function removeUploadedFile(publicPath: string): Promise<void> {
   if (!publicPath.startsWith("/uploads/")) return
 
-  const relative = publicPath.replace(/^[/\\]+/, "")
-  const absolute = path.resolve(PUBLIC_ROOT, relative)
-  const uploadsWithSep = UPLOADS_ROOT + path.sep
-  if (!absolute.startsWith(uploadsWithSep)) return
+  const relative = publicPath.replace(/^\/uploads\//, "")
+  const absolute = path.resolve(IMAGES_ROOT, relative)
+  if (!absolute.startsWith(IMAGES_ROOT + path.sep)) return
 
   await rm(absolute, { force: true }).catch(() => {})
 }

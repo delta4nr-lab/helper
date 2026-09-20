@@ -1,6 +1,6 @@
 import "server-only"
 
-import JSZip from "jszip"
+import { loadDocxZip } from "@/lib/documents/docx-zip"
 
 // Опис плаваючого зображення (wp:anchor + wrapNone) з document.xml.
 // Зсуви — в EMU (1 px = 9525 EMU). relativeFrom: page | margin | column | paragraph.
@@ -41,7 +41,7 @@ function readAxis(
 export async function extractAnchorPositions(
   docx: Uint8Array
 ): Promise<DocxAnchorPosition[]> {
-  const zip = await JSZip.loadAsync(docx)
+  const zip = await loadDocxZip(docx)
   const entry = zip.file("word/document.xml")
   if (!entry) return []
 

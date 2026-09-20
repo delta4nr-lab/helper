@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { getSessionUser } from "@/lib/auth"
 import { orm } from "@/lib/db"
 import { extractAnchorPositions } from "@/lib/documents/anchors"
+import { DocxTooLargeError } from "@/lib/documents/docx-zip"
 
 type Params = { id: string }
 
@@ -27,8 +28,24 @@ export async function GET(
   // (docx-preview не враховує relativeFrom). ?inline=1 — перегляд.
   const url = new URL(request.url)
   if (url.searchParams.get("anchors") === "1") {
-    const anchors = await extractAnchorPositions(Buffer.from(file.data))
-    return NextResponse.json({ anchors })
+    try {
+      const anchors = await extractAnchorPositions(Buffer.from(file.data))
+      return NextResponse.json({ anchors })
+    } catch (error) {
+      if (error instanceof DocxTooLargeError) {
+        return NextResponse.json(
+          {
+            message:
+              "Файл завеликий для обробки (перевищено ліміт розпакування).",
+          },
+          { status: 413 }
+        )
+      }
+      return NextResponse.json(
+        { message: "Не вдалося обробити документ." },
+        { status: 400 }
+      )
+    }
   }
 
   const inline = url.searchParams.get("inline") === "1"

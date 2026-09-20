@@ -1,0 +1,119 @@
+[
+  {
+    "id": "index.CourseRecord.CourseRecord_courseId_lastName_firstName_idx",
+    "label": "Create index \"CourseRecord_courseId_lastName_firstName_idx\" on \"CourseRecord\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "CourseRecord_courseId_lastName_firstName_idx",
+        "table": "CourseRecord"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"CourseRecord_courseId_lastName_firstName_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord_courseId_lastName_firstName_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"CourseRecord_courseId_lastName_firstName_idx\"",
+        "sql": "CREATE INDEX \"CourseRecord_courseId_lastName_firstName_idx\" ON \"public\".\"CourseRecord\" (\"courseId\", \"lastName\", \"firstName\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"CourseRecord_courseId_lastName_firstName_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"CourseRecord_courseId_lastName_firstName_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Template.Template_categorySlug_isActive_idx",
+    "label": "Create index \"Template_categorySlug_isActive_idx\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Template_categorySlug_isActive_idx",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Template_categorySlug_isActive_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_categorySlug_isActive_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Template_categorySlug_isActive_idx\"",
+        "sql": "CREATE INDEX \"Template_categorySlug_isActive_idx\" ON \"public\".\"Template\" (\"categorySlug\", \"isActive\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Template_categorySlug_isActive_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_categorySlug_isActive_idx\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.Template.Template_isActive_updatedAt_idx",
+    "label": "Create index \"Template_isActive_updatedAt_idx\" on \"Template\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "Template_isActive_updatedAt_idx",
+        "table": "Template"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"Template_isActive_updatedAt_idx\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_isActive_updatedAt_idx\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"Template_isActive_updatedAt_idx\"",
+        "sql": "CREATE INDEX \"Template_isActive_updatedAt_idx\" ON \"public\".\"Template\" (\"isActive\", \"updatedAt\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"Template_isActive_updatedAt_idx\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"Template_isActive_updatedAt_idx\""
+        ]
+      }
+    ]
+  }
+]

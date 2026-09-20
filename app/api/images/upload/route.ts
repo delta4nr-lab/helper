@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 
 import { getSessionUser } from "@/lib/auth"
 import { orm, nowTimestamp } from "@/lib/db"
+import { IMAGES_ROOT } from "@/lib/storage/paths"
 
 const ALLOWED_MIME = new Set([
   "image/jpeg",
@@ -115,14 +116,7 @@ export async function POST(request: Request) {
           ? "gif"
           : "webp"
   const filename = `${randomUUID()}.${ext}`
-  const dir = path.join(
-    process.cwd(),
-    "public",
-    "uploads",
-    "users",
-    userId,
-    "images"
-  )
+  const dir = path.join(IMAGES_ROOT, "users", userId, "images")
   await mkdir(dir, { recursive: true })
   const filePath = path.join(dir, filename)
   await writeFile(filePath, buffer)

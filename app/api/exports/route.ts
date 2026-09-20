@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth"
 import { orm } from "@/lib/db"
 import { safeDocxFileName } from "@/lib/documents/filename"
 import { sanitizeExportedDocx } from "@/lib/documents/sanitize-docx"
+import { DocxTooLargeError } from "@/lib/documents/docx-zip"
 
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -59,9 +60,24 @@ export async function POST(request: Request) {
   // Чистий експорт: розгортаємо content controls — користувач отримує текст
   // без полів заповнення, а Word — без схемно-некоректних SDT-структур
   // (попередження «непридатний для читання вміст» зникає)
-  const data = await sanitizeExportedDocx(
-    new Uint8Array(await file.arrayBuffer())
-  )
+  let data: Uint8Array
+  try {
+    data = await sanitizeExportedDocx(new Uint8Array(await file.arrayBuffer()))
+  } catch (error) {
+    if (error instanceof DocxTooLargeError) {
+      return NextResponse.json(
+        {
+          message:
+            "Файл завеликий для обробки (перевищено ліміт розпакування).",
+        },
+        { status: 413 }
+      )
+    }
+    return NextResponse.json(
+      { message: "Не вдалося обробити DOCX." },
+      { status: 400 }
+    )
+  }
   const fileName = safeDocxFileName(title)
 
   const exported = await orm.ExportedFile.select("id").create({

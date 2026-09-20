@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import JSZip from "jszip"
 
 import { getSessionUser } from "@/lib/auth"
 import { orm } from "@/lib/db"
+import { DocxTooLargeError, loadDocxZip } from "@/lib/documents/docx-zip"
 
 type Params = { templateId: string }
 
@@ -54,7 +54,7 @@ export async function GET(
   const forWord = new URL(request.url).searchParams.get("word") === "1"
 
   try {
-    const zip = await JSZip.loadAsync(Buffer.from(template.docxData))
+    const zip = await loadDocxZip(Buffer.from(template.docxData))
     const docFile = zip.file("word/document.xml")
     if (docFile && forWord) {
       const xml = await docFile.async("string")
@@ -69,7 +69,14 @@ export async function GET(
         "Cache-Control": "private, no-store",
       },
     })
-  } catch {
+  } catch (error) {
+    // ZIP-bomb: не віддаємо сирі байти (це обійшло б ліміт розпакування).
+    if (error instanceof DocxTooLargeError) {
+      return NextResponse.json(
+        { message: "DOCX перевищує ліміт розпакування." },
+        { status: 413 }
+      )
+    }
     // Некоректний архів — віддаємо як є, редактор покаже помилку парсинга
     return new NextResponse(Buffer.from(template.docxData), {
       headers: {

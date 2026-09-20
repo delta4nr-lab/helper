@@ -1,0 +1,39 @@
+[
+  {
+    "id": "dropTable.TemplateField",
+    "label": "Drop table \"TemplateField\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "TemplateField"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"TemplateField\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop table \"TemplateField\"",
+        "sql": "DROP TABLE \"public\".\"TemplateField\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"TemplateField\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"TemplateField\""
+        ]
+      }
+    ]
+  }
+]

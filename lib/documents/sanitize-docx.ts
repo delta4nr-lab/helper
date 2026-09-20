@@ -1,6 +1,6 @@
 import "server-only"
 
-import JSZip from "jszip"
+import { loadDocxZip } from "@/lib/documents/docx-zip"
 
 // Санітизація експортованого DOCX (користувацький експорт):
 // 1) розгортає всі content controls (w:sdt), лишаючи їхній вміст — чистий
@@ -40,16 +40,19 @@ function ensureTimesNewRomanDefaults(stylesXml: string): string {
     if (!rprDefaultRe.test(inner)) {
       return `<w:docDefaults><w:rPrDefault>${rprWithTnr}</w:rPr></w:rPrDefault></w:docDefaults>${inner}`
     }
-    const newInner = inner.replace(rprDefaultRe, (_m, rprDefaultInner: string) => {
-      const rPrRe = /<w:rPr>([\s\S]*?)<\/w:rPr>/
-      if (!rPrRe.test(rprDefaultInner)) {
-        return `<w:rPrDefault>${rprWithTnr}</w:rPr></w:rPrDefault>`
+    const newInner = inner.replace(
+      rprDefaultRe,
+      (_m, rprDefaultInner: string) => {
+        const rPrRe = /<w:rPr>([\s\S]*?)<\/w:rPr>/
+        if (!rPrRe.test(rprDefaultInner)) {
+          return `<w:rPrDefault>${rprWithTnr}</w:rPr></w:rPrDefault>`
+        }
+        const newRprInner = rprDefaultInner.includes("<w:rFonts")
+          ? rprDefaultInner.replace(/<w:rFonts[^>]*\/>/, TNR_R_FONTS)
+          : rprWithTnr
+        return `<w:rPrDefault><w:rPr>${newRprInner}</w:rPr></w:rPrDefault>`
       }
-      const newRprInner = rprDefaultInner.includes("<w:rFonts")
-        ? rprDefaultInner.replace(/<w:rFonts[^>]*\/>/, TNR_R_FONTS)
-        : rprWithTnr
-      return `<w:rPrDefault><w:rPr>${newRprInner}</w:rPr></w:rPrDefault>`
-    })
+    )
     return `<w:docDefaults>${newInner}</w:docDefaults>`
   })
 }
@@ -57,7 +60,7 @@ function ensureTimesNewRomanDefaults(stylesXml: string): string {
 export async function sanitizeExportedDocx(
   docx: Uint8Array
 ): Promise<Uint8Array> {
-  const zip = await JSZip.loadAsync(docx)
+  const zip = await loadDocxZip(docx)
   const documentEntry = zip.file("word/document.xml")
   if (!documentEntry) return docx
 

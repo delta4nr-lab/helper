@@ -38,6 +38,9 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# private uploads (signatures, user images) — поза public/, не комітимо
+/storage
+
 # prisma — emitted contract artefacts are committed; nothing generated at build time
 
 # AGENTS skills 

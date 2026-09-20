@@ -7,6 +7,7 @@ import { z } from "zod"
 
 import { getAdminId } from "@/lib/auth"
 import { orm, nowTimestamp } from "@/lib/db"
+import { SIGNATURES_ROOT } from "@/lib/storage/paths"
 
 const personnelSchema = z.object({
   lastName: z.string().trim().min(1, "Вкажіть прізвище"),
@@ -25,15 +26,14 @@ const personnelSchema = z.object({
     .optional(),
 })
 
-// Видаляє файл підпису з public/signature (за шляхом /signature/...).
-// Дозволено лише файли безпосередньо в public/signature — без виходу з теки.
+// Видаляє файл підпису з приватного storage/signature (за шляхом /signature/...).
+// Дозволено лише файли безпосередньо в цій теці — без виходу назовні.
 async function removeSignatureFile(signaturePath?: string | null) {
   if (!signaturePath || !signaturePath.startsWith("/signature/")) return
   const fileName = path.basename(signaturePath)
   if (!fileName || fileName === "." || fileName === "..") return
-  const dir = path.join(process.cwd(), "public", "signature")
-  const target = path.resolve(dir, fileName)
-  if (!target.startsWith(dir + path.sep)) return
+  const target = path.resolve(SIGNATURES_ROOT, fileName)
+  if (!target.startsWith(SIGNATURES_ROOT + path.sep)) return
   await unlink(target).catch(() => {})
 }
 

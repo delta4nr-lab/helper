@@ -3,6 +3,7 @@ import path from "node:path"
 import { NextResponse } from "next/server"
 
 import { getSessionUser } from "@/lib/auth"
+import { SIGNATURES_ROOT } from "@/lib/storage/paths"
 
 // PNG/JPEG лише — DOCX не підтримує вбудовування WebP
 const ALLOWED = ["image/png", "image/jpeg"]
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
         ? "webp"
         : "jpg"
   const name = `sig-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-  const dir = path.join(process.cwd(), "public", "signature")
+  const dir = SIGNATURES_ROOT
   await mkdir(dir, { recursive: true })
   await writeFile(path.join(dir, name), buffer)
 
