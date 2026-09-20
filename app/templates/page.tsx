@@ -49,7 +49,7 @@ export default async function TemplatesPage() {
         description: c.description,
         longDescription: c.longDescription ?? c.description,
         countLabel: c.countLabel,
-        icon: c.icon as "raporty",
+        icon: c.icon,
         count: countBySlug.get(c.slug) ?? 0,
       }))
       total = tplRows.length

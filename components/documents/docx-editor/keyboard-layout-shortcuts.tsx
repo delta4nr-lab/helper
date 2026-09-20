@@ -67,7 +67,7 @@ export function KeyboardLayoutShortcuts() {
       const latin = CODE_LETTER[event.code]
       if (!latin) return
       // Латиниця: рушій обробляє сам — не втручаємось (і не дублюємо).
-      if (event.key.toLowerCase() === latin) return
+      if (!event.key || event.key.toLowerCase() === latin) return
       const target = event.target as HTMLElement | null
       // Contenteditable-хост рушія — сам `.docx-pages` (не `.docx-page-content`,
       // який є його нащадком), тож фокус у документі дає target = `.docx-pages`.

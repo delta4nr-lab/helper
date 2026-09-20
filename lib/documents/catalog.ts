@@ -4,7 +4,7 @@ export type TemplateCategory = {
   description: string
   longDescription: string
   countLabel: string
-  icon: "raporty"
+  icon: string | null
 }
 
 export type TemplateDefinition = {
@@ -28,7 +28,7 @@ export const categories: TemplateCategory[] = [
     longDescription:
       "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
     countLabel: "шаблонів",
-    icon: "raporty",
+    icon: "reports",
   },
 ]
 

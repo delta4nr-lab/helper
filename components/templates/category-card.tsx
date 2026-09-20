@@ -1,7 +1,8 @@
 import Link from "next/link"
-import { ArrowRight, FolderOpen } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { CategoryIcon } from "@/lib/categories/icons"
 import type { TemplateCategory } from "@/lib/documents/catalog"
 
 export function CategoryCard({
@@ -20,7 +21,7 @@ export function CategoryCard({
         {/* іконка з м'яким фоном + бейдж-пілюля */}
         <div className="flex items-start justify-between">
           <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15 transition-colors group-hover:bg-primary/15">
-            <FolderOpen className="size-5" />
+            <CategoryIcon value={category.icon} className="size-5" />
           </span>
           <Badge
             variant="outline"

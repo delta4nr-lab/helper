@@ -9,8 +9,9 @@ async function main() {
       slug: "raporty",
       title: "Рапорти",
       description: "Відпустки, відрядження, заохочення, переміщення",
-      longDescription: "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
-      icon: "raporty",
+      longDescription:
+        "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
+      icon: "reports",
       countLabel: "шаблонів",
     },
   ]
@@ -42,37 +43,98 @@ async function main() {
 
   console.log("Seeding personnel demo...")
   const demo = [
-    { lastName: "Петренко", firstName: "Іван", middleName: "Васильович", rank: "капітан", position: "командир роти", unit: "А1234", status: "в строю" },
-    { lastName: "Ковальчук", firstName: "Олена", middleName: "Миколаївна", rank: "ст. лейтенант", position: "заступник", unit: "А1234", status: "відрядження" },
-    { lastName: "Шевченко", firstName: "Андрій", middleName: "Юрійович", rank: "солдат", position: "водій", unit: "А1234/2", status: "в строю" },
-    { lastName: "Мельник", firstName: "Тетяна", middleName: "Олександрівна", rank: "мл. сержант", position: "діловод", unit: "Штаб", status: "відпустка" },
-    { lastName: "Богатир", firstName: "Руслан", middleName: "Олександрович", rank: "солдат", position: "курсант 1 взводу 4 роти", unit: "А1890", status: "в строю" },
+    {
+      lastName: "Петренко",
+      firstName: "Іван",
+      middleName: "Васильович",
+      rank: "капітан",
+      position: "командир роти",
+      unit: "А1234",
+      status: "в строю",
+    },
+    {
+      lastName: "Ковальчук",
+      firstName: "Олена",
+      middleName: "Миколаївна",
+      rank: "ст. лейтенант",
+      position: "заступник",
+      unit: "А1234",
+      status: "відрядження",
+    },
+    {
+      lastName: "Шевченко",
+      firstName: "Андрій",
+      middleName: "Юрійович",
+      rank: "солдат",
+      position: "водій",
+      unit: "А1234/2",
+      status: "в строю",
+    },
+    {
+      lastName: "Мельник",
+      firstName: "Тетяна",
+      middleName: "Олександрівна",
+      rank: "мл. сержант",
+      position: "діловод",
+      unit: "Штаб",
+      status: "відпустка",
+    },
+    {
+      lastName: "Богатир",
+      firstName: "Руслан",
+      middleName: "Олександрович",
+      rank: "солдат",
+      position: "курсант 1 взводу 4 роти",
+      unit: "А1890",
+      status: "в строю",
+    },
   ]
   for (const p of demo) {
-    const exists = await orm.Personnel.where({ lastName: p.lastName, firstName: p.firstName, unit: p.unit }).first()
+    const exists = await orm.Personnel.where({
+      lastName: p.lastName,
+      firstName: p.firstName,
+      unit: p.unit,
+    }).first()
     if (!exists) await orm.Personnel.create({ ...p, updatedAt: nowTimestamp() })
   }
   console.log(`Seeded ${demo.length} personnel`)
 
-  console.log("Seeding users (admin creates others, profile = ПІБ + звання, аватар = літера)...")
+  console.log(
+    "Seeding users (admin creates others, profile = ПІБ + звання, аватар = літера)..."
+  )
   const users = [
     {
       username: "admin",
       password: process.env.ADMIN_PASSWORD || "Admin123!",
       role: "ADMIN" as const,
-      profile: { lastName: "Адміністратор", firstName: "Системи", middleName: null, rank: "адмін" },
+      profile: {
+        lastName: "Адміністратор",
+        firstName: "Системи",
+        middleName: null,
+        rank: "адмін",
+      },
     },
     {
       username: "user",
       password: process.env.USER_PASSWORD || "User123!",
       role: "USER" as const,
-      profile: { lastName: "Петренко", firstName: "Іван", middleName: "Васильович", rank: "капітан" },
+      profile: {
+        lastName: "Петренко",
+        firstName: "Іван",
+        middleName: "Васильович",
+        rank: "капітан",
+      },
     },
     {
       username: "kovalchuk",
       password: "Koval123!",
       role: "USER" as const,
-      profile: { lastName: "Ковальчук", firstName: "Олена", middleName: "Миколаївна", rank: "ст. лейтенант" },
+      profile: {
+        lastName: "Ковальчук",
+        firstName: "Олена",
+        middleName: "Миколаївна",
+        rank: "ст. лейтенант",
+      },
     },
   ]
 
@@ -99,7 +161,9 @@ async function main() {
       update: { ...u.profile, updatedAt: nowTimestamp() },
       conflictOn: { userId: upserted.id },
     })
-    console.log(` - ${u.username} (${u.role}) -> profile: ${u.profile.lastName} ${u.profile.firstName}, rank: ${u.profile.rank}`)
+    console.log(
+      ` - ${u.username} (${u.role}) -> profile: ${u.profile.lastName} ${u.profile.firstName}, rank: ${u.profile.rank}`
+    )
   }
 }
 
