@@ -118,19 +118,20 @@ npm run contract:emit
 npx prisma db init           # перший раз (bootstrap + sign)
 # після наступних змін контракту: npx prisma db update
 
-# 4. Демо-дані
+# 4. Користувачі (сід створює лише облікові записи)
 npm run db:seed
 
 # 5. Дев-сервер
 npm run dev                  # http://localhost:3000
 ```
 
-Демо-акаунти після сіду:
+Користувачі після сіду (демо-категорії, особовий склад і шаблони не створюються):
 
 | Логін | Пароль | Роль |
 | --- | --- | --- |
 | `admin` | `Admin123!` (або `ADMIN_PASSWORD`) | `ADMIN` |
 | `user` | `User123!` (або `USER_PASSWORD`) | `USER` |
+| `kovalchuk` | `Koval123!` | `USER` |
 
 ## Змінні середовища
 
@@ -155,7 +156,7 @@ npm run dev                  # http://localhost:3000
 | `npm run typecheck` | Перевірка типів (`tsc --noEmit`) |
 | `npm run format` | Форматування Prettier |
 | `npm run contract:emit` | Перегенерувати `contract.json` / `contract.d.ts` |
-| `npm run db:seed` | Наповнити БД демо-даними |
+| `npm run db:seed` | Створити користувачів (admin, user, kovalchuk) |
 
 ## Структура проєкту
 
@@ -787,19 +788,20 @@ npm run contract:emit
 npx prisma db init           # first run (bootstrap + sign)
 # after later contract changes: npx prisma db update
 
-# 4. Demo data
+# 4. Users (the seed creates accounts only)
 npm run db:seed
 
 # 5. Dev server
 npm run dev                  # http://localhost:3000
 ```
 
-Demo accounts after seeding:
+Users after seeding (no demo categories, personnel or templates are created):
 
 | Login | Password | Role |
 | --- | --- | --- |
 | `admin` | `Admin123!` (or `ADMIN_PASSWORD`) | `ADMIN` |
 | `user` | `User123!` (or `USER_PASSWORD`) | `USER` |
+| `kovalchuk` | `Koval123!` | `USER` |
 
 ## Environment variables
 
@@ -824,7 +826,7 @@ Demo accounts after seeding:
 | `npm run typecheck` | Type checking (`tsc --noEmit`) |
 | `npm run format` | Prettier formatting |
 | `npm run contract:emit` | Regenerate `contract.json` / `contract.d.ts` |
-| `npm run db:seed` | Seed the database with demo data |
+| `npm run db:seed` | Create users (admin, user, kovalchuk) |
 
 ## Project structure
 

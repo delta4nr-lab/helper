@@ -159,10 +159,7 @@ export function AuthModal({ open, onOpenChange }: Props) {
             )}
           </Button>
 
-          <p className="text-center text-xs text-muted-foreground">
-            Демо: <span className="font-medium text-foreground">admin / Admin123!</span> або{" "}
-            <span className="font-medium text-foreground">user / User123!</span>
-          </p>
+          
         </form>
       </DialogContent>
     </Dialog>

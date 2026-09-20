@@ -2,110 +2,17 @@ import "dotenv/config"
 import bcrypt from "bcrypt"
 import { db, orm, nowTimestamp } from "./db"
 
+// Сід для чистого розгортання: створює лише користувачів (без демо-категорій,
+// демо-особового складу чи шаблонів). Паролі можна задати через
+// ADMIN_PASSWORD / USER_PASSWORD.
 async function main() {
-  console.log("Seeding categories (foundation for admin CRUD)...")
-  const seedCategories = [
-    {
-      slug: "raporty",
-      title: "Рапорти",
-      description: "Відпустки, відрядження, заохочення, переміщення",
-      longDescription:
-        "Найчастіші документи військовослужбовця. Автозаповнення з картки персоналії, перевірка дат і строків.",
-      icon: "reports",
-      countLabel: "шаблонів",
-    },
-  ]
-  for (const c of seedCategories) {
-    await orm.Category.upsert({
-      create: {
-        slug: c.slug,
-        title: c.title,
-        description: c.description,
-        longDescription: c.longDescription,
-        icon: c.icon,
-        countLabel: c.countLabel,
-        isActive: true,
-        updatedAt: nowTimestamp(),
-      },
-      update: {
-        title: c.title,
-        description: c.description,
-        longDescription: c.longDescription,
-        icon: c.icon,
-        countLabel: c.countLabel,
-        isActive: true,
-        updatedAt: nowTimestamp(),
-      },
-      conflictOn: { slug: c.slug },
-    })
-  }
-  console.log(`Seeded ${seedCategories.length} categories`)
-
-  console.log("Seeding personnel demo...")
-  const demo = [
-    {
-      lastName: "Петренко",
-      firstName: "Іван",
-      middleName: "Васильович",
-      rank: "капітан",
-      position: "командир роти",
-      unit: "А1234",
-      status: "в строю",
-    },
-    {
-      lastName: "Ковальчук",
-      firstName: "Олена",
-      middleName: "Миколаївна",
-      rank: "ст. лейтенант",
-      position: "заступник",
-      unit: "А1234",
-      status: "відрядження",
-    },
-    {
-      lastName: "Шевченко",
-      firstName: "Андрій",
-      middleName: "Юрійович",
-      rank: "солдат",
-      position: "водій",
-      unit: "А1234/2",
-      status: "в строю",
-    },
-    {
-      lastName: "Мельник",
-      firstName: "Тетяна",
-      middleName: "Олександрівна",
-      rank: "мл. сержант",
-      position: "діловод",
-      unit: "Штаб",
-      status: "відпустка",
-    },
-    {
-      lastName: "Богатир",
-      firstName: "Руслан",
-      middleName: "Олександрович",
-      rank: "солдат",
-      position: "курсант 1 взводу 4 роти",
-      unit: "А1890",
-      status: "в строю",
-    },
-  ]
-  for (const p of demo) {
-    const exists = await orm.Personnel.where({
-      lastName: p.lastName,
-      firstName: p.firstName,
-      unit: p.unit,
-    }).first()
-    if (!exists) await orm.Personnel.create({ ...p, updatedAt: nowTimestamp() })
-  }
-  console.log(`Seeded ${demo.length} personnel`)
-
   console.log(
     "Seeding users (admin creates others, profile = ПІБ + звання, аватар = літера)..."
   )
   const users = [
     {
       username: "admin",
-      password: process.env.ADMIN_PASSWORD || "Admin123!",
+      password: process.env.ADMIN_PASSWORD || "Admin123",
       role: "ADMIN" as const,
       profile: {
         lastName: "Адміністратор",
@@ -116,7 +23,7 @@ async function main() {
     },
     {
       username: "user",
-      password: process.env.USER_PASSWORD || "User123!",
+      password: process.env.USER_PASSWORD || "User123",
       role: "USER" as const,
       profile: {
         lastName: "Петренко",
@@ -127,7 +34,7 @@ async function main() {
     },
     {
       username: "kovalchuk",
-      password: "Koval123!",
+      password: "Koval123",
       role: "USER" as const,
       profile: {
         lastName: "Ковальчук",
