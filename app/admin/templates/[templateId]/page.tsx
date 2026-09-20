@@ -20,13 +20,8 @@ export default async function AdminTemplateEditorPage({
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Редактор шаблона
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Редагуйте документ та зберігайте шаблон.
-      </p>
-      <div className="mt-4">
+     
+      <div>
         <TemplateEditorScreen
           templateId={template.id}
           title={template.title}
