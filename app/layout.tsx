@@ -59,15 +59,18 @@ export default function RootLayout({
     <html
       lang="uk"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", roboto.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        roboto.variable
+      )}
     >
       <body>
         <AuthProvider>
           <ThemeProvider>
             <Suspense fallback={null}>
-              <AppProgressProvider>
-                {children}
-              </AppProgressProvider>
+              <AppProgressProvider>{children}</AppProgressProvider>
             </Suspense>
             <Toaster />
           </ThemeProvider>
