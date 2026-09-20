@@ -14,7 +14,6 @@ import {
   useHyperlinkPopup,
 } from "@docx-editor.dev/react"
 import { CustomNodeChrome } from "@docx-editor.dev/pro/react"
-import { saveForExport } from "@docx-editor.dev/pro"
 import { Braces, Download, Loader2, Save } from "lucide-react"
 
 import "@docx-editor.dev/core/styles/editor.css"
@@ -31,6 +30,10 @@ import { FieldEditMenu } from "@/components/documents/docx-editor/field-edit-dia
 import { FieldInsertDialog } from "@/components/documents/docx-editor/field-insert-dialog"
 import { FieldSelect } from "@/components/documents/docx-editor/field-select"
 import { KeyboardLayoutShortcuts } from "@/components/documents/docx-editor/keyboard-layout-shortcuts"
+import {
+  DocumentExportProvider,
+  useDocumentExport,
+} from "@/components/documents/docx-editor/document-export"
 import { PersonnelChrome } from "@/components/documents/docx-editor/personnel-picker"
 import {
   TableRowDuplicate,
@@ -53,9 +56,6 @@ import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-
-const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 // Дефолтний шрифт/розмір документа (Times New Roman, 28 half-points = 14pt)
 // задає сам шаблон через w:docDefaults — рушій його читає (effectiveRunDefaults),
@@ -82,10 +82,6 @@ type WorkspaceProps = {
   /** Курсанти з активного курсу (template-режим, cadet.{i}.{f}-ноди) */
   cadets?: readonly CourseRecordData[]
 }
-
-// Один експорт триває водночас (кнопка disabled на pending), тому фіксований id:
-// loading-тост замінюється success/error без накопичення повідомлень.
-const EXPORT_TOAST_ID = "docx-export"
 
 // Keeper режиму заповнення (formFill): рушій сам обмежує лише Tab-навігацію
 // між контролами, тому клік поза полем доповнюємо поверненням каретки в
@@ -312,105 +308,22 @@ function ViewportImageDrop({
   )
 }
 
-// Експорт/збереження → сервер → тост.
-// Режим "template": editor.save() — копія, яку ЗБЕРІГАЄМО (чіпи лишаються,
-// документ відкриється тут знову). Режим "document": saveForExport() —
-// зовнішня копія, preserveOnExport визначень вирішує, що з нею стається.
+// Кнопка тулбара: викликає спільний експорт (кнопка + меню «Файл → Зберегти»).
 function ExportButton({
-  templateId,
-  title,
   saveHandler,
 }: {
-  templateId: string
-  title: string
   saveHandler?: (
     formData: FormData
   ) => Promise<{ ok: boolean; message: string }>
 }) {
-  const editor = useDocxEditor()
-  const [pending, setPending] = React.useState(false)
-
-  async function handleExport() {
-    if (!editor || pending) return
-    setPending(true)
-    toast.loading(
-      saveHandler ? "Збереження шаблону..." : "Формування DOCX...",
-      { id: EXPORT_TOAST_ID }
-    )
-    try {
-      if (saveHandler) {
-        // Копія, яку зберігаємо: editor.save() лишає чіпи полів у шаблоні.
-        const buffer = await editor.save()
-        const form = new FormData()
-        form.set(
-          "file",
-          new Blob([buffer], { type: DOCX_MIME }),
-          "document.docx"
-        )
-        form.set("title", title)
-        const result = await saveHandler(form)
-        toast[result.ok ? "success" : "error"](result.message, {
-          id: EXPORT_TOAST_ID,
-        })
-        return
-      }
-
-      // Копія, що лишає систему: saveForExport застосовує preserveOnExport
-      // визначень (задокументований шлях для зовнішніх копій).
-      const outgoing = await saveForExport(editor)
-      if (!outgoing.ok) {
-        toast.error("Не вдалося сформувати документ для завантаження.", {
-          id: EXPORT_TOAST_ID,
-        })
-        return
-      }
-      const form = new FormData()
-      form.set(
-        "file",
-        new Blob([new Uint8Array(outgoing.bytes)], { type: DOCX_MIME }),
-        "document.docx"
-      )
-      form.set("title", title)
-      form.set("templateId", templateId)
-      const response = await fetch("/api/exports", {
-        method: "POST",
-        body: form,
-      })
-      const result = (await response.json()) as {
-        message?: string
-        downloadUrl?: string
-      }
-      if (!response.ok) {
-        toast.error(result.message ?? "Не вдалося зберегти документ.", {
-          id: EXPORT_TOAST_ID,
-        })
-        return
-      }
-      toast.success(
-        "DOCX збережено у вашому профілі. Завантаження розпочато.",
-        { id: EXPORT_TOAST_ID }
-      )
-      if (result.downloadUrl) {
-        const link = window.document.createElement("a")
-        link.href = result.downloadUrl
-        link.download = ""
-        link.click()
-      }
-    } catch {
-      toast.error("Не вдалося підключитися до сервера. Спробуйте ще раз.", {
-        id: EXPORT_TOAST_ID,
-      })
-    } finally {
-      setPending(false)
-    }
-  }
+  const { exportDocument, pending } = useDocumentExport()
 
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon-sm"
-      onClick={handleExport}
+      onClick={() => void exportDocument()}
       disabled={pending}
       title={saveHandler ? "Зберегти шаблон" : "Експорт DOCX"}
       aria-label={saveHandler ? "Зберегти шаблон" : "Експорт DOCX"}
@@ -425,6 +338,27 @@ function ExportButton({
     </Button>
   )
 }
+
+// Рядок «Файл → Зберегти»: замінює пакетний Save (патерн Object.assign docxSlot,
+// як InsertImageMenuRow). Виконує наш експорт замість дефолтного Editor.save().
+function SaveDocumentRow() {
+  const { exportDocument } = useDocumentExport()
+  return (
+    <DocxEditor.Menu.Row
+      slot="file.save"
+      onSelect={() => {
+        closeOpenMenubarMenu()
+        void exportDocument()
+      }}
+    >
+      Зберегти
+    </DocxEditor.Menu.Row>
+  )
+}
+
+const SaveDocumentMenuRow = Object.assign(SaveDocumentRow, {
+  docxSlot: "file.save",
+})
 
 // Робоча область: DocxEditor.Root (контекст) + хром редактора.
 // Тематизація: бібліотека чекає класи docx-editor (світлі токени) і docx-editor.dark
@@ -507,152 +441,163 @@ export default function DocumentWorkspace({
     >
       {/* Українська локаль для всього chrome редактора (меню, тулбар, діалоги) */}
       <LocaleProvider i18n={uk}>
-        <FieldSelect />
-        <KeyboardLayoutShortcuts />
-        <FormFillKeeper />
-        {/* Document Runtime v1: індексація/locator (editor — джерело істини,
-          dev-only debug через window.__docxRuntimeDebug) */}
-        <DocumentRuntimeBridge />
-        <div
-          className={cn(
-            "app-docx docx-editor flex min-h-0 flex-1 flex-col",
-            resolvedTheme === "dark" && "dark"
-          )}
+        <DocumentExportProvider
+          templateId={templateId}
+          title={docTitle.trim() || title}
+          saveHandler={mode === "template" ? exportHandler : undefined}
         >
-          <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
-            <Input
-              value={docTitle}
-              onChange={(event) => setDocTitle(event.target.value)}
-              className="mr-auto h-7 w-72 max-w-full border-transparent bg-transparent px-1.5 font-semibold hover:border-input focus-visible:border-input"
-              placeholder="Назва документа"
-              aria-label="Назва документа"
-            />
-          </div>
+          <FieldSelect />
+          <KeyboardLayoutShortcuts />
+          <FormFillKeeper />
+          {/* Document Runtime v1: індексація/locator (editor — джерело істини,
+          dev-only debug через window.__docxRuntimeDebug) */}
+          <DocumentRuntimeBridge />
+          <div
+            className={cn(
+              "app-docx docx-editor flex min-h-0 flex-1 flex-col",
+              resolvedTheme === "dark" && "dark"
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-2 bg-background/95 px-3 py-2 backdrop-blur">
+              <Input
+                value={docTitle}
+                onChange={(event) => setDocTitle(event.target.value)}
+                className="mr-auto h-7 w-72 max-w-full border-transparent bg-transparent px-1.5 font-semibold hover:border-input focus-visible:border-input"
+                placeholder="Назва документа"
+                aria-label="Назва документа"
+              />
+            </div>
 
-          {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
+            {/* Меню-бар і тулбар — у дефолтному оформленні бібліотеки.
           Comments/EditingMode приховано: коментарі й правки — Pro, режим змін не використовується.
           Review/Help приховано: рецензування не використовується, «Повідомити про проблему» — ні до чого.
           onPageSetup вмикає пакетний пункт «Параметри сторінки» у меню «Файл» */}
-          <DocxEditor.Menu onPageSetup={() => setPageSetupOpen(true)}>
-            <DocxEditor.Menu.Review hidden />
-            <DocxEditor.Menu.Help hidden />
-            {/* Зображення: діалог із табами «Завантаження» (файл на сервер) і
+            <DocxEditor.Menu onPageSetup={() => setPageSetupOpen(true)}>
+              {/* Файл → Зберегти: наш експорт замість пакетного Editor.save() */}
+              <DocxEditor.Menu.File>
+                <SaveDocumentMenuRow />
+              </DocxEditor.Menu.File>
+              <DocxEditor.Menu.Review hidden />
+              <DocxEditor.Menu.Help hidden />
+              {/* Зображення: діалог із табами «Завантаження» (файл на сервер) і
             «Бібліотека» (вибір раніше завантажених), замість пакетного file picker */}
-            <DocxEditor.Menu.Insert>
-              <InsertImageMenuRow onOpen={() => setImageDialogOpen(true)} />
-            </DocxEditor.Menu.Insert>
-          </DocxEditor.Menu>
+              <DocxEditor.Menu.Insert>
+                <InsertImageMenuRow onOpen={() => setImageDialogOpen(true)} />
+              </DocxEditor.Menu.Insert>
+            </DocxEditor.Menu>
 
-          <DocxEditor.Toolbar>
-            <DocxEditor.Toolbar.Comments hidden />
-            <DocxEditor.Toolbar.EditingMode hidden />
-            {/* Стилі абзацу не використовуються у військових документах */}
-            <DocxEditor.Toolbar.StylePicker hidden />
-            {/* Зображення вставляються з меню «Вставити»; властивості обраної
+            <DocxEditor.Toolbar>
+              <DocxEditor.Toolbar.Comments hidden />
+              <DocxEditor.Toolbar.EditingMode hidden />
+              {/* Стилі абзацу не використовуються у військових документах */}
+              <DocxEditor.Toolbar.StylePicker hidden />
+              {/* Зображення вставляються з меню «Вставити»; властивості обраної
                 картинки (розмір/обтікання/позиція) — вбудований контрол. Кнопка
                 «Властивості зображення» (alt/межа) не працює в цій збірці — hidden */}
-            <DocxEditor.Toolbar.ImageInsert hidden />
-            <DocxEditor.Toolbar.ImageProperties hidden />
-            <DocxEditor.Toolbar.ImageAltText hidden />
-            {/* Кастомні поля (custom nodes): вставка в режимі шаблона */}
-            {mode === "template" && (
-              <DocxEditor.Toolbar.Action
-                label="Додати кастомне поле"
-                icon={<Braces className="size-4" />}
-                onSelect={() => setFieldInsertOpen(true)}
-              />
-            )}
-            {/* Режим заповнення (двигунний): каретка живе лише в полях */}
-            <DocxEditor.Toolbar.ContentControlFormFill />
-            {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
+              <DocxEditor.Toolbar.ImageInsert hidden />
+              <DocxEditor.Toolbar.ImageProperties hidden />
+              <DocxEditor.Toolbar.ImageAltText hidden />
+              {/* Кастомні поля (custom nodes): вставка в режимі шаблона */}
+              {mode === "template" && (
+                <DocxEditor.Toolbar.Action
+                  label="Додати кастомне поле"
+                  icon={<Braces className="size-4" />}
+                  onSelect={() => setFieldInsertOpen(true)}
+                />
+              )}
+              {/* Режим заповнення (двигунний): каретка живе лише в полях */}
+              <DocxEditor.Toolbar.ContentControlFormFill />
+              {/* Експорт іде з назвою, яку дав користувач; порожня назва — фолбек на назву шаблона.
             Режим "template": exportHandler зберігає байти в Template.docxData */}
-            <ExportButton
-              templateId={templateId}
-              title={docTitle.trim() || title}
-              saveHandler={mode === "template" ? exportHandler : undefined}
-            />
-          </DocxEditor.Toolbar>
+              <ExportButton
+                saveHandler={mode === "template" ? exportHandler : undefined}
+              />
+            </DocxEditor.Toolbar>
 
-          {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
+            {/* Лінійка живе в колонці viewport: рамка лінійки розтягується на ширину
           батька, а відступи центрування бібліотека рахує від ширини viewport. */}
-          <div className="flex min-h-0 flex-1">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <DocxEditor.HorizontalRuler />
-              <ViewportImageDrop className="relative min-h-0 flex-1">
-                <DocxEditor.Viewport className="h-full">
-                  <DocxEditor.VerticalRuler />
-                  <DocxEditor.HeaderFooterChrome />
-                  <DocxEditor.NotesChrome />
-                  <DocxEditor.Content />
-                  {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
+            <div className="flex min-h-0 flex-1">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <DocxEditor.HorizontalRuler />
+                <ViewportImageDrop className="relative min-h-0 flex-1">
+                  <DocxEditor.Viewport className="h-full">
+                    <DocxEditor.VerticalRuler />
+                    <DocxEditor.HeaderFooterChrome />
+                    <DocxEditor.NotesChrome />
+                    <DocxEditor.Content />
+                    {/* Чіпи кастомних полів: фарбування (у Viewport після Content —
                   порядок з прикладу документації). У template-режимі з
                   персональними нодами — хром із hover-кнопками прив'язки персоналу */}
-                  {/* Хром чіпів + прив'язка: у документ-режимі (заповнення) —
+                    {/* Хром чіпів + прив'язка: у документ-режимі (заповнення) —
                   PersonnelChrome з hover-кнопкою вибору людини;
                   у template-режимі адмін лише вставляє маркери — прив'язки
                   там немає */}
-                  {mode !== "template" &&
-                  (personnel?.length || cadets?.length) ? (
-                    <PersonnelChrome
-                      personnel={personnel ?? []}
-                      cadets={cadets ?? []}
-                    />
-                  ) : (
-                    // Приховуємо внутрішні metadata-ноди (RepeatRowMarker/
-                    // RepeatRowRegistry) — малюємо чіпи лише для FieldNode.
-                    <CustomNodeChrome nodes={[FieldNode]} />
-                  )}
-                  {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
+                    {mode !== "template" &&
+                    (personnel?.length || cadets?.length) ? (
+                      <PersonnelChrome
+                        personnel={personnel ?? []}
+                        cadets={cadets ?? []}
+                      />
+                    ) : (
+                      // Приховуємо внутрішні metadata-ноди (RepeatRowMarker/
+                      // RepeatRowRegistry) — малюємо чіпи лише для FieldNode.
+                      <CustomNodeChrome nodes={[FieldNode]} />
+                    )}
+                    {/* «» у таблиці = нова людина/курсант (user flow): перехоплює
                   engine-кнопку рядка тільки коли рядок має персональні чіпи */}
-                  {mode !== "template" ? (
-                    <TableRowDuplicate
-                      sourceContext={{
-                        personnel: personnel ?? [],
-                        cadets: cadets ?? [],
-                        referrals: [],
-                      }}
-                    />
-                  ) : null}
-                  {/* Admin: mini-кнопка «зробити рядок повторюваним» — лише
+                    {mode !== "template" ? (
+                      <TableRowDuplicate
+                        sourceContext={{
+                          personnel: personnel ?? [],
+                          cadets: cadets ?? [],
+                          referrals: [],
+                        }}
+                      />
+                    ) : null}
+                    {/* Admin: mini-кнопка «зробити рядок повторюваним» — лише
                   template-режим; позиціонується біля engine-кнопки «+» */}
-                  {mode === "template" ? <RepeatRowAdmin /> : null}
-                  <DocxEditor.HyperLink />
-                  <DocxEditor.ContextMenu>
-                    {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
+                    {mode === "template" ? <RepeatRowAdmin /> : null}
+                    <DocxEditor.HyperLink />
+                    <DocxEditor.ContextMenu>
+                      {/* Коментарі не використовуються: прибираємо рядок «Додати коментар».
                     «Вставити посилання»: дефолтний рядок мертвий — замінюємо робочим.
                     «Edit {label}»: канонічний edit-вхід кастомних ручних полів */}
-                    <DocxEditor.ContextMenu.Slot
-                      slot="review.comments"
-                      hidden
-                    />
-                    <InsertLinkMenuRow />
-                    <FieldEditMenu />
-                  </DocxEditor.ContextMenu>
-                  {/* Boundary-хром контентів: потрібний для читання офсетів чіпа
+                      <DocxEditor.ContextMenu.Slot
+                        slot="review.comments"
+                        hidden
+                      />
+                      <InsertLinkMenuRow />
+                      <FieldEditMenu />
+                    </DocxEditor.ContextMenu>
+                    {/* Boundary-хром контентів: потрібний для читання офсетів чіпа
                   (каретка після вставки) і показує межі активного контрола */}
-                  <DocxEditor.ContentControl />
-                </DocxEditor.Viewport>
-                <DocxEditor.Loading overlay />
-              </ViewportImageDrop>
+                    <DocxEditor.ContentControl />
+                  </DocxEditor.Viewport>
+                  <DocxEditor.Loading overlay />
+                </ViewportImageDrop>
+              </div>
+              {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
+              {/* Панель вставки полів (template-режим): степери + кнопки полів */}
+              {mode === "template" ? <PersonnelPanel /> : null}
             </div>
-            {/* Панель персоналу (template-режим): степер екземпляра + кнопки полів */}
-            {/* Панель вставки полів (template-режим): степери + кнопки полів */}
-            {mode === "template" ? <PersonnelPanel /> : null}
-          </div>
-        </div>
 
-        <DocxEditor.PageSetupDialog
-          open={pageSetupOpen}
-          onClose={() => setPageSetupOpen(false)}
-        />
-        <ImageInsertDialog
-          open={imageDialogOpen}
-          onOpenChange={setImageDialogOpen}
-        />
-        <FieldInsertDialog
-          open={fieldInsertOpen}
-          onOpenChange={setFieldInsertOpen}
-        />
+            {/* Діалог усередині .docx-editor: інакше не успадковує --doc-*
+            (панель/підкладка стають прозорими) */}
+            <DocxEditor.PageSetupDialog
+              open={pageSetupOpen}
+              onClose={() => setPageSetupOpen(false)}
+            />
+          </div>
+
+          <ImageInsertDialog
+            open={imageDialogOpen}
+            onOpenChange={setImageDialogOpen}
+          />
+          <FieldInsertDialog
+            open={fieldInsertOpen}
+            onOpenChange={setFieldInsertOpen}
+          />
+        </DocumentExportProvider>
       </LocaleProvider>
     </DocxEditor.Root>
   )
